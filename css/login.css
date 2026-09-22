@@ -258,7 +258,8 @@ blockquote{
 }
 .secure-note svg{flex:none;color:var(--green)}
 
-@media(max-width:980px){
+/* Tablet: keep the hero photo, stack it above the card */
+@media(max-width:980px) and (min-width:761px){
   .login-shell{
     background:
       linear-gradient(0deg,rgba(2,15,14,.72),rgba(2,15,14,.72)),
@@ -276,16 +277,24 @@ blockquote{
     padding:0 7% 48px;
   }
 }
-@media(max-width:560px){
-  .hero-content{padding:22px 6% 28px}
-  .hero-copy{margin-top:22px}
-  .hero-copy h1{font-size:32px;letter-spacing:-.5px}
-  .hero-copy p{font-size:14px;margin-bottom:20px}
-  .hero-features{flex-wrap:wrap;gap:14px 0}
-  .hero-features>div{min-width:44%;border-right:0;padding:0}
-  .back-link{top:16px;right:5%;font-size:11.5px}
-  .login-card-wrap{padding:0 5% 40px}
-  .login-card{padding:26px 20px 24px;border-radius:16px}
+
+/* Mobile: hide the background photo and hero copy entirely, show only the login form */
+@media(max-width:760px){
+  .login-shell{
+    background:var(--bg);
+    flex-direction:column;
+    min-height:100vh;
+  }
+  .back-link{display:none}
+  .hero-content{display:none}
+  blockquote{display:none}
+  .login-card-wrap{
+    min-height:100vh;
+    margin-left:0;
+    align-items:center;justify-content:center;
+    padding:28px 5%;
+  }
+  .login-card{padding:26px 20px 24px;border-radius:16px;box-shadow:0 12px 32px rgba(4,32,29,.12)}
   .login-heading h1{font-size:21px}
 }
 
