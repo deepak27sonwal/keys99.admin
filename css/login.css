@@ -60,19 +60,15 @@ a{color:inherit}
 .brand{
   display:inline-flex;
   align-items:center;
-  gap:13px;
   text-decoration:none;
   color:inherit;
   width:fit-content;
+  background:rgba(255,255,255,.92);
+  border-radius:12px;
+  padding:10px 16px;
+  box-shadow:0 8px 22px rgba(2,20,18,.18);
 }
-.logo-house{width:44px;height:46px;position:relative;display:inline-block;flex:none}
-.logo-house:before,.logo-house:after,.logo-house i{content:"";position:absolute;display:block}
-.logo-house:before{width:29px;height:29px;left:8px;top:6px;border-left:6px solid var(--gold);border-top:6px solid var(--green);transform:rotate(45deg);border-radius:2px}
-.logo-house:after{width:25px;height:24px;left:10px;top:18px;border:5px solid var(--gold);border-top:0;border-radius:0 0 3px 3px}
-.logo-house i{width:7px;height:18px;left:18px;top:25px;background:var(--green);z-index:2;border-radius:1px}
-.brand-word strong{display:block;font-size:26px;font-weight:800;letter-spacing:-1px;line-height:1;color:#fff}
-.brand-word strong em{font-style:normal;color:var(--gold)}
-.brand-word small{display:block;font-size:8px;font-weight:700;letter-spacing:2.2px;color:rgba(255,255,255,.8);margin-top:5px}
+.brand-logo{display:block;height:34px;width:auto}
 
 .hero-copy{margin-top:64px;max-width:600px}
 .eyebrow{
@@ -141,12 +137,10 @@ blockquote{
 }
 
 .card-brand{
-  display:flex;align-items:center;justify-content:center;gap:10px;
+  display:flex;align-items:center;justify-content:center;
   margin-bottom:20px;
 }
-.card-brand .logo-house{transform:scale(.86)}
-.card-brand .brand-word strong{color:var(--ink);font-size:19px}
-.card-brand .brand-word small{color:var(--muted)}
+.card-brand .brand-logo{height:38px}
 
 .login-heading{text-align:center;margin-bottom:22px}
 .login-heading h1{
