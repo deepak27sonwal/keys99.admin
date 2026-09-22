@@ -1,0 +1,39 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow"><title>Keys99 Admin Login</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="./css/admin.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body class="login-page">
+<div class="login-card">
+  <div class="brand center"><div class="brand-mark">K</div><div><strong>Keys99</strong><span>Admin Panel</span></div></div>
+  <h1>Welcome back</h1><p class="muted">Sign in with an authorized Keys99 account.</p>
+  <form id="login-form">
+    <label>Email<input id="email" type="email" autocomplete="username" required></label>
+    <label>Password<input id="password" type="password" autocomplete="current-password" required></label>
+    <button class="primary wide" type="submit">Sign in</button>
+    <div id="login-error" class="error"></div>
+  </form>
+</div>
+<script type="module">
+import { SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY } from './js/config.js';
+const { createClient } = window.supabase;
+const sb=createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY);
+const form=document.querySelector('#login-form'), err=document.querySelector('#login-error');
+const {data:{session}}=await sb.auth.getSession();
+if(session) location.replace('./index.html');
+form.addEventListener('submit',async e=>{
+ e.preventDefault(); err.textContent='';
+ const {data,error}=await sb.auth.signInWithPassword({email:email.value.trim(),password:password.value});
+ if(error){err.textContent=error.message;return;}
+ const {data:roleRows,error:roleError}=await sb.from('user_roles').select('role').eq('user_id',data.user.id);
+ if(roleError){await sb.auth.signOut();err.textContent=roleError.message;return;}
+ const allowed=roleRows?.some(r=>['admin','editor','moderator'].includes(r.role));
+ if(!allowed){await sb.auth.signOut();err.textContent='This account is not authorized for the Keys99 Admin Panel.';return;}
+ location.replace('./index.html');
+});
+</script>
+</body></html>
