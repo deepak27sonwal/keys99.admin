@@ -80,8 +80,9 @@
             <span class="input-icon" aria-hidden="true">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="m3 7 9 6 9-6"/></svg>
             </span>
-            <input id="email" type="email" autocomplete="username" placeholder="Enter your email address" required>
+            <input id="email" type="email" autocomplete="username" placeholder="Enter your email address" required aria-describedby="email-error">
           </div>
+          <span id="email-error" class="field-error" role="alert" aria-live="polite"></span>
         </label>
 
         <label class="login-field">
@@ -90,11 +91,12 @@
             <span class="input-icon" aria-hidden="true">
               <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><rect x="4" y="11" width="16" height="9" rx="2"/><path d="M8 11V7a4 4 0 0 1 8 0v4"/></svg>
             </span>
-            <input id="password" type="password" autocomplete="current-password" placeholder="Enter your password" required>
+            <input id="password" type="password" autocomplete="current-password" placeholder="Enter your password" required aria-describedby="password-error">
             <button class="password-toggle" id="toggle-password" type="button" aria-label="Show password" aria-pressed="false">
               <svg id="eye-icon" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z"/><circle cx="12" cy="12" r="3"/></svg>
             </button>
           </div>
+          <span id="password-error" class="field-error" role="alert" aria-live="polite"></span>
         </label>
 
         <div class="login-options">
@@ -134,16 +136,37 @@ const form = document.querySelector('#login-form');
 const errorBox = document.querySelector('#login-error');
 const roleInput = document.querySelector('#selected-role');
 const submit = document.querySelector('#login-submit');
+const emailInput = document.querySelector('#email');
 const password = document.querySelector('#password');
+const emailError = document.querySelector('#email-error');
+const passwordError = document.querySelector('#password-error');
 const eyeIcon = document.querySelector('#eye-icon');
 
 const EYE_OPEN = '<path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z"/><circle cx="12" cy="12" r="3"/>';
 const EYE_CLOSED = '<path d="M17.94 17.94A10.94 10.94 0 0 1 12 19c-7 0-11-7-11-7a21.6 21.6 0 0 1 5.06-5.94M9.9 4.24A10.94 10.94 0 0 1 12 4c7 0 11 7 11 7a21.6 21.6 0 0 1-2.61 3.53"/><path d="m1 1 22 22"/><path d="M9.88 9.88a3 3 0 1 0 4.24 4.24"/>';
+const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 function setError(message) {
   errorBox.textContent = message || '';
   errorBox.classList.toggle('show', Boolean(message));
 }
+
+function setFieldError(field, message) {
+  const input = field === 'email' ? emailInput : password;
+  const box = field === 'email' ? emailError : passwordError;
+  box.textContent = message || '';
+  box.classList.toggle('show', Boolean(message));
+  input.classList.toggle('invalid', Boolean(message));
+  input.setAttribute('aria-invalid', String(Boolean(message)));
+}
+
+function clearFieldErrors() {
+  setFieldError('email', '');
+  setFieldError('password', '');
+}
+
+emailInput.addEventListener('input', () => setFieldError('email', ''));
+password.addEventListener('input', () => setFieldError('password', ''));
 
 function setLoading(loading) {
   submit.disabled = loading;
@@ -159,6 +182,7 @@ document.querySelectorAll('.role-option').forEach(button => {
     });
     roleInput.value = button.dataset.role;
     setError('');
+    clearFieldErrors();
   });
 });
 
@@ -171,9 +195,11 @@ document.querySelector('#toggle-password').addEventListener('click', e => {
 });
 
 document.querySelector('#forgot-password').addEventListener('click', async () => {
-  const email = document.querySelector('#email').value.trim();
+  setError('');
+  clearFieldErrors();
+  const email = emailInput.value.trim();
   if (!email) {
-    setError('Enter your email address first.');
+    setFieldError('email', 'Enter your email address first.');
     return;
   }
   const { error } = await sb.auth.resetPasswordForEmail(email, {
@@ -188,11 +214,27 @@ if (sessionData?.session) window.location.replace('./index.html');
 form.addEventListener('submit', async e => {
   e.preventDefault();
   setError('');
-  setLoading(true);
+  clearFieldErrors();
 
-  const emailValue = document.querySelector('#email').value.trim();
+  const emailValue = emailInput.value.trim();
   const passwordValue = password.value;
   const selectedRole = roleInput.value;
+
+  let hasFieldError = false;
+  if (!emailValue) {
+    setFieldError('email', 'Email address is required.');
+    hasFieldError = true;
+  } else if (!EMAIL_PATTERN.test(emailValue)) {
+    setFieldError('email', 'Enter a valid email address.');
+    hasFieldError = true;
+  }
+  if (!passwordValue) {
+    setFieldError('password', 'Password is required.');
+    hasFieldError = true;
+  }
+  if (hasFieldError) return;
+
+  setLoading(true);
 
   const { data, error } = await sb.auth.signInWithPassword({
     email: emailValue,
@@ -200,7 +242,12 @@ form.addEventListener('submit', async e => {
   });
 
   if (error) {
-    setError(error.message);
+    const invalidCredentials = /invalid login credentials/i.test(error.message);
+    if (invalidCredentials) {
+      setFieldError('password', 'Incorrect email or password.');
+    } else {
+      setError(error.message);
+    }
     setLoading(false);
     return;
   }
