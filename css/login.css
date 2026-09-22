@@ -1,0 +1,320 @@
+/* Keys99 Admin — Login page styles */
+
+:root{
+  --ink:#0a2f2c;
+  --ink-soft:#3d5a58;
+  --muted:#6b7f85;
+  --line:#e1e8e7;
+  --bg:#f6faf9;
+  --green:#046b5e;
+  --green-dark:#02473e;
+  --green-tint:#eaf7f4;
+  --gold:#f0ab1c;
+  --white:#ffffff;
+  --danger:#c0362c;
+  --danger-tint:#fdf1ef;
+  --focus-ring:0 0 0 3px rgba(4,107,94,.16);
+  --radius-lg:20px;
+  --radius-md:12px;
+  --radius-sm:9px;
+  --shadow-card:0 24px 60px -20px rgba(4,60,54,.28);
+}
+
+*{box-sizing:border-box}
+html,body{margin:0;min-height:100%}
+body{
+  font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;
+  color:var(--ink);
+  background:var(--bg);
+}
+button,input{font:inherit}
+button{cursor:pointer}
+a{color:inherit}
+
+.keys-login{min-height:100vh}
+
+.login-shell{
+  min-height:100vh;
+  display:grid;
+  grid-template-columns:minmax(0,1.05fr) minmax(420px,.95fr);
+}
+
+/* ---------- Left: brand / hero panel ---------- */
+
+.login-hero{
+  position:relative;
+  min-height:100vh;
+  background:
+    linear-gradient(180deg,rgba(2,32,29,.2),rgba(2,32,29,.72)),
+    url("../assets/images/keys99-login-bg.jpg") center/cover no-repeat;
+  overflow:hidden;
+  color:#fff;
+}
+
+.hero-content{
+  position:relative;
+  z-index:1;
+  min-height:100vh;
+  padding:44px 6% 40px;
+  display:flex;
+  flex-direction:column;
+}
+
+.brand{
+  display:inline-flex;
+  align-items:center;
+  gap:11px;
+  text-decoration:none;
+  color:#fff;
+  width:fit-content;
+}
+.brand-mark{
+  width:38px;height:38px;flex:none;
+  border-radius:9px;
+  background:linear-gradient(135deg,var(--gold),#c8860a);
+  display:grid;place-items:center;
+  color:var(--green-dark);
+  font-weight:800;
+  font-size:15px;
+  font-family:"Playfair Display",Georgia,serif;
+}
+.brand-word strong{display:block;font-size:20px;font-weight:800;letter-spacing:-.3px;line-height:1}
+.brand-word strong em{font-style:normal;color:var(--gold)}
+.brand-word small{display:block;font-size:9px;font-weight:600;letter-spacing:2.2px;color:rgba(255,255,255,.68);margin-top:3px}
+
+.hero-copy{margin-top:auto;max-width:560px}
+.eyebrow{
+  display:inline-flex;align-items:center;gap:14px;
+  font-size:12px;font-weight:700;letter-spacing:4px;
+  color:rgba(255,255,255,.78);text-transform:uppercase;
+}
+.eyebrow::before{content:"";width:32px;height:2px;background:var(--gold)}
+.hero-copy h1{
+  font-family:"Playfair Display",Georgia,serif;
+  font-size:clamp(38px,4.4vw,58px);
+  line-height:1.06;
+  letter-spacing:-1px;
+  margin:18px 0 16px;
+}
+.hero-copy p{
+  font-size:16px;line-height:1.6;
+  color:rgba(255,255,255,.82);
+  max-width:440px;margin:0 0 34px;
+}
+
+.hero-stats{display:flex;gap:0;border-top:1px solid rgba(255,255,255,.18);padding-top:22px}
+.hero-stats div{
+  flex:1;padding:0 18px;
+  border-right:1px solid rgba(255,255,255,.18);
+}
+.hero-stats div:first-child{padding-left:0}
+.hero-stats div:last-child{border-right:0}
+.hero-stats b{display:block;font-size:22px;font-weight:700;color:var(--gold)}
+.hero-stats span{display:block;font-size:12px;line-height:1.4;color:rgba(255,255,255,.75);margin-top:3px}
+
+/* ---------- Right: form panel ---------- */
+
+.login-side{
+  position:relative;
+  min-height:100vh;
+  background:var(--bg);
+  display:flex;
+  flex-direction:column;
+  align-items:center;
+  justify-content:center;
+  padding:40px 7%;
+}
+
+.back-link{
+  position:absolute;top:26px;right:40px;
+  display:inline-flex;align-items:center;gap:6px;
+  text-decoration:none;color:var(--ink-soft);
+  font-size:13px;font-weight:600;
+  padding:6px 8px;border-radius:7px;
+}
+.back-link:hover{color:var(--green)}
+.back-link:focus-visible{outline:2px solid var(--green);outline-offset:2px}
+
+.login-card{
+  width:min(440px,100%);
+  background:var(--white);
+  border:1px solid var(--line);
+  border-radius:var(--radius-lg);
+  padding:38px 36px 32px;
+  box-shadow:var(--shadow-card);
+}
+
+.card-brand{
+  display:flex;align-items:center;justify-content:center;gap:10px;
+  margin-bottom:24px;
+}
+.card-brand .brand-mark{color:var(--green-dark)}
+.card-brand .brand-word strong{color:var(--ink);font-size:18px}
+.card-brand .brand-word small{color:var(--muted)}
+
+.login-heading{text-align:center;margin-bottom:24px}
+.login-heading h1{
+  font-size:24px;margin:0;color:var(--ink);
+  letter-spacing:-.4px;font-weight:800;
+}
+.login-heading p{margin:6px 0 0;color:var(--muted);font-size:14px}
+
+.role-switch{
+  display:grid;grid-template-columns:1fr 1fr;
+  background:var(--bg);
+  border:1px solid var(--line);
+  border-radius:var(--radius-md);
+  padding:4px;gap:4px;
+  margin-bottom:22px;
+}
+.role-option{
+  border:0;background:transparent;
+  border-radius:8px;
+  padding:10px 12px;
+  display:flex;align-items:center;justify-content:center;gap:9px;
+  color:var(--ink-soft);
+  transition:background .15s,box-shadow .15s,color .15s;
+}
+.role-option:focus-visible{outline:2px solid var(--green);outline-offset:1px}
+.role-option.active{
+  background:var(--white);
+  color:var(--green);
+  box-shadow:0 3px 10px rgba(4,107,94,.14);
+}
+.role-dot{
+  width:9px;height:9px;border-radius:50%;
+  background:var(--line);flex:none;
+  transition:background .15s;
+}
+.role-option.active .role-dot{background:var(--green)}
+.role-option b{display:block;font-size:13.5px;font-weight:700;line-height:1.2}
+.role-option small{display:block;font-size:10.5px;color:var(--muted);font-weight:500;margin-top:1px}
+.role-option.active small{color:#4e8983}
+
+.login-field{display:block;margin-top:16px}
+.login-field:first-of-type{margin-top:0}
+.login-field>span{
+  display:block;font-size:12.5px;font-weight:700;
+  color:var(--ink);margin-bottom:7px;
+}
+.input-wrap{position:relative;display:flex;align-items:center}
+.input-icon{
+  position:absolute;left:14px;
+  display:flex;color:var(--muted);pointer-events:none;
+}
+.input-wrap input{
+  width:100%;height:48px;
+  border:1px solid #d5dfde;border-radius:var(--radius-sm);
+  padding:0 44px;font-size:14px;color:var(--ink);
+  background:var(--white);outline:none;
+  transition:border-color .15s,box-shadow .15s;
+}
+.input-wrap input::placeholder{color:#9aabb0}
+.input-wrap input:focus{border-color:var(--green);box-shadow:var(--focus-ring)}
+.password-toggle{
+  position:absolute;right:6px;
+  display:flex;align-items:center;justify-content:center;
+  width:36px;height:36px;border:0;border-radius:8px;
+  background:transparent;color:var(--muted);
+}
+.password-toggle:hover{background:var(--bg);color:var(--ink-soft)}
+.password-toggle:focus-visible{outline:2px solid var(--green);outline-offset:1px}
+
+.login-options{
+  display:flex;justify-content:space-between;align-items:center;
+  margin:16px 0 20px;font-size:13px;
+}
+.remember{display:inline-flex;align-items:center;gap:8px;color:var(--ink-soft);cursor:pointer;user-select:none}
+.remember input{position:absolute;opacity:0;width:1px;height:1px}
+.check-box{
+  width:18px;height:18px;border-radius:5px;flex:none;
+  border:1.5px solid #c6d2d1;background:var(--white);
+  display:grid;place-items:center;transition:.15s;
+}
+.check-box svg{opacity:0;transform:scale(.6);transition:.15s}
+.remember input:checked + .check-box{background:var(--green);border-color:var(--green)}
+.remember input:checked + .check-box svg{opacity:1;transform:scale(1)}
+.remember input:focus-visible + .check-box{box-shadow:var(--focus-ring)}
+.forgot{border:0;background:transparent;color:var(--green);font-weight:700;padding:0;font-size:13px}
+.forgot:hover{text-decoration:underline}
+
+.login-submit{
+  width:100%;height:50px;border:0;border-radius:var(--radius-sm);
+  background:linear-gradient(135deg,var(--green),var(--green-dark));
+  color:#fff;font-weight:700;font-size:15px;
+  display:flex;align-items:center;justify-content:center;gap:8px;
+  box-shadow:0 12px 24px -8px rgba(4,107,94,.45);
+  transition:filter .15s,transform .1s;
+}
+.login-submit:hover{filter:brightness(1.06)}
+.login-submit:active{transform:translateY(1px)}
+.login-submit:disabled{opacity:.72;cursor:wait}
+.login-submit:focus-visible{outline:2px solid var(--green-dark);outline-offset:2px}
+
+.spinner{
+  width:16px;height:16px;border-radius:50%;
+  border:2px solid rgba(255,255,255,.4);
+  border-top-color:#fff;
+  animation:spin .7s linear infinite;
+  display:none;
+}
+.login-submit[data-loading="true"] .spinner{display:inline-block}
+.login-submit[data-loading="true"] .btn-arrow{display:none}
+@keyframes spin{to{transform:rotate(360deg)}}
+
+.login-error{
+  min-height:0;color:var(--danger);font-size:12.5px;
+  margin-top:12px;line-height:1.45;
+}
+.login-error.show{
+  padding:10px 12px;background:var(--danger-tint);
+  border-radius:9px;border:1px solid #f6d4cf;
+}
+
+.secure-note{
+  display:flex;justify-content:center;align-items:center;gap:7px;
+  color:var(--muted);font-size:11.5px;margin-top:24px;text-align:center;
+}
+.secure-note svg{flex:none;color:var(--green)}
+
+.login-footer{
+  width:min(440px,100%);
+  display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+  color:var(--muted);font-size:12px;margin-top:22px;
+}
+.login-footer a{text-decoration:none;color:var(--muted)}
+.login-footer a:hover{color:var(--green)}
+.login-footer .dot{color:#b9c6c5}
+.login-footer .copyright{margin-left:auto}
+
+@media(max-width:980px){
+  .login-shell{grid-template-columns:1fr}
+  .login-hero{min-height:340px}
+  .hero-content{min-height:340px;padding:28px 7%}
+  .hero-copy{margin-top:24px}
+  .hero-copy h1{font-size:38px}
+  .hero-copy p{margin-bottom:20px}
+  .hero-stats{padding-top:16px}
+  .login-side{min-height:auto;padding:44px 6% 30px}
+  .back-link{top:18px;right:22px}
+}
+@media(max-width:520px){
+  .login-shell{display:block}
+  .login-hero{min-height:260px}
+  .hero-content{min-height:260px;padding:20px}
+  .hero-copy{margin-top:16px}
+  .hero-copy h1{font-size:30px;letter-spacing:-.5px}
+  .hero-copy p{font-size:13.5px;margin-bottom:16px}
+  .hero-stats{display:none}
+  .login-side{padding:36px 16px 24px}
+  .back-link{top:14px;right:16px;font-size:12px}
+  .login-card{padding:26px 20px 24px;border-radius:16px}
+  .login-heading h1{font-size:21px}
+  .role-option{padding:9px 6px}
+  .role-option b{font-size:12.5px}
+  .role-option small{font-size:9.5px}
+}
+
+@media(prefers-reduced-motion:reduce){
+  *{transition:none!important;animation-duration:.01ms!important}
+}
