@@ -1,39 +1,208 @@
 <!doctype html>
 <html lang="en">
 <head>
-<meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
-<meta name="robots" content="noindex,nofollow"><title>Keys99 Admin Login</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="robots" content="noindex,nofollow">
+<meta name="theme-color" content="#006b5f">
+<title>Keys99 Admin | Secure Login</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=Playfair+Display:wght@600;700&display=swap" rel="stylesheet">
 <link rel="stylesheet" href="./css/admin.css">
 <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
 </head>
-<body class="login-page">
-<div class="login-card">
-  <div class="brand center"><div class="brand-mark">K</div><div><strong>Keys99</strong><span>Admin Panel</span></div></div>
-  <h1>Welcome back</h1><p class="muted">Sign in with an authorized Keys99 account.</p>
-  <form id="login-form">
-    <label>Email<input id="email" type="email" autocomplete="username" required></label>
-    <label>Password<input id="password" type="password" autocomplete="current-password" required></label>
-    <button class="primary wide" type="submit">Sign in</button>
-    <div id="login-error" class="error"></div>
-  </form>
-</div>
+<body class="keys-login">
+<main class="login-shell">
+  <section class="login-hero" aria-label="Keys99">
+    <div class="hero-overlay"></div>
+    <div class="hero-content">
+      <a class="login-logo" href="https://keys99.com" aria-label="Keys99.com">
+        <span class="logo-house" aria-hidden="true"><i></i></span>
+        <span class="logo-word"><strong>KEYS<span>99</span>.COM</strong><small>YOUR KEY TO A BETTER TOMORROW</small></span>
+      </a>
+
+      <div class="hero-copy">
+        <div class="eyebrow"><span></span> REAL ESTATE PLATFORM</div>
+        <h1>Better Homes<br>Bigger Dreams</h1>
+        <p>Explore residential and commercial properties with a smarter, faster and more powerful platform.</p>
+        <div class="hero-features">
+          <div><b>⌂</b><span>Residential<br>Projects</span></div>
+          <div><b>▥</b><span>Commercial<br>Projects</span></div>
+          <div><b>♧</b><span>Manage<br>Enquiries</span></div>
+          <div><b>▥</b><span>Grow Your<br>Business</span></div>
+        </div>
+      </div>
+
+      <blockquote>“Finding the right property<br>is the key to a brighter tomorrow.”</blockquote>
+    </div>
+  </section>
+
+  <section class="login-side">
+    <a class="back-link" href="https://keys99.com">← Back to Website</a>
+
+    <div class="login-card">
+      <div class="login-brand">
+        <span class="logo-house" aria-hidden="true"><i></i></span>
+        <span class="logo-word"><strong>KEYS<span>99</span>.COM</strong><small>YOUR KEY TO A BETTER TOMORROW</small></span>
+      </div>
+
+      <div class="login-heading">
+        <h2>Welcome Back</h2>
+        <p>Login to access your dashboard</p>
+      </div>
+
+      <div class="role-switch" role="tablist" aria-label="Account type">
+        <button class="role-option active" type="button" data-role="admin" role="tab" aria-selected="true">
+          <span class="role-icon">●</span><span><b>Admin</b><small>Full access</small></span>
+        </button>
+        <button class="role-option" type="button" data-role="moderator" role="tab" aria-selected="false">
+          <span class="role-icon">♙</span><span><b>Moderator</b><small>Moderation access</small></span>
+        </button>
+      </div>
+
+      <form id="login-form" novalidate>
+        <input type="hidden" id="selected-role" value="admin">
+
+        <label class="login-field">
+          <span>Email Address</span>
+          <div class="input-wrap"><span class="input-icon">✉</span><input id="email" type="email" autocomplete="username" placeholder="Enter your email address" required></div>
+        </label>
+
+        <label class="login-field">
+          <span>Password</span>
+          <div class="input-wrap"><span class="input-icon">⌑</span><input id="password" type="password" autocomplete="current-password" placeholder="Enter your password" required><button class="password-toggle" id="toggle-password" type="button" aria-label="Show password">◉</button></div>
+        </label>
+
+        <div class="login-options">
+          <label class="remember"><input id="remember" type="checkbox" checked><span></span> Remember me</label>
+          <button type="button" class="forgot" id="forgot-password">Forgot password?</button>
+        </div>
+
+        <button class="login-submit" id="login-submit" type="submit">Login <span>→</span></button>
+        <div id="login-error" class="login-error" role="alert" aria-live="polite"></div>
+      </form>
+
+      <div class="secure-note"><span>♢</span> Only authorized personnel can access this system.</div>
+    </div>
+
+    <footer class="login-footer"><span>Help</span><i>•</i><span>Privacy</span><i>•</i><span>Terms</span><em>© 2026 Keys99.com. All rights reserved.</em></footer>
+  </section>
+</main>
+
 <script type="module">
 import { SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY } from './js/config.js';
+
 const { createClient } = window.supabase;
-const sb=createClient(SUPABASE_URL,SUPABASE_PUBLISHABLE_KEY);
-const form=document.querySelector('#login-form'), err=document.querySelector('#login-error');
-const {data:{session}}=await sb.auth.getSession();
-if(session) location.replace('./index.html');
-form.addEventListener('submit',async e=>{
- e.preventDefault(); err.textContent='';
- const {data,error}=await sb.auth.signInWithPassword({email:email.value.trim(),password:password.value});
- if(error){err.textContent=error.message;return;}
- const {data:roleRows,error:roleError}=await sb.from('user_roles').select('role').eq('user_id',data.user.id);
- if(roleError){await sb.auth.signOut();err.textContent=roleError.message;return;}
- const allowed=roleRows?.some(r=>['admin','editor','moderator'].includes(r.role));
- if(!allowed){await sb.auth.signOut();err.textContent='This account is not authorized for the Keys99 Admin Panel.';return;}
- location.replace('./index.html');
+const sb = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+
+const form = document.querySelector('#login-form');
+const errorBox = document.querySelector('#login-error');
+const roleInput = document.querySelector('#selected-role');
+const submit = document.querySelector('#login-submit');
+const password = document.querySelector('#password');
+
+document.querySelectorAll('.role-option').forEach(button => {
+  button.addEventListener('click', () => {
+    document.querySelectorAll('.role-option').forEach(b => {
+      const active = b === button;
+      b.classList.toggle('active', active);
+      b.setAttribute('aria-selected', String(active));
+    });
+    roleInput.value = button.dataset.role;
+    errorBox.textContent = '';
+  });
+});
+
+document.querySelector('#toggle-password').addEventListener('click', e => {
+  const visible = password.type === 'text';
+  password.type = visible ? 'password' : 'text';
+  e.currentTarget.textContent = visible ? '◉' : '○';
+  e.currentTarget.setAttribute('aria-label', visible ? 'Show password' : 'Hide password');
+});
+
+document.querySelector('#forgot-password').addEventListener('click', async () => {
+  const email = document.querySelector('#email').value.trim();
+  errorBox.className = 'login-error';
+  if (!email) {
+    errorBox.textContent = 'Enter your email address first.';
+    errorBox.classList.add('show');
+    return;
+  }
+  const { error } = await sb.auth.resetPasswordForEmail(email, {
+    redirectTo: window.location.origin + '/login.html'
+  });
+  errorBox.textContent = error ? error.message : 'Password reset instructions have been sent if this email is registered.';
+  errorBox.classList.add('show');
+});
+
+const { data: sessionData } = await sb.auth.getSession();
+if (sessionData?.session) window.location.replace('./index.html');
+
+form.addEventListener('submit', async e => {
+  e.preventDefault();
+  errorBox.textContent = '';
+  errorBox.className = 'login-error';
+  submit.disabled = true;
+  submit.innerHTML = 'Signing in…';
+
+  const emailValue = document.querySelector('#email').value.trim();
+  const passwordValue = password.value;
+  const selectedRole = roleInput.value;
+
+  const { data, error } = await sb.auth.signInWithPassword({
+    email: emailValue,
+    password: passwordValue
+  });
+
+  if (error) {
+    errorBox.textContent = error.message;
+    errorBox.classList.add('show');
+    submit.disabled = false;
+    submit.innerHTML = 'Login <span>→</span>';
+    return;
+  }
+
+  const { data: roleRows, error: roleError } = await sb
+    .from('user_roles')
+    .select('role')
+    .eq('user_id', data.user.id);
+
+  if (roleError) {
+    await sb.auth.signOut();
+    errorBox.textContent = roleError.message;
+    errorBox.classList.add('show');
+    submit.disabled = false;
+    submit.innerHTML = 'Login <span>→</span>';
+    return;
+  }
+
+  const roles = (roleRows || []).map(r => r.role);
+  const hasAdmin = roles.includes('admin');
+  const hasModerator = roles.includes('moderator');
+  const authorized = hasAdmin || hasModerator;
+  const roleMatches = roles.includes(selectedRole);
+
+  if (!authorized) {
+    await sb.auth.signOut();
+    errorBox.textContent = 'This account is not authorized for the Keys99 Admin Panel.';
+    errorBox.classList.add('show');
+    submit.disabled = false;
+    submit.innerHTML = 'Login <span>→</span>';
+    return;
+  }
+
+  if (!roleMatches) {
+    await sb.auth.signOut();
+    errorBox.textContent = 'Your account does not have the selected access role.';
+    errorBox.classList.add('show');
+    submit.disabled = false;
+    submit.innerHTML = 'Login <span>→</span>';
+    return;
+  }
+
+  window.location.replace('./index.html');
 });
 </script>
-</body></html>
+</body>
+</html>
