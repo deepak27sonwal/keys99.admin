@@ -11,8 +11,8 @@
   --green-tint:#eaf7f4;
   --gold:#f0ab1c;
   --white:#ffffff;
-  --danger:#c0362c;
-  --danger-tint:#fdf1ef;
+  --danger:#e02424;
+  --danger-tint:#fdedec;
   --focus-ring:0 0 0 3px rgba(4,107,94,.16);
   --radius-lg:20px;
   --radius-md:12px;
@@ -193,7 +193,7 @@ blockquote{
 .input-wrap input::placeholder{color:#9aabb0}
 .input-wrap input:focus{border-color:var(--green);box-shadow:var(--focus-ring)}
 .input-wrap input.invalid{border-color:var(--danger)}
-.input-wrap input.invalid:focus{box-shadow:0 0 0 3px rgba(192,54,44,.14)}
+.input-wrap input.invalid:focus{box-shadow:0 0 0 3px rgba(224,36,36,.16)}
 .field-error{
   display:block;min-height:0;color:var(--danger);
   font-size:12px;font-weight:500;line-height:1.4;margin-top:0;
