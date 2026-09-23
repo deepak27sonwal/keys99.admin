@@ -1,5 +1,5 @@
 import { SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY } from './config.js';
-import { openProjectForm } from './project-form.js';
+import { openProjectForm, isWizardOpen, handleWizardPopState } from './project-form.js';
 
 const { createClient } = window.supabase;
 const sb = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
@@ -654,13 +654,29 @@ const PAGES = {
   profile: profilePage
 };
 
-async function navigate(page) {
+// Every top-level page navigation pushes (or, on first load, replaces) a browser history
+// entry, so the phone/browser back button steps back through previously opened pages
+// instead of leaving the app entirely. popstate ignores wizard-internal states — those are
+// handled by project-form.js's own listener while the project form is open.
+async function navigate(page, opts = {}) {
   if (!PAGES[page]) page = 'dashboard';
   document.querySelectorAll('.sb-item[data-page]').forEach(b => b.classList.toggle('active', b.dataset.page === page));
   closeSidebar();
   window.scrollTo(0, 0);
+  if (!opts.fromPopstate) {
+    const hash = '#/' + page;
+    if (opts.replace) history.replaceState({ page }, '', hash);
+    else if (location.hash !== hash) history.pushState({ page }, '', hash);
+  }
   await PAGES[page]();
 }
+
+window.addEventListener('popstate', (e) => {
+  if (isWizardOpen() && handleWizardPopState(e)) return; // fully handled inside the wizard (step change, or a cancelled exit)
+  const st = e.state;
+  const page = (st && st.page) || location.hash.replace(/^#\//, '') || 'dashboard';
+  navigate(page, { fromPopstate: true });
+});
 
 function closeSidebar() {
   $('#sidebar').classList.remove('open');
@@ -679,5 +695,5 @@ $('#sidebar-backdrop').addEventListener('click', closeSidebar);
 
 if (await guard()) {
   loadSidebarCounts();
-  navigate('dashboard');
+  navigate('dashboard', { replace: true });
 }

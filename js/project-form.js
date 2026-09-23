@@ -35,6 +35,8 @@ let content, currentUser, onExit;
 let state, projectId, stepIndex, isEdit;
 let lookups = { developers: [], cities: [], localities: [], agents: [] };
 let touched = false;
+let historyPushCount = 0;
+let intentionalExit = false;
 
 const STEP_NAMES = [
   'Basic Information', 'Project Location', 'Size & Scale', 'Status & Construction',
@@ -199,6 +201,8 @@ function freshState() {
 
 /* ============ entry point ============ */
 
+let wizardOpen = false;
+
 export async function openProjectForm(rootEl, user, existingId, exitCb) {
   content = rootEl;
   currentUser = user;
@@ -207,6 +211,9 @@ export async function openProjectForm(rootEl, user, existingId, exitCb) {
   isEdit = !!existingId;
   stepIndex = 1;
   touched = false;
+  historyPushCount = 0;
+  intentionalExit = false;
+  wizardOpen = true;
 
   content.innerHTML = `<div class="empty">Loading project form…</div>`;
   await loadLookups();
@@ -219,6 +226,46 @@ export async function openProjectForm(rootEl, user, existingId, exitCb) {
   }
 
   renderShell();
+  pushWizardState();
+}
+
+// Every step change (Next, stepper/Edit jump) pushes one browser history entry, so the
+// phone/browser back button steps back through the wizard one step at a time — and, once
+// past the first step, exits the wizard back to whichever page opened it (also via back).
+function pushWizardState() {
+  historyPushCount++;
+  history.pushState({ pfWizard: true, step: stepIndex }, '', location.hash);
+}
+
+// Whether project-form.js currently owns #content — app.js's single popstate listener
+// checks this before deciding whether to route the event here or handle it itself.
+export function isWizardOpen() {
+  return wizardOpen;
+}
+
+// Called by app.js's popstate listener (never registers its own — see below for why: two
+// independent listeners on the same event raced, with app.js's listener free to repaint
+// #content with the target page before this module got a chance to "cancel" an exit).
+// Returns true if this event was fully handled here (app.js should do nothing further),
+// false if this was a real exit and app.js should go on to render whatever page the
+// history entry landed on.
+export function handleWizardPopState(e) {
+  const st = e.state;
+  if (st && st.pfWizard) {
+    stepIndex = st.step;
+    renderStepBody();
+    return true;
+  }
+  if (!intentionalExit && touched && !confirm('Leave this form? Unsaved changes on the current step may be lost.')) {
+    pushWizardState();
+    return true;
+  }
+  content.removeEventListener('input', onFieldInput);
+  content.removeEventListener('change', onFieldChange);
+  content.removeEventListener('click', onFieldClick);
+  wizardOpen = false;
+  intentionalExit = false;
+  return false;
 }
 
 async function loadLookups() {
@@ -304,7 +351,7 @@ function renderShell() {
     </div>
   </div>`;
 
-  $('#pf-close').addEventListener('click', () => { if (stepIndex > 1) { goBack(); } else { closeForm(); } });
+  $('#pf-close').addEventListener('click', () => history.back());
   $('#pf-save-draft').addEventListener('click', () => saveCurrentAndDraft());
   $('#pf-back').addEventListener('click', goBack);
   $('#pf-next').addEventListener('click', goNext);
@@ -324,10 +371,17 @@ function renderStepper() {
     return `<button type="button" class="step ${cls}" data-goto="${n}"><span class="num"><span>${n}</span></span>${esc(name)}</button>`;
   }).join('');
   $('#pf-stepper').innerHTML = html;
-  content.querySelectorAll('[data-goto]').forEach(b => b.addEventListener('click', () => {
-    const n = Number(b.dataset.goto);
-    if (n <= stepIndex || projectId) { stepIndex = n; renderStepBody(); }
-  }));
+}
+
+// Handles both the left stepper's step buttons and the Review page's per-section "Edit"
+// buttons — both carry [data-goto]. Delegated on `content` (see onFieldClick) so it keeps
+// working after renderStepBody() replaces the panel body, unlike a direct per-render bind.
+function gotoStep(n) {
+  if (n <= stepIndex || projectId) {
+    stepIndex = n;
+    pushWizardState();
+    renderStepBody();
+  }
 }
 
 function renderStepBody() {
@@ -417,6 +471,8 @@ function applyBind(el) {
 }
 
 function onFieldClick(e) {
+  const goto = e.target.closest('[data-goto]');
+  if (goto) { gotoStep(Number(goto.dataset.goto)); return; }
   const addItem = e.target.closest('[data-add-item]');
   if (addItem) { addRepeatItem(addItem.dataset.addItem, addItem.dataset.arg); return; }
   const rmItem = e.target.closest('[data-remove-item]');
@@ -829,9 +885,8 @@ function toast(msg, isError) {
 
 /* ============ navigation / persistence ============ */
 
-async function goBack() {
-  handleSpecialBindings();
-  if (stepIndex > 1) { stepIndex--; renderStepBody(); }
+function goBack() {
+  history.back();
 }
 
 async function goNext() {
@@ -855,6 +910,7 @@ async function goNext() {
     $('#pf-next').disabled = false;
   }
   stepIndex++;
+  pushWizardState();
   renderStepBody();
 }
 
@@ -1146,10 +1202,18 @@ async function submitForVerification() {
   }
 }
 
+// Used after a successful submit — exits immediately (no confirm) and unwinds every
+// history entry the wizard pushed in one go, so the back button lands on whatever page
+// was open before the wizard, not back inside the now-submitted form.
 function closeForm() {
-  if (touched && !confirm('Leave this form? Unsaved changes on the current step may be lost.')) return;
-  content.removeEventListener('input', onFieldInput);
-  content.removeEventListener('change', onFieldChange);
-  content.removeEventListener('click', onFieldClick);
-  onExit?.();
+  if (!historyPushCount) {
+    content.removeEventListener('input', onFieldInput);
+    content.removeEventListener('change', onFieldChange);
+    content.removeEventListener('click', onFieldClick);
+    wizardOpen = false;
+    onExit?.();
+    return;
+  }
+  intentionalExit = true;
+  history.go(-historyPushCount);
 }
