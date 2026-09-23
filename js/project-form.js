@@ -67,6 +67,12 @@ const STEP_SUB = [
 // index into which core-save happens on "Next" (after this step, the project row can be created)
 const FIRST_SAVE_AFTER_STEP = 4;
 
+/* ============ shared enum option lists (avoid re-declaring the same DB check-constraint values per step) ============ */
+
+const CONSTRUCTION_STAGE_OPTIONS = enumOpts(['pre_launch', 'excavation', 'foundation', 'structure', 'brickwork', 'finishing', 'final_completion', 'ready_to_move', 'other']);
+const POSSESSION_STATUS_OPTIONS = enumOpts(['not_started', 'under_construction', 'possession_started', 'ready_to_move', 'completed']);
+const AREA_UNIT_OPTIONS = enumOpts(['sq_ft', 'sq_m']);
+
 /* ============ field defs (map 1:1 to residential_projects columns) ============ */
 
 const FIELDS = {
@@ -98,12 +104,12 @@ const FIELDS = {
     { key: 'open_green_area_value', label: 'Open / Green Area', type: 'number' },
     { key: 'open_green_area_unit', label: 'Open / Green Area Unit', type: 'select', options: enumOpts(['acre', 'sq_ft', 'sq_m', 'percent']) },
     { key: 'built_up_project_area', label: 'Built-up Project Area', type: 'number' },
-    { key: 'built_up_project_area_unit', label: 'Built-up Area Unit', type: 'select', options: enumOpts(['sq_ft', 'sq_m']) }
+    { key: 'built_up_project_area_unit', label: 'Built-up Area Unit', type: 'select', options: AREA_UNIT_OPTIONS }
   ],
   status: [
     { key: 'status', label: 'Project Status', req: true, type: 'select', options: enumOpts(['upcoming', 'under_construction', 'ready_to_move', 'completed']) },
-    { key: 'construction_stage', label: 'Construction Stage', type: 'select', options: enumOpts(['pre_launch', 'excavation', 'foundation', 'structure', 'brickwork', 'finishing', 'final_completion', 'ready_to_move', 'other']) },
-    { key: 'possession_status', label: 'Possession Status', type: 'select', options: enumOpts(['not_started', 'under_construction', 'possession_started', 'ready_to_move', 'completed']) },
+    { key: 'construction_stage', label: 'Construction Stage', type: 'select', options: CONSTRUCTION_STAGE_OPTIONS },
+    { key: 'possession_status', label: 'Possession Status', type: 'select', options: POSSESSION_STATUS_OPTIONS },
     { key: 'project_phase', label: 'Project Phase', placeholder: 'e.g. Phase 1' },
     { key: 'construction_start_date', label: 'Construction Start Date', type: 'date' },
     { key: 'expected_completion_date', label: 'Expected Completion Date', type: 'date' },
@@ -111,9 +117,7 @@ const FIELDS = {
     { key: 'target_possession_date', label: 'Target Possession Date', type: 'date' }
   ],
   pricing: [
-    { key: 'starting_price', label: 'Starting Price', type: 'number', unit: '₹' },
-    { key: 'maximum_price', label: 'Maximum Price', type: 'number', unit: '₹' },
-    { key: 'price_on_request', label: 'Price on Request', type: 'checkbox' },
+    { key: 'price_on_request', label: 'Price on Request (project-wide override)', type: 'checkbox' },
     { key: 'base_price', label: 'Base Price', type: 'number', unit: '₹' },
     { key: 'floor_rise_charges', label: 'Floor Rise Charges', type: 'number', unit: '₹' },
     { key: 'parking_charges', label: 'Parking Charges', type: 'number', unit: '₹' },
@@ -514,7 +518,7 @@ function renderBody(i) {
     case 3: return renderFieldsGrid(FIELDS.size, state.project, 'project');
     case 4: return renderFieldsGrid(FIELDS.status, state.project, 'project');
     case 5: return renderConfigurations();
-    case 6: return renderFieldsGrid(FIELDS.pricing, state.project, 'project');
+    case 6: return renderPricing();
     case 7: return renderFieldsGrid(FIELDS.specs, state.project, 'project');
     case 8: return renderTowers();
     case 9: return renderAmenities();
@@ -542,6 +546,22 @@ function renderBasic() {
   </div>`;
 }
 
+function priceRangeFromConfigs() {
+  const starts = state.configurations.map(c => Number(c.starting_price)).filter(n => n > 0);
+  const maxes = state.configurations.map(c => Number(c.maximum_price || c.starting_price)).filter(n => n > 0);
+  if (!starts.length) return { min: null, max: null };
+  return { min: Math.min(...starts), max: maxes.length ? Math.max(...maxes) : Math.min(...starts) };
+}
+
+function renderPricing() {
+  const range = priceRangeFromConfigs();
+  const fmt = v => v == null ? '—' : `₹${Number(v).toLocaleString('en-IN')}`;
+  const rangeDisplay = state.project.price_on_request ? 'Price on request' : (range.min == null ? 'Add unit variants in Step 5 to calculate this' : (range.min === range.max ? fmt(range.min) : `${fmt(range.min)} – ${fmt(range.max)}`));
+  const rangeField = `<div class="field full"><label>Starting – Maximum Price</label><input type="text" value="${esc(rangeDisplay)}" disabled><span class="hint">Calculated from the unit variants added in Residential Configurations (Step 5) — not entered here.</span></div>`;
+  const fieldsHtml = FIELDS.pricing.map(s => renderField(s, state.project[s.key], `data-bind="project.${s.key}"`)).join('');
+  return `<div class="form-grid">${rangeField}${fieldsHtml}</div>`;
+}
+
 function renderSeo() {
   if (!state.project.slug) state.project.slug = slugify([state.project.project_name, lookups.localities.find(l => l.id === state.project.locality_id)?.name, lookups.cities.find(c => c.id === state.project.city_id)?.name].filter(Boolean).join('-'));
   return `<div class="form-grid">${FIELDS.seo.map(s => renderField(s, state.project[s.key], `data-bind="project.${s.key}"`)).join('')}
@@ -556,12 +576,13 @@ function repeatCard(title, idx, bodyHtml, key) {
 const CONFIG_FIELDS = [
   { key: 'bhk_type', label: 'BHK', req: true },
   { key: 'variant_name', label: 'Variant Name', placeholder: 'e.g. 2 BHK Premium' },
-  { key: 'area_unit', label: 'Area Unit', type: 'select', options: enumOpts(['sq_ft', 'sq_m']) },
+  { key: 'area_unit', label: 'Area Unit', type: 'select', options: AREA_UNIT_OPTIONS },
   { key: 'number_of_units', label: 'Number of Units', type: 'number' },
   { key: 'carpet_area', label: 'Carpet Area', type: 'number', unit: 'area' },
   { key: 'built_up_area', label: 'Built-up Area', type: 'number', unit: 'area' },
   { key: 'super_built_up_area', label: 'Super Built-up Area', type: 'number', unit: 'area' },
   { key: 'starting_price', label: 'Starting Price', type: 'number', unit: '₹' },
+  { key: 'maximum_price', label: 'Maximum Price', type: 'number', unit: '₹' },
   { key: 'price_type', label: 'Price Type', type: 'select', options: enumOpts(['total_price', 'price_per_sq_ft', 'price_per_sq_m']) },
   { key: 'availability', label: 'Availability', type: 'select', options: enumOpts(['available', 'sold_out', 'on_request']) },
   { key: 'parking_included', label: 'Parking', type: 'select', options: enumOpts(['included', 'additional', 'not_available']) }
@@ -584,8 +605,8 @@ const TOWER_FIELDS = [
   { key: 'number_of_floors', label: 'Number of Floors', type: 'number' },
   { key: 'number_of_units', label: 'Number of Units', type: 'number' },
   { key: 'tower_status', label: 'Tower Status', type: 'select', options: enumOpts(['upcoming', 'under_construction', 'ready_to_move', 'completed', 'other']) },
-  { key: 'construction_stage', label: 'Construction Stage', type: 'select', options: enumOpts(['pre_launch', 'excavation', 'foundation', 'structure', 'brickwork', 'finishing', 'final_completion', 'ready_to_move', 'other']) },
-  { key: 'possession_status', label: 'Possession Status', type: 'select', options: enumOpts(['not_started', 'under_construction', 'possession_started', 'ready_to_move', 'completed']) },
+  { key: 'construction_stage', label: 'Construction Stage', type: 'select', options: CONSTRUCTION_STAGE_OPTIONS },
+  { key: 'possession_status', label: 'Possession Status', type: 'select', options: POSSESSION_STATUS_OPTIONS },
   { key: 'construction_start_date', label: 'Construction Start Date', type: 'date' },
   { key: 'expected_completion_date', label: 'Expected Completion Date', type: 'date' },
   { key: 'construction_details', label: 'Construction Details', type: 'textarea', full: true }
@@ -673,7 +694,7 @@ function renderFaqs() {
 const UPDATE_FIELDS = [
   { key: 'update_title', label: 'Update Title', req: true },
   { key: 'update_date', label: 'Update Date', req: true, type: 'date' },
-  { key: 'construction_stage', label: 'Construction Stage', type: 'select', options: enumOpts(['pre_launch', 'excavation', 'foundation', 'structure', 'brickwork', 'finishing', 'final_completion', 'ready_to_move', 'other']) },
+  { key: 'construction_stage', label: 'Construction Stage', type: 'select', options: CONSTRUCTION_STAGE_OPTIONS },
   { key: 'is_published', label: 'Published', type: 'checkbox' },
   { key: 'description', label: 'Description', type: 'textarea', full: true }
 ];
@@ -773,7 +794,7 @@ function renderReview() {
     ${section('3. Size & Scale', [['Land Area', p.total_land_area ? `${p.total_land_area} ${p.land_area_unit}` : '—'], ['Towers', p.total_towers_buildings], ['Total Units', p.total_residential_units]], 3)}
     ${section('4. Status & Construction', [['Status', p.status], ['Construction Stage', p.construction_stage], ['Target Possession', p.target_possession_date]], 4)}
     ${section('5. Configurations', [['Variants', `${state.configurations.length} added`]], 5)}
-    ${section('6. Pricing & Cost', [['Starting Price', p.price_on_request ? 'On Request' : p.starting_price], ['GST Applicable', p.gst_applicable ? 'Yes' : 'No']], 6)}
+    ${section('6. Pricing & Cost', [['Starting Price', p.price_on_request ? 'On Request' : priceRangeFromConfigs().min], ['GST Applicable', p.gst_applicable ? 'Yes' : 'No']], 6)}
     ${section('7. Apartment Specifications', [['Flooring', p.flooring], ['Kitchen', p.kitchen]], 7)}
     ${section('8. Tower / Building Details', [['Towers added', `${state.towers.length}`]], 8)}
     ${section('9. Amenities & Features', [['Selected', `${state.amenities.length} amenities`]], 9)}
@@ -942,7 +963,7 @@ function projectPayload() {
     project_phase: str(p.project_phase), construction_start_date: str(p.construction_start_date),
     expected_completion_date: str(p.expected_completion_date), rera_possession_date: str(p.rera_possession_date),
     target_possession_date: str(p.target_possession_date),
-    starting_price: num(p.starting_price), maximum_price: num(p.maximum_price), price_on_request: !!p.price_on_request,
+    starting_price: priceRangeFromConfigs().min, maximum_price: priceRangeFromConfigs().max, price_on_request: !!p.price_on_request,
     base_price: num(p.base_price), floor_rise_charges: num(p.floor_rise_charges), parking_charges: num(p.parking_charges),
     clubhouse_charges: num(p.clubhouse_charges), maintenance_charges: num(p.maintenance_charges), other_charges: num(p.other_charges),
     gst_applicable: !!p.gst_applicable, price_disclaimer: str(p.price_disclaimer), registration_stamp_duty_disclaimer: str(p.registration_stamp_duty_disclaimer),
