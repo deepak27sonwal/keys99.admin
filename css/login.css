@@ -286,7 +286,7 @@ blockquote{
 .secure-note svg{flex:none;color:var(--green)}
 
 /* Tablet: keep the hero photo, stack it above the card */
-@media(max-width:980px) and (min-width:761px){
+@media(max-width:979px) and (min-width:761px){
   .login-shell{
     background:
       linear-gradient(0deg,rgba(2,15,14,.72),rgba(2,15,14,.72)),
