@@ -433,32 +433,53 @@ function buildActivity(historyRows, enquiryRows) {
 
 /* ---------------- Residential Projects ---------------- */
 
+let residentialTemplateCache = null;
+async function loadResidentialTemplate() {
+  if (residentialTemplateCache) return residentialTemplateCache;
+  const html = await (await fetch('./residential-projects.html')).text();
+  const doc = new DOMParser().parseFromString(html, 'text/html');
+  residentialTemplateCache = {
+    panelHtml: doc.getElementById('residential-projects-panel').outerHTML,
+    rowTemplate: doc.getElementById('residential-row-template').innerHTML.trim()
+  };
+  return residentialTemplateCache;
+}
+
 async function residentialPage() {
   content.innerHTML = pageHead('Residential Projects', 'Manage the residential listing catalog') + `<div class="empty">Loading…</div>`;
-  const { data, error } = await sb.from('residential_projects')
-    .select('id,project_code,project_name,project_type,status,moderation_status,starting_price,price_on_request,cities(name),localities(name)')
-    .order('updated_at', { ascending: false }).limit(200);
 
-  const toolbar = `<div class="toolbar">
-    <div class="list-search">${icon('search', 14)}<input type="text" placeholder="Search projects" disabled></div>
-    <button class="btn-primary" id="add-project">+ Add Project</button>
-  </div>`;
+  const [{ panelHtml, rowTemplate }, { data, error }] = await Promise.all([
+    loadResidentialTemplate(),
+    sb.from('residential_projects')
+      .select('id,project_code,project_name,project_type,status,moderation_status,starting_price,price_on_request,cities(name),localities(name)')
+      .order('updated_at', { ascending: false }).limit(200)
+  ]);
 
-  const rows = error
-    ? emptyRow(7, error.message)
-    : (data.length ? data.map(p => `
-      <tr>
-        <td><div class="proj-cell"><span class="proj-thumb">${icon('home', 16)}</span><div><div class="proj-name">${escapeHtml(p.project_name)}</div><div class="proj-code">${escapeHtml(p.project_code)}</div></div></div></td>
-        <td>${escapeHtml(p.project_type || '—')}</td>
-        <td>${escapeHtml(p.localities?.name || '—')}${p.cities?.name ? ', ' + escapeHtml(p.cities.name) : ''}</td>
-        <td>${fmtPrice(p.starting_price, p.price_on_request)}</td>
-        <td>${escapeHtml((p.status || '—').replace(/_/g, ' '))}</td>
-        <td>${pill(p.moderation_status)}</td>
-        <td>${rowActions('project', p.id)}</td>
-      </tr>`).join('') : emptyRow(7, 'No residential projects yet. Click "+ Add Project" to create the first one.'));
+  content.innerHTML = pageHead('Residential Projects', 'Manage the residential listing catalog') + panelHtml;
 
-  content.innerHTML = pageHead('Residential Projects', 'Manage the residential listing catalog') +
-    tablePanel('All Projects', toolbar, ['Project', 'Type', 'Location', 'Starting Price', 'Status', 'Moderation', 'Actions'], rows);
+  const tbody = $('#residential-projects-rows');
+  if (error) {
+    tbody.innerHTML = emptyRow(7, error.message);
+  } else if (!data.length) {
+    tbody.innerHTML = emptyRow(7, 'No residential projects yet. Click "+ Add Project" to create the first one.');
+  } else {
+    tbody.innerHTML = '';
+    data.forEach(p => {
+      const tpl = document.createElement('template');
+      tpl.innerHTML = rowTemplate;
+      const row = tpl.content.firstElementChild;
+      row.querySelector('[data-field="icon"]').innerHTML = icon('home', 16);
+      row.querySelector('[data-field="project_name"]').textContent = p.project_name;
+      row.querySelector('[data-field="project_code"]').textContent = p.project_code;
+      row.querySelector('[data-field="project_type"]').textContent = p.project_type || '—';
+      row.querySelector('[data-field="location"]').textContent = `${p.localities?.name || '—'}${p.cities?.name ? ', ' + p.cities.name : ''}`;
+      row.querySelector('[data-field="price"]').textContent = fmtPrice(p.starting_price, p.price_on_request);
+      row.querySelector('[data-field="status"]').textContent = (p.status || '—').replace(/_/g, ' ');
+      row.querySelector('[data-field="moderation"]').innerHTML = pill(p.moderation_status);
+      row.querySelector('[data-field="actions"]').innerHTML = rowActions('project', p.id);
+      tbody.appendChild(row);
+    });
+  }
 
   $('#add-project')?.addEventListener('click', () => openProjectForm(content, currentUser, null, () => navigate('residential')));
   bindStubs();

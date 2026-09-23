@@ -1,0 +1,8 @@
+/* Residential Projects listing — page-specific rules only.
+   Sidebar/topbar shell, design tokens, and the shared .panel/.table/.pill/.toolbar/
+   .proj-cell/.row-actions components all live in css/admin.css and are reused as-is
+   here (and by every other list page: Developers, Agents, Cities, Enquiries,
+   Moderation, Dashboard) — duplicating them into this file was avoided on purpose. */
+
+#residential-projects-panel table td:nth-child(1) { min-width: 220px; }
+#residential-projects-panel table td:nth-child(3) { white-space: nowrap; }
