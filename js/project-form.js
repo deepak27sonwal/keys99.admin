@@ -573,6 +573,20 @@ function repeatCard(title, idx, bodyHtml, key) {
   return `<div class="repeat-card"><div class="repeat-card-head"><b>${esc(title)}</b><button type="button" class="repeat-remove" data-remove-item="${key}" data-idx="${idx}">✕</button></div>${bodyHtml}</div>`;
 }
 
+// Shared renderer for the repeat-card steps (Configurations, Towers, Nearby, FAQs, Documents, Litigation, Construction Updates) —
+// they all follow the same map/repeatCard/add-button shape and only differ in fields, title and any extra per-item HTML.
+function renderRepeatStep(key, fields, opts) {
+  const items = getPath(state, key) || [];
+  const list = items.map((item, i) => {
+    const fieldsHtml = fields.map(s => renderField(s, item[s.key], `data-bind="${key}.${i}.${s.key}"`)).join('');
+    const extra = opts.extraHtml ? opts.extraHtml(item, i) : '';
+    const title = (opts.titleOf && opts.titleOf(item, i)) || `${opts.singular} ${i + 1}`;
+    return repeatCard(title, i, `<div class="form-grid">${fieldsHtml}${extra}</div>`, key);
+  }).join('');
+  return `<div class="repeat-list">${list || `<div class="empty">${esc(opts.emptyText)}</div>`}</div>
+    <button type="button" class="add-repeat" data-add-item="${key}">+ ${esc(opts.addLabel)}</button>`;
+}
+
 const CONFIG_FIELDS = [
   { key: 'bhk_type', label: 'BHK', req: true },
   { key: 'variant_name', label: 'Variant Name', placeholder: 'e.g. 2 BHK Premium' },
@@ -588,15 +602,14 @@ const CONFIG_FIELDS = [
   { key: 'parking_included', label: 'Parking', type: 'select', options: enumOpts(['included', 'additional', 'not_available']) }
 ];
 function renderConfigurations() {
-  const list = state.configurations.map((c, i) => {
-    const fieldsHtml = CONFIG_FIELDS.map(s => renderField(s, c[s.key], `data-bind="configurations.${i}.${s.key}"`)).join('');
-    const parkTypes = ['covered', 'open', 'mechanical', 'ev', 'other'];
-    const parkChips = parkTypes.map(t => `<span class="chip${(c.parking_type || []).includes(t) ? ' active' : ''}" data-toggle-parktype="${i}" data-val="${t}" style="cursor:pointer">${esc(t)}</span>`).join('');
-    return repeatCard(`Configuration ${i + 1}`, i, `<div class="form-grid">${fieldsHtml}
-      <div class="field full"><label>Parking Type</label><div class="chip-row">${parkChips}</div></div></div>`, 'configurations');
-  }).join('');
-  return `<div class="repeat-list">${list || '<div class="empty">No configurations added yet.</div>'}</div>
-    <button type="button" class="add-repeat" data-add-item="configurations">+ Add Unit Variant</button>`;
+  return renderRepeatStep('configurations', CONFIG_FIELDS, {
+    singular: 'Configuration', emptyText: 'No configurations added yet.', addLabel: 'Add Unit Variant',
+    extraHtml: (c, i) => {
+      const parkTypes = ['covered', 'open', 'mechanical', 'ev', 'other'];
+      const parkChips = parkTypes.map(t => `<span class="chip${(c.parking_type || []).includes(t) ? ' active' : ''}" data-toggle-parktype="${i}" data-val="${t}" style="cursor:pointer">${esc(t)}</span>`).join('');
+      return `<div class="field full"><label>Parking Type</label><div class="chip-row">${parkChips}</div></div>`;
+    }
+  });
 }
 
 const TOWER_FIELDS = [
@@ -612,14 +625,10 @@ const TOWER_FIELDS = [
   { key: 'construction_details', label: 'Construction Details', type: 'textarea', full: true }
 ];
 function renderTowers() {
-  const list = state.towers.map((t, i) => {
-    const fieldsHtml = TOWER_FIELDS.map(s => renderField(s, t[s.key], `data-bind="towers.${i}.${s.key}"`)).join('');
-    return repeatCard(t.tower_name || `Tower ${i + 1}`, i, `<div class="form-grid">${fieldsHtml}
-      ${chipRowHtml('Configurations in this tower', '', t.configurations, `towers.${i}.configurations`, `pf-tower-cfg-${i}`)}
-    </div>`, 'towers');
-  }).join('');
-  return `<div class="repeat-list">${list || '<div class="empty">No towers added yet.</div>'}</div>
-    <button type="button" class="add-repeat" data-add-item="towers">+ Add Tower / Building</button>`;
+  return renderRepeatStep('towers', TOWER_FIELDS, {
+    titleOf: t => t.tower_name, singular: 'Tower', emptyText: 'No towers added yet.', addLabel: 'Add Tower / Building',
+    extraHtml: (t, i) => chipRowHtml('Configurations in this tower', '', t.configurations, `towers.${i}.configurations`, `pf-tower-cfg-${i}`)
+  });
 }
 
 function renderAmenities() {
@@ -652,12 +661,9 @@ const NEARBY_FIELDS = [
   { key: 'description', label: 'Description', type: 'textarea', full: true }
 ];
 function renderNearby() {
-  const list = state.nearby.map((n, i) => {
-    const fieldsHtml = NEARBY_FIELDS.map(s => renderField(s, n[s.key], `data-bind="nearby.${i}.${s.key}"`)).join('');
-    return repeatCard(n.name || `Location ${i + 1}`, i, `<div class="form-grid">${fieldsHtml}</div>`, 'nearby');
-  }).join('');
-  return `<div class="repeat-list">${list || '<div class="empty">No nearby locations added yet.</div>'}</div>
-    <button type="button" class="add-repeat" data-add-item="nearby">+ Add Nearby Landmark</button>`;
+  return renderRepeatStep('nearby', NEARBY_FIELDS, {
+    titleOf: n => n.name, singular: 'Location', emptyText: 'No nearby locations added yet.', addLabel: 'Add Nearby Landmark'
+  });
 }
 
 const PROSCONS_FIELDS = [{ key: 'content', label: '', full: true, placeholder: 'Describe this point…' }];
@@ -683,12 +689,9 @@ const FAQ_FIELDS = [
   { key: 'is_published', label: 'Published', type: 'checkbox' }
 ];
 function renderFaqs() {
-  const list = state.faqs.map((f, i) => {
-    const fieldsHtml = FAQ_FIELDS.map(s => renderField(s, f[s.key], `data-bind="faqs.${i}.${s.key}"`)).join('');
-    return repeatCard(f.question || `FAQ ${i + 1}`, i, `<div class="form-grid">${fieldsHtml}</div>`, 'faqs');
-  }).join('');
-  return `<div class="repeat-list">${list || '<div class="empty">No FAQs added yet.</div>'}</div>
-    <button type="button" class="add-repeat" data-add-item="faqs">+ Add FAQ</button>`;
+  return renderRepeatStep('faqs', FAQ_FIELDS, {
+    titleOf: f => f.question, singular: 'FAQ', emptyText: 'No FAQs added yet.', addLabel: 'Add FAQ'
+  });
 }
 
 const UPDATE_FIELDS = [
@@ -699,14 +702,14 @@ const UPDATE_FIELDS = [
   { key: 'description', label: 'Description', type: 'textarea', full: true }
 ];
 function renderUpdates() {
-  const list = state.updates.map((u, i) => {
-    const fieldsHtml = UPDATE_FIELDS.map(s => renderField(s, u[s.key], `data-bind="updates.${i}.${s.key}"`)).join('');
-    const media = (u.media || []).map((m, mi) => `<div class="upload-thumb"><span class="name">${esc(m.media_path?.split('/').pop() || 'photo')}</span></div>`).join('');
-    const uploadHtml = projectId ? `<label class="upload-box">📷 Add site photo<input type="file" accept="image/*" data-update-upload="${i}"></label>${media}` : `<div class="hint">Save the project first to attach photos.</div>`;
-    return repeatCard(u.update_title || `Update ${i + 1}`, i, `<div class="form-grid">${fieldsHtml}<div class="field full">${uploadHtml}</div></div>`, 'updates');
-  }).join('');
-  return `<div class="repeat-list">${list || '<div class="empty">No construction updates added yet.</div>'}</div>
-    <button type="button" class="add-repeat" data-add-item="updates">+ Add Construction Update</button>`;
+  return renderRepeatStep('updates', UPDATE_FIELDS, {
+    titleOf: u => u.update_title, singular: 'Update', emptyText: 'No construction updates added yet.', addLabel: 'Add Construction Update',
+    extraHtml: (u, i) => {
+      const media = (u.media || []).map(m => `<div class="upload-thumb"><span class="name">${esc(m.media_path?.split('/').pop() || 'photo')}</span></div>`).join('');
+      const uploadHtml = projectId ? `<label class="upload-box">📷 Add site photo<input type="file" accept="image/*" data-update-upload="${i}"></label>${media}` : `<div class="hint">Save the project first to attach photos.</div>`;
+      return `<div class="field full">${uploadHtml}</div>`;
+    }
+  });
 }
 
 const DOC_FIELDS = [
@@ -716,15 +719,15 @@ const DOC_FIELDS = [
   { key: 'description', label: 'Description', type: 'textarea', full: true }
 ];
 function renderDocuments() {
-  const list = state.documents.map((d, i) => {
-    const fieldsHtml = DOC_FIELDS.map(s => renderField(s, d[s.key], `data-bind="documents.${i}.${s.key}"`)).join('');
-    const uploadHtml = d.file_name
-      ? `<div class="upload-thumb"><span class="name">${esc(d.file_name)}</span><button type="button" data-remove-upload="documents.${i}.file">✕</button></div>`
-      : (projectId ? `<label class="upload-box">📄 Click to upload file<input type="file" data-doc-upload="${i}"></label>` : `<div class="hint">Save the project first (through Status &amp; Construction) to upload files.</div>`);
-    return repeatCard(d.title || `Document ${i + 1}`, i, `<div class="form-grid">${fieldsHtml}<div class="field full">${uploadHtml}</div></div>`, 'documents');
-  }).join('');
-  return `<div class="repeat-list">${list || '<div class="empty">No documents added yet.</div>'}</div>
-    <button type="button" class="add-repeat" data-add-item="documents">+ Add Document</button>`;
+  return renderRepeatStep('documents', DOC_FIELDS, {
+    titleOf: d => d.title, singular: 'Document', emptyText: 'No documents added yet.', addLabel: 'Add Document',
+    extraHtml: (d, i) => {
+      const uploadHtml = d.file_name
+        ? `<div class="upload-thumb"><span class="name">${esc(d.file_name)}</span><button type="button" data-remove-upload="documents.${i}.file">✕</button></div>`
+        : (projectId ? `<label class="upload-box">📄 Click to upload file<input type="file" data-doc-upload="${i}"></label>` : `<div class="hint">Save the project first (through Status &amp; Construction) to upload files.</div>`);
+      return `<div class="field full">${uploadHtml}</div>`;
+    }
+  });
 }
 
 const LIT_FIELDS = [
@@ -737,15 +740,16 @@ const LIT_FIELDS = [
   { key: 'case_description', label: 'Case Description', type: 'textarea', full: true }
 ];
 function renderLitigation() {
-  const list = state.litigation.map((l, i) => {
-    const fieldsHtml = LIT_FIELDS.map(s => renderField(s, l[s.key], `data-bind="litigation.${i}.${s.key}"`)).join('');
-    const uploadHtml = l.supporting_document_name
-      ? `<div class="upload-thumb"><span class="name">${esc(l.supporting_document_name)}</span><button type="button" data-remove-upload="litigation.${i}.supporting_document">✕</button></div>`
-      : (projectId ? `<label class="upload-box">📄 Attach supporting document<input type="file" data-lit-upload="${i}"></label>` : `<div class="hint">Save the project first to attach a document.</div>`);
-    return repeatCard(l.case_title || 'Litigation Entry', i, `<div class="form-grid">${fieldsHtml}<div class="field full">${uploadHtml}</div></div>`, 'litigation');
-  }).join('');
-  return `<div class="repeat-list">${list || '<div class="empty">No litigation entries. Default is "No Known Litigation" if left empty.</div>'}</div>
-    <button type="button" class="add-repeat" data-add-item="litigation">+ Add Litigation Entry</button>`;
+  return renderRepeatStep('litigation', LIT_FIELDS, {
+    titleOf: l => l.case_title, singular: 'Litigation Entry',
+    emptyText: 'No litigation entries. Default is "No Known Litigation" if left empty.', addLabel: 'Add Litigation Entry',
+    extraHtml: (l, i) => {
+      const uploadHtml = l.supporting_document_name
+        ? `<div class="upload-thumb"><span class="name">${esc(l.supporting_document_name)}</span><button type="button" data-remove-upload="litigation.${i}.supporting_document">✕</button></div>`
+        : (projectId ? `<label class="upload-box">📄 Attach supporting document<input type="file" data-lit-upload="${i}"></label>` : `<div class="hint">Save the project first to attach a document.</div>`);
+      return `<div class="field full">${uploadHtml}</div>`;
+    }
+  });
 }
 
 function renderMedia() {
