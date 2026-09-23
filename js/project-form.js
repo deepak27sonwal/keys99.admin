@@ -280,7 +280,7 @@ function renderShell() {
   content.innerHTML = `<div class="wrap">
     <div class="form-head">
       <div class="form-head-left">
-        <button class="back-btn" id="pf-close">←</button>
+        <button class="back-btn" id="pf-close" title="${stepIndex > 1 ? 'Back' : 'Close'}">←</button>
         <div><h1>${isEdit ? 'Edit' : 'Add'} Residential Project</h1><p id="pf-step-label">Step ${stepIndex} of 19 · ${STEP_NAMES[stepIndex - 1]}</p></div>
       </div>
       <div class="form-head-right">
@@ -304,7 +304,7 @@ function renderShell() {
     </div>
   </div>`;
 
-  $('#pf-close').addEventListener('click', closeForm);
+  $('#pf-close').addEventListener('click', () => { if (stepIndex > 1) { goBack(); } else { closeForm(); } });
   $('#pf-save-draft').addEventListener('click', () => saveCurrentAndDraft());
   $('#pf-back').addEventListener('click', goBack);
   $('#pf-next').addEventListener('click', goNext);
@@ -340,6 +340,7 @@ function renderStepBody() {
   $('#pf-footer-label').textContent = `${pct}% complete`;
   $('#pf-back').disabled = stepIndex === 1;
   $('#pf-next').textContent = stepIndex === 19 ? 'Submit for Verification →' : `Next: ${STEP_NAMES[stepIndex] || ''} →`;
+  $('#pf-close').title = stepIndex > 1 ? 'Back' : 'Close';
   handleSpecialBindings();
   window.scrollTo(0, 0);
 }
