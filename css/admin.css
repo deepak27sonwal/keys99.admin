@@ -197,3 +197,112 @@ tr:last-child td{border-bottom:0}
   .content{padding:18px 14px 30px}
   .topbar{padding:12px 14px}
 }
+
+/* ---------- Project Form Wizard ---------- */
+.wrap{max-width:1400px;margin:0 auto}
+.form-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:20px;gap:14px;flex-wrap:wrap}
+.form-head-left{display:flex;align-items:center;gap:14px}
+.form-head h1{font-size:19px;margin:0}
+.form-head p{margin:2px 0 0;font-size:12.5px;color:var(--muted)}
+.form-head-right{display:flex;align-items:center;gap:10px}
+
+.progress-track{height:6px;border-radius:20px;background:var(--line);overflow:hidden;margin-bottom:24px}
+.progress-fill{height:100%;background:linear-gradient(90deg,var(--green),var(--gold));border-radius:20px;transition:width .2s}
+
+.form-shell{display:grid;grid-template-columns:270px 1fr;gap:20px;align-items:start}
+
+.stepper{background:var(--white);border:1px solid var(--line);border-radius:var(--radius-lg);padding:10px;max-height:calc(100vh - 200px);overflow-y:auto;position:sticky;top:14px}
+.stepper .step{display:flex;align-items:center;gap:11px;padding:10px 12px;border-radius:9px;font-size:12.5px;font-weight:600;color:var(--ink-soft);margin-bottom:1px;width:100%;text-align:left}
+.stepper .step:hover{background:var(--bg)}
+.stepper .step.active{background:var(--green-tint);color:var(--green)}
+.stepper .step .num{width:22px;height:22px;border-radius:50%;background:var(--line);color:var(--muted);display:flex;align-items:center;justify-content:center;font-size:10.5px;font-weight:800;flex:none}
+.stepper .step.active .num{background:var(--green);color:#fff}
+.stepper .step.done .num{background:var(--green);color:#fff}
+.stepper .step.done .num span{display:none}
+.stepper .step.done .num::after{content:"✓"}
+
+.form-panel{background:var(--white);border:1px solid var(--line);border-radius:var(--radius-lg)}
+.form-panel-head{padding:20px 26px;border-bottom:1px solid var(--line)}
+.form-panel-head h2{font-size:16px;margin:0}
+.form-panel-head p{margin:4px 0 0;font-size:12.5px;color:var(--muted)}
+.form-panel-body{padding:24px 26px}
+
+.form-grid{display:grid;grid-template-columns:1fr 1fr;gap:18px}
+.review-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px}
+.field{display:flex;flex-direction:column;gap:6px}
+.field.full{grid-column:1 / -1}
+.field label{font-size:12.5px;font-weight:700;color:var(--ink)}
+.field label .req{color:var(--danger)}
+.field .hint{font-size:11px;color:var(--muted);margin-top:-2px}
+.field input,.field select,.field textarea{
+  border:1px solid #d5dfde;border-radius:9px;padding:10px 13px;font-size:13px;color:var(--ink);outline:none;background:var(--white);width:100%;
+}
+.field input:focus,.field select:focus,.field textarea:focus{border-color:var(--green);box-shadow:0 0 0 3px rgba(4,107,94,.12)}
+.field textarea{resize:vertical;min-height:90px}
+.field-suffix{position:relative}
+.field-suffix input{padding-right:46px}
+.field-suffix span{position:absolute;right:12px;top:50%;transform:translateY(-50%);font-size:11.5px;color:var(--muted);font-weight:700}
+.field-error{color:var(--danger);font-size:11px}
+.field.invalid input,.field.invalid select,.field.invalid textarea{border-color:var(--danger)}
+.chip-row{display:flex;flex-wrap:wrap;gap:8px}
+.chip{padding:8px 14px;border-radius:20px;border:1px solid var(--line);font-size:12px;font-weight:600;color:var(--ink-soft);background:var(--white)}
+.chip.active{background:var(--green);border-color:var(--green);color:#fff}
+.chip.chip-add{border-style:dashed;color:var(--green);border-color:#b7d8d3;cursor:pointer}
+.chip.chip-add:hover{background:var(--green-tint)}
+.check-group{display:grid;grid-template-columns:1fr 1fr;gap:8px 18px}
+.check-group label{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--ink-soft);font-weight:600}
+.check-group input[type=checkbox]{width:15px;height:15px;accent-color:var(--green)}
+
+.form-footer{display:flex;align-items:center;justify-content:space-between;padding:16px 26px;border-top:1px solid var(--line)}
+.footer-step-label{font-size:12px;color:var(--muted);font-weight:600}
+.footer-actions{display:flex;gap:10px}
+.btn-outline{padding:10px 18px;border-radius:9px;border:1px solid var(--line);background:var(--white);font-weight:700;font-size:12.5px;color:var(--ink-soft)}
+.btn-next{padding:10px 22px;border-radius:9px;background:linear-gradient(135deg,var(--green),var(--green-dark));color:#fff;font-weight:700;font-size:12.5px}
+.btn-next:disabled,.btn-outline:disabled{opacity:.45;cursor:not-allowed}
+
+.repeat-list{display:flex;flex-direction:column;gap:14px;margin-bottom:16px}
+.repeat-card{border:1px solid var(--line);border-radius:var(--radius-md);padding:18px 20px;position:relative}
+.repeat-card-head{display:flex;align-items:center;gap:10px;margin-bottom:14px}
+.repeat-card-head b{font-size:13px}
+.repeat-remove{margin-left:auto;width:26px;height:26px;border-radius:7px;background:var(--bg);color:var(--danger);display:flex;align-items:center;justify-content:center}
+.add-repeat{display:flex;align-items:center;justify-content:center;gap:8px;width:100%;padding:12px;border:1.5px dashed var(--line);border-radius:var(--radius-md);color:var(--green);font-weight:700;font-size:12.5px}
+.add-repeat:hover{background:var(--green-tint);border-color:var(--green)}
+
+.upload-box{border:1.5px dashed var(--line);border-radius:var(--radius-md);padding:20px;text-align:center;color:var(--muted);font-size:12.5px;cursor:pointer}
+.upload-box:hover{border-color:var(--green);background:var(--green-tint)}
+.upload-box input[type=file]{display:none}
+.upload-thumb{display:flex;align-items:center;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:9px;font-size:12px;margin-top:8px}
+.upload-thumb img{width:36px;height:36px;border-radius:6px;object-fit:cover;flex:none}
+.upload-thumb .name{flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.upload-thumb button{color:var(--danger)}
+.upload-progress{font-size:11px;color:var(--muted)}
+
+.review-card{border:1px solid var(--line);border-radius:var(--radius-md);padding:16px 18px}
+.review-card-head{display:flex;align-items:center;justify-content:space-between;margin-bottom:8px}
+.review-card-head b{font-size:13px}
+.review-card-head button{font-size:11px;font-weight:700;color:var(--green);background:var(--green-tint);padding:4px 10px;border-radius:20px}
+.review-card dl{margin:0;font-size:12.5px;color:var(--ink-soft);display:flex;flex-direction:column;gap:4px}
+.review-card dt{font-weight:700;color:var(--ink);display:inline}
+.review-card dd{margin:0;display:inline}
+.confirm-row{display:flex;align-items:flex-start;gap:10px;padding:16px 0;font-size:13px;font-weight:600}
+.confirm-row input{width:16px;height:16px;margin-top:2px;accent-color:var(--green)}
+.toast{position:fixed;bottom:24px;right:24px;background:var(--green-dark);color:#fff;padding:12px 20px;border-radius:9px;font-size:13px;font-weight:600;box-shadow:0 10px 30px rgba(2,52,46,.3);z-index:60;animation:toast-in .2s ease}
+.toast.error{background:var(--danger)}
+@keyframes toast-in{from{opacity:0;transform:translateY(8px)}to{opacity:1;transform:translateY(0)}}
+
+@media(max-width:1180px){
+  .form-shell{grid-template-columns:1fr}
+  .stepper{position:static;display:flex;flex-wrap:nowrap;overflow-x:auto;gap:4px;max-height:none;padding:8px}
+  .stepper .step{flex:none;white-space:nowrap}
+}
+@media(max-width:860px){
+  .form-head h1{font-size:16px}
+  .form-head-right{width:100%}
+  .form-head-right .btn-ghost,.form-head-right .btn-primary{flex:1}
+  .form-grid,.review-grid,.check-group{grid-template-columns:1fr}
+  .form-panel-body{padding:18px 16px}
+  .form-panel-head{padding:16px 18px}
+  .form-footer{flex-direction:column;align-items:stretch;gap:10px;padding:14px 16px}
+  .footer-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+  .footer-step-label{text-align:center}
+}

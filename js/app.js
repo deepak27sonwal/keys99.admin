@@ -1,4 +1,5 @@
 import { SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY } from './config.js';
+import { openProjectForm } from './project-form.js';
 
 const { createClient } = window.supabase;
 const sb = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
@@ -230,6 +231,13 @@ function icon(name, size = 16) {
 }
 
 function rowActions(kind, id) {
+  if (kind === 'project') {
+    return `<div class="row-actions">
+      <button class="icon-btn" data-edit-project="${id}">${icon('edit', 13)}</button>
+      <button class="icon-btn" data-edit-project="${id}">${icon('eye', 13)}</button>
+      <button class="icon-btn danger" data-stub="delete" data-kind="${kind}">${icon('trash', 13)}</button>
+    </div>`;
+  }
   return `<div class="row-actions">
     <button class="icon-btn" data-stub="edit" data-kind="${kind}">${icon('edit', 13)}</button>
     <button class="icon-btn" data-stub="view" data-kind="${kind}">${icon('eye', 13)}</button>
@@ -242,6 +250,9 @@ function bindStubs() {
     btn.addEventListener('click', () => {
       alert('The full editor for this section is coming soon — it will be built next, mapped directly to the Supabase schema.');
     });
+  });
+  content.querySelectorAll('[data-edit-project]').forEach(btn => {
+    btn.addEventListener('click', () => openProjectForm(content, currentUser, btn.dataset.editProject, () => navigate('residential')));
   });
 }
 
@@ -449,7 +460,7 @@ async function residentialPage() {
   content.innerHTML = pageHead('Residential Projects', 'Manage the residential listing catalog') +
     tablePanel('All Projects', toolbar, ['Project', 'Type', 'Location', 'Starting Price', 'Status', 'Moderation', 'Actions'], rows);
 
-  $('#add-project')?.addEventListener('click', () => alert('The full 20-section project editor is coming soon, mapped directly to the residential_projects schema.'));
+  $('#add-project')?.addEventListener('click', () => openProjectForm(content, currentUser, null, () => navigate('residential')));
   bindStubs();
 }
 
