@@ -246,7 +246,14 @@ async function dashboardPage() {
           </div>
         </div>
 
-        <div class="panel">
+        <div class="dash-tabs" id="dash-tabs">
+          <button class="dash-tab active" data-tab="projects">Projects</button>
+          <button class="dash-tab" data-tab="enquiries">Enquiries</button>
+          <button class="dash-tab" data-tab="activity">Activity</button>
+          <button class="dash-tab" data-tab="quickactions">Quick Actions</button>
+        </div>
+
+        <div class="panel dash-tab-panel active" data-tab-panel="projects">
           <div class="panel-head"><h2>Recent Residential Projects</h2><button class="panel-link" data-nav="residential">View All →</button></div>
           <div class="table-wrap"><table>
             <thead><tr><th>Project</th><th>Type</th><th>Location</th><th>Starting Price</th><th>Status</th><th>Moderation</th><th>Actions</th></tr></thead>
@@ -264,7 +271,7 @@ async function dashboardPage() {
           </table></div>
         </div>
 
-        <div class="panel">
+        <div class="panel dash-tab-panel" data-tab-panel="enquiries">
           <div class="panel-head"><h2>Recent Enquiries</h2><button class="panel-link" data-nav="enquiries">View All →</button></div>
           <div class="table-wrap"><table>
             <thead><tr><th>Name</th><th>Phone</th><th>Project</th><th>Type</th><th>Date</th><th>Status</th><th>Actions</th></tr></thead>
@@ -282,7 +289,7 @@ async function dashboardPage() {
       </div>
 
       <div class="right-col">
-        <div class="panel">
+        <div class="panel dash-tab-panel" data-tab-panel="quickactions">
           <div class="panel-head"><h2>Quick Actions</h2></div>
           <div class="qa-panel">
             <button class="qa-primary" data-nav="residential">+ Add New Project</button>
@@ -293,7 +300,7 @@ async function dashboardPage() {
           </div>
         </div>
 
-        <div class="panel">
+        <div class="panel dash-tab-panel" data-tab-panel="activity">
           <div class="panel-head"><h2>Recent Activity</h2></div>
           <div class="activity">
             ${buildActivity(recentHistory.data, recentEnquiries.data)}
@@ -304,6 +311,11 @@ async function dashboardPage() {
   `;
 
   content.querySelectorAll('[data-nav]').forEach(b => b.addEventListener('click', () => navigate(b.dataset.nav)));
+  content.querySelectorAll('.dash-tab').forEach(btn => btn.addEventListener('click', () => {
+    const tab = btn.dataset.tab;
+    content.querySelectorAll('.dash-tab').forEach(b => b.classList.toggle('active', b === btn));
+    content.querySelectorAll('.dash-tab-panel').forEach(p => p.classList.toggle('active', p.dataset.tabPanel === tab));
+  }));
   bindPageStubs();
 }
 
