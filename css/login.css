@@ -173,23 +173,6 @@ blockquote{
 .role-option small{display:block;font-size:10.5px;font-weight:500;margin-top:1px;text-align:left;color:var(--muted)}
 .role-option.active small{color:rgba(255,255,255,.82)}
 
-.divider{
-  display:flex;align-items:center;gap:12px;
-  margin:20px 0;color:var(--muted);font-size:12px;font-weight:600;
-}
-.divider::before,.divider::after{content:"";flex:1;height:1px;background:var(--line)}
-
-.google-btn{
-  width:100%;height:48px;border-radius:var(--radius-sm);
-  border:1px solid #d5dfde;background:var(--white);
-  display:flex;align-items:center;justify-content:center;gap:10px;
-  font-size:14px;font-weight:600;color:var(--ink);
-  transition:background .15s,border-color .15s;
-}
-.google-btn:hover{background:var(--bg)}
-.google-btn:disabled{opacity:.7;cursor:wait}
-.google-btn:focus-visible{outline:2px solid var(--green);outline-offset:2px}
-
 .login-field{display:block;margin-top:15px}
 .login-field:first-of-type{margin-top:0}
 .login-field>span:first-child{
