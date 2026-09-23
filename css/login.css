@@ -21,6 +21,7 @@
 }
 
 *{box-sizing:border-box}
+[hidden]{display:none!important}
 html,body{margin:0;min-height:100%}
 body{
   font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;
@@ -171,6 +172,35 @@ blockquote{
 .role-option b{display:block;font-size:13.5px;font-weight:700;line-height:1.2;text-align:left}
 .role-option small{display:block;font-size:10.5px;font-weight:500;margin-top:1px;text-align:left;color:var(--muted)}
 .role-option.active small{color:rgba(255,255,255,.82)}
+
+.method-switch{
+  display:flex;gap:4px;
+  margin-bottom:18px;
+  border-bottom:1px solid var(--line);
+}
+.method-option{
+  flex:1;border:0;background:transparent;
+  padding:10px 6px 12px;
+  font-size:12.5px;font-weight:700;color:var(--muted);
+  border-bottom:2px solid transparent;
+  margin-bottom:-1px;
+  transition:color .15s,border-color .15s;
+}
+.method-option:focus-visible{outline:2px solid var(--green);outline-offset:2px}
+.method-option.active{color:var(--green);border-bottom-color:var(--green)}
+
+.phone-hint{margin:0 0 14px;color:var(--muted);font-size:12.5px;line-height:1.5}
+.otp-meta{
+  display:flex;justify-content:space-between;align-items:center;
+  margin:10px 0 18px;font-size:12px;color:var(--muted);
+}
+.otp-meta #otp-sent-to{flex:1;margin-right:10px}
+.resend-otp{
+  display:block;width:100%;text-align:center;
+  margin-top:12px;font-size:13px;
+}
+.resend-otp:disabled{color:var(--muted);cursor:default}
+.resend-otp:disabled:hover{text-decoration:none}
 
 .login-field{display:block;margin-top:15px}
 .login-field:first-of-type{margin-top:0}
