@@ -1,8 +1,10 @@
-import { SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY } from './config.js';
 import { openProjectForm, isWizardOpen, handleWizardPopState } from './project-form.js';
-
-const { createClient } = window.supabase;
-const sb = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+import { sb } from './supabase-client.js';
+import { residentialProjectsPage } from './residential-projects.js';
+import {
+  escapeHtml, pill, fmtPrice, fmtDate, timeAgo, count, initials,
+  pageHead, tablePanel, emptyRow, icon, rowActions, bindStubs
+} from './utils.js';
 
 const $ = s => document.querySelector(s);
 const content = $('#content');
@@ -10,75 +12,11 @@ const content = $('#content');
 let currentUser = null;
 let currentRoles = [];
 
-/* ---------------- helpers ---------------- */
-
-function escapeHtml(v) {
-  return String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-}
-
-function pill(status) {
-  const cls = String(status || '').toLowerCase();
-  const label = status ? String(status).replace(/_/g, ' ') : '—';
-  return `<span class="pill ${cls}">${escapeHtml(label)}</span>`;
-}
-
-function fmtPrice(value, priceOnRequest) {
-  if (priceOnRequest) return 'Price on request';
-  if (value === null || value === undefined) return '—';
-  const n = Number(value);
-  if (n >= 1e7) return `₹${(n / 1e7).toFixed(n % 1e7 === 0 ? 0 : 2)} Cr`;
-  if (n >= 1e5) return `₹${(n / 1e5).toFixed(n % 1e5 === 0 ? 0 : 2)} L`;
-  return `₹${n.toLocaleString('en-IN')}`;
-}
-
-function fmtDate(iso) {
-  if (!iso) return '—';
-  return new Date(iso).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
-}
-
-function timeAgo(iso) {
-  if (!iso) return '';
-  const diffMs = Date.now() - new Date(iso).getTime();
-  const min = Math.floor(diffMs / 60000);
-  if (min < 1) return 'just now';
-  if (min < 60) return `${min} minute${min === 1 ? '' : 's'} ago`;
-  const hr = Math.floor(min / 60);
-  if (hr < 24) return `${hr} hour${hr === 1 ? '' : 's'} ago`;
-  const day = Math.floor(hr / 24);
-  if (day < 30) return `${day} day${day === 1 ? '' : 's'} ago`;
-  return fmtDate(iso);
-}
-
-async function count(table, modifier) {
-  let q = sb.from(table).select('*', { count: 'exact', head: true });
-  if (modifier) q = modifier(q);
-  const { count: c, error } = await q;
-  if (error) { console.error(table, error); return 0; }
-  return c ?? 0;
-}
-
-function initials(text) {
-  const base = (text || 'Admin').includes('@') ? text.split('@')[0] : (text || 'Admin');
-  const parts = base.replace(/[._-]+/g, ' ').trim().split(/\s+/);
-  const a = parts[0]?.[0] || 'A';
-  const b = parts[1]?.[0] || parts[0]?.[1] || '';
-  return (a + b).toUpperCase();
-}
-
-function pageHead(title, subtitle) {
-  return `<div class="page-head"><h1>${escapeHtml(title)}</h1><p>${escapeHtml(subtitle || '')}</p></div>`;
-}
-
-function tablePanel(title, toolbarHtml, headers, bodyHtml, footerHtml) {
-  return `<div class="panel">
-    <div class="panel-head"><h2>${escapeHtml(title)}</h2>${toolbarHtml || ''}</div>
-    <div class="table-wrap"><table><thead><tr>${headers.map(h => '<th>' + h + '</th>').join('')}</tr></thead>
-    <tbody>${bodyHtml}</tbody></table></div>
-  </div>${footerHtml || ''}`;
-}
-
-function emptyRow(colspan, text) {
-  return `<tr><td colspan="${colspan}"><div class="empty">${escapeHtml(text)}</div></td></tr>`;
+// Wraps the shared bindStubs() with this app's edit-project wiring — used by every page
+// rendered here that can show project rows (Dashboard's "Recent Projects" table, etc.);
+// the Residential Projects list itself lives in residential-projects.js and does its own.
+function bindPageStubs() {
+  bindStubs(content, { onEditProject: (id) => openProjectForm(content, currentUser, id, () => navigate('residential')) });
 }
 
 /* ---------------- auth guard ---------------- */
@@ -210,50 +148,6 @@ function donut(segments, centerValue, centerLabel, size) {
       ${segments.map(seg => `<div class="donut-legend-item"><i class="legend-dot" style="background:${seg.color}"></i>${escapeHtml(seg.label)}<b>${seg.text ?? seg.value}</b></div>`).join('')}
     </div>
   </div>`;
-}
-
-const ICONS = {
-  home: '<path d="M3 11.5 12 4l9 7.5"/><path d="M5 10v9a1 1 0 0 0 1 1h4v-6h4v6h4a1 1 0 0 0 1-1v-9"/>',
-  building: '<rect x="5" y="3" width="14" height="18" rx="1"/><path d="M9 7h1M14 7h1M9 11h1M14 11h1M9 15h1M14 15h1"/><path d="M10 21v-3h4v3"/>',
-  developer: '<rect x="4" y="3" width="16" height="18" rx="1"/><path d="M9 8h1M14 8h1M9 12h1M14 12h1"/>',
-  agent: '<circle cx="9" cy="8" r="3.2"/><path d="M3.5 20c0-3.3 2.5-6 5.5-6s5.5 2.7 5.5 6"/><circle cx="17.5" cy="9" r="2.4"/><path d="M15.5 13.2c2.4.4 4 2.6 4 5.3"/>',
-  clock: '<circle cx="12" cy="12" r="9"/><path d="M12 7v5l3.5 2"/>',
-  mail: '<path d="M4 4h16v4H4zM4 10h10v4H4zM4 16h13v4H4z"/>',
-  eye: '<path d="M1 12s4-7 11-7 11 7 11 7-4 7-11 7-11-7-11-7Z"/><circle cx="12" cy="12" r="3"/>',
-  search: '<circle cx="11" cy="11" r="7"/><path d="m21 21-4.3-4.3"/>',
-  edit: '<path d="M12 20h9"/><path d="M16.5 3.5a2.1 2.1 0 0 1 3 3L7 19l-4 1 1-4Z"/>',
-  trash: '<path d="M3 6h18M8 6V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2m3 0-1 14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2L4 6"/>',
-  check: '<path d="M9 11 12 14 22 4"/><path d="M21 12v7a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11"/>',
-  gear: '<circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1a2 2 0 1 1-2.8 2.8l-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6V21a2 2 0 1 1-4 0v-.2a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1a2 2 0 1 1-2.8-2.8l.1-.1a1.7 1.7 0 0 0 .3-1.9 1.7 1.7 0 0 0-1.6-1H3a2 2 0 1 1 0-4h.2a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9l-.1-.1a2 2 0 1 1 2.8-2.8l.1.1a1.7 1.7 0 0 0 1.9.3H9a1.7 1.7 0 0 0 1-1.6V3a2 2 0 1 1 4 0v.2a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1a2 2 0 1 1 2.8 2.8l-.1.1a1.7 1.7 0 0 0-.3 1.9V9a1.7 1.7 0 0 0 1.6 1H21a2 2 0 1 1 0 4h-.2a1.7 1.7 0 0 0-1.6 1Z"/>'
-};
-function icon(name, size = 16) {
-  return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[name] || ''}</svg>`;
-}
-
-function rowActions(kind, id) {
-  if (kind === 'project') {
-    return `<div class="row-actions">
-      <button class="icon-btn" data-edit-project="${id}">${icon('edit', 13)}</button>
-      <button class="icon-btn" data-edit-project="${id}">${icon('eye', 13)}</button>
-      <button class="icon-btn danger" data-stub="delete" data-kind="${kind}">${icon('trash', 13)}</button>
-    </div>`;
-  }
-  return `<div class="row-actions">
-    <button class="icon-btn" data-stub="edit" data-kind="${kind}">${icon('edit', 13)}</button>
-    <button class="icon-btn" data-stub="view" data-kind="${kind}">${icon('eye', 13)}</button>
-    <button class="icon-btn danger" data-stub="delete" data-kind="${kind}">${icon('trash', 13)}</button>
-  </div>`;
-}
-
-function bindStubs() {
-  content.querySelectorAll('[data-stub]').forEach(btn => {
-    btn.addEventListener('click', () => {
-      alert('The full editor for this section is coming soon — it will be built next, mapped directly to the Supabase schema.');
-    });
-  });
-  content.querySelectorAll('[data-edit-project]').forEach(btn => {
-    btn.addEventListener('click', () => openProjectForm(content, currentUser, btn.dataset.editProject, () => navigate('residential')));
-  });
 }
 
 /* ---------------- Dashboard ---------------- */
@@ -410,7 +304,7 @@ async function dashboardPage() {
   `;
 
   content.querySelectorAll('[data-nav]').forEach(b => b.addEventListener('click', () => navigate(b.dataset.nav)));
-  bindStubs();
+  bindPageStubs();
 }
 
 function buildActivity(historyRows, enquiryRows) {
@@ -429,60 +323,6 @@ function buildActivity(historyRows, enquiryRows) {
   const top = items.slice(0, 5);
   if (!top.length) return `<div class="empty">No activity yet.</div>`;
   return top.map(i => `<div class="activity-item"><span class="activity-dot" style="background:${i.color}"></span><div><div class="activity-text">${i.text}</div><div class="activity-time">${timeAgo(i.time)}</div></div></div>`).join('');
-}
-
-/* ---------------- Residential Projects ---------------- */
-
-let residentialTemplateCache = null;
-async function loadResidentialTemplate() {
-  if (residentialTemplateCache) return residentialTemplateCache;
-  const html = await (await fetch('./residential-projects.html')).text();
-  const doc = new DOMParser().parseFromString(html, 'text/html');
-  residentialTemplateCache = {
-    panelHtml: doc.getElementById('residential-projects-panel').outerHTML,
-    rowTemplate: doc.getElementById('residential-row-template').innerHTML.trim()
-  };
-  return residentialTemplateCache;
-}
-
-async function residentialPage() {
-  content.innerHTML = pageHead('Residential Projects', 'Manage the residential listing catalog') + `<div class="empty">Loading…</div>`;
-
-  const [{ panelHtml, rowTemplate }, { data, error }] = await Promise.all([
-    loadResidentialTemplate(),
-    sb.from('residential_projects')
-      .select('id,project_code,project_name,project_type,status,moderation_status,starting_price,price_on_request,cities(name),localities(name)')
-      .order('updated_at', { ascending: false }).limit(200)
-  ]);
-
-  content.innerHTML = pageHead('Residential Projects', 'Manage the residential listing catalog') + panelHtml;
-
-  const tbody = $('#residential-projects-rows');
-  if (error) {
-    tbody.innerHTML = emptyRow(7, error.message);
-  } else if (!data.length) {
-    tbody.innerHTML = emptyRow(7, 'No residential projects yet. Click "+ Add Project" to create the first one.');
-  } else {
-    tbody.innerHTML = '';
-    data.forEach(p => {
-      const tpl = document.createElement('template');
-      tpl.innerHTML = rowTemplate;
-      const row = tpl.content.firstElementChild;
-      row.querySelector('[data-field="icon"]').innerHTML = icon('home', 16);
-      row.querySelector('[data-field="project_name"]').textContent = p.project_name;
-      row.querySelector('[data-field="project_code"]').textContent = p.project_code;
-      row.querySelector('[data-field="project_type"]').textContent = p.project_type || '—';
-      row.querySelector('[data-field="location"]').textContent = `${p.localities?.name || '—'}${p.cities?.name ? ', ' + p.cities.name : ''}`;
-      row.querySelector('[data-field="price"]').textContent = fmtPrice(p.starting_price, p.price_on_request);
-      row.querySelector('[data-field="status"]').textContent = (p.status || '—').replace(/_/g, ' ');
-      row.querySelector('[data-field="moderation"]').innerHTML = pill(p.moderation_status);
-      row.querySelector('[data-field="actions"]').innerHTML = rowActions('project', p.id);
-      tbody.appendChild(row);
-    });
-  }
-
-  $('#add-project')?.addEventListener('click', () => openProjectForm(content, currentUser, null, () => navigate('residential')));
-  bindStubs();
 }
 
 /* ---------------- Commercial Projects (schema not built yet) ---------------- */
@@ -518,7 +358,7 @@ async function developersPage() {
     tablePanel('All Developers', toolbar, ['Name', 'RERA ID', 'Email', 'Phone', 'Verified', 'Actions'], rows);
 
   $('#add-developer')?.addEventListener('click', () => alert('Developer add/edit form is coming soon.'));
-  bindStubs();
+  bindPageStubs();
 }
 
 /* ---------------- Cities & Localities ---------------- */
@@ -567,7 +407,7 @@ async function agentsPage() {
     tablePanel('All Agents', toolbar, ['Name', 'Company', 'Email', 'Phone', 'Verified', 'Actions'], rows);
 
   $('#add-agent')?.addEventListener('click', () => alert('Agent add/edit form is coming soon.'));
-  bindStubs();
+  bindPageStubs();
 }
 
 /* ---------------- Enquiries ---------------- */
@@ -615,7 +455,7 @@ async function moderationPage() {
 
   content.innerHTML = pageHead('Moderation Queue', 'Review, approve and publish projects') +
     tablePanel('Awaiting Action', '', ['Project', 'Status', 'Updated', 'Actions'], rows);
-  bindStubs();
+  bindPageStubs();
 }
 
 /* ---------------- Settings & Profile ---------------- */
@@ -643,7 +483,7 @@ async function profilePage() {
 
 const PAGES = {
   dashboard: dashboardPage,
-  residential: residentialPage,
+  residential: () => residentialProjectsPage(content, currentUser, navigate),
   commercial: commercialPage,
   developers: developersPage,
   cities: citiesPage,

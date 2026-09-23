@@ -1,7 +1,4 @@
-import { SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY } from './config.js';
-
-const { createClient } = window.supabase;
-const sb = createClient(SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY);
+import { sb } from './supabase-client.js';
 
 /* ============ small utils ============ */
 
