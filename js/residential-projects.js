@@ -19,27 +19,42 @@ async function loadTemplate() {
   return templateCache;
 }
 
+const STATUS_LABELS = { draft: 'Draft' };
+
 // content: the app shell's #content element to render into.
 // currentUser: the signed-in Supabase user (passed through to the project form).
 // navigate: the host app's page-navigation function, called to return to this page
 //   ('residential') after the Add/Edit Project wizard closes.
-export async function residentialProjectsPage(content, currentUser, navigate) {
+// moderationFilter: optional moderation_status to restrict the list to (e.g. 'draft', from
+//   the Dashboard's Draft Projects stat card) — lets an admin find and resume drafts instead
+//   of scrolling the full catalog. Cleared by reloading the page without a filter.
+export async function residentialProjectsPage(content, currentUser, navigate, moderationFilter) {
   content.innerHTML = pageHead('Residential Projects', 'Manage the residential listing catalog') + `<div class="empty">Loading…</div>`;
 
   const [{ panelHtml, rowTemplate }, { data, error }] = await Promise.all([
     loadTemplate(),
-    sb.from('residential_projects')
-      .select('id,project_code,project_name,project_type,status,moderation_status,starting_price,price_on_request,cities(name),localities(name)')
-      .order('updated_at', { ascending: false }).limit(200)
+    (() => {
+      let q = sb.from('residential_projects')
+        .select('id,project_code,project_name,project_type,status,moderation_status,starting_price,price_on_request,cities(name),localities(name)')
+        .order('updated_at', { ascending: false }).limit(200);
+      if (moderationFilter) q = q.eq('moderation_status', moderationFilter);
+      return q;
+    })()
   ]);
 
   content.innerHTML = pageHead('Residential Projects', 'Manage the residential listing catalog') + panelHtml;
+
+  if (moderationFilter) {
+    content.querySelector('.panel-head h2').insertAdjacentHTML('afterend',
+      `<span class="chip active" style="margin-left:8px">${STATUS_LABELS[moderationFilter] || moderationFilter}<span id="clear-filter" style="cursor:pointer;margin-left:6px">✕</span></span>`);
+    content.querySelector('#clear-filter').addEventListener('click', () => residentialProjectsPage(content, currentUser, navigate));
+  }
 
   const tbody = content.querySelector('#residential-projects-rows');
   if (error) {
     tbody.innerHTML = emptyRow(7, error.message);
   } else if (!data.length) {
-    tbody.innerHTML = emptyRow(7, 'No residential projects yet. Click "+ Add Project" to create the first one.');
+    tbody.innerHTML = emptyRow(7, moderationFilter ? `No ${(STATUS_LABELS[moderationFilter] || moderationFilter).toLowerCase()} projects.` : 'No residential projects yet. Click "+ Add Project" to create the first one.');
   } else {
     tbody.innerHTML = '';
     data.forEach(p => {

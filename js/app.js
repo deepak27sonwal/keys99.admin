@@ -202,6 +202,7 @@ async function dashboardPage() {
       <div class="kpi"><span class="kpi-icon purple">${icon('agent', 17)}</span><div class="value">${agentsTotal}</div><div class="label">Agents</div><div class="trend">${agentsVerified} <span>verified</span></div></div>
       <div class="kpi"><span class="kpi-icon warn">${icon('clock', 17)}</span><div class="value">${pendingModeration}</div><div class="label">Pending Moderation</div><div class="trend flat">Needs <span>review</span></div></div>
       <div class="kpi"><span class="kpi-icon gold">${icon('mail', 17)}</span><div class="value">${enquiriesTotal}</div><div class="label">Enquiries</div><div class="trend">${enquiriesNew} <span>new</span></div></div>
+      <div class="kpi kpi-link" data-nav="residential" data-filter="draft" style="cursor:pointer"><span class="kpi-icon muted">${icon('edit', 17)}</span><div class="value">${draft}</div><div class="label">Draft Projects</div><div class="trend flat"><span>Continue editing</span></div></div>
     </div>
 
     <div class="body-grid">
@@ -310,7 +311,7 @@ async function dashboardPage() {
     </div>
   `;
 
-  content.querySelectorAll('[data-nav]').forEach(b => b.addEventListener('click', () => navigate(b.dataset.nav)));
+  content.querySelectorAll('[data-nav]').forEach(b => b.addEventListener('click', () => navigate(b.dataset.nav, { filter: b.dataset.filter })));
   content.querySelectorAll('.dash-tab').forEach(btn => btn.addEventListener('click', () => {
     const tab = btn.dataset.tab;
     content.querySelectorAll('.dash-tab').forEach(b => b.classList.toggle('active', b === btn));
@@ -495,7 +496,7 @@ async function profilePage() {
 
 const PAGES = {
   dashboard: dashboardPage,
-  residential: () => residentialProjectsPage(content, currentUser, navigate),
+  residential: (filter) => residentialProjectsPage(content, currentUser, navigate, filter),
   commercial: commercialPage,
   developers: developersPage,
   cities: citiesPage,
@@ -520,7 +521,7 @@ async function navigate(page, opts = {}) {
     if (opts.replace) history.replaceState({ page }, '', hash);
     else if (location.hash !== hash) history.pushState({ page }, '', hash);
   }
-  await PAGES[page]();
+  await PAGES[page](opts.filter);
 }
 
 window.addEventListener('popstate', (e) => {
