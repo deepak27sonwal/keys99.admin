@@ -35,7 +35,7 @@ export async function residentialProjectsPage(content, currentUser, navigate, mo
     loadTemplate(),
     (() => {
       let q = sb.from('residential_projects')
-        .select('id,project_code,project_name,project_type,status,moderation_status,starting_price,price_on_request,cities(name),localities(name)')
+        .select('id,project_code,project_name,project_type,status,moderation_status,starting_price,price_on_request,cities(name),localities!residential_projects_locality_id_fkey(name)')
         .order('updated_at', { ascending: false }).limit(200);
       if (moderationFilter) q = q.eq('moderation_status', moderationFilter);
       return q;

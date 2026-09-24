@@ -215,7 +215,7 @@ async function dashboardPage() {
     count('localities'),
     count('residential_projects', q => q.in('moderation_status', ['pending_verification', 'under_review', 'changes_required', 'resubmitted'])),
     Promise.all(MOD_STATUSES.map(s => count('residential_projects', q => q.eq('moderation_status', s)))),
-    sb.from('residential_projects').select('id,project_code,project_name,project_type,status,moderation_status,starting_price,price_on_request,cities(name),localities(name)').order('updated_at', { ascending: false }).limit(4),
+    sb.from('residential_projects').select('id,project_code,project_name,project_type,status,moderation_status,starting_price,price_on_request,cities(name),localities!residential_projects_locality_id_fkey(name)').order('updated_at', { ascending: false }).limit(4),
     sb.from('residential_enquiries').select('id,contact_person,phone,enquiry_type,status,created_at,residential_projects(project_name)').order('created_at', { ascending: false }).limit(4),
     sb.from('residential_project_moderation_history').select('id,to_status,action,changed_at,residential_projects(project_name)').order('changed_at', { ascending: false }).limit(5)
   ]);
