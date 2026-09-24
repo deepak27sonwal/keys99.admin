@@ -102,12 +102,12 @@ export function icon(name, size = 16) {
 
 const ENTITY_KINDS = ['developer', 'agent', 'city'];
 
-export function rowActions(kind, id) {
+export function rowActions(kind, id, name) {
   if (kind === 'project') {
     return `<div class="row-actions">
       <button class="icon-btn" data-edit-project="${id}">${icon('edit', 13)}</button>
       <button class="icon-btn" data-edit-project="${id}">${icon('eye', 13)}</button>
-      <button class="icon-btn danger" data-stub="delete" data-kind="${kind}">${icon('trash', 13)}</button>
+      <button class="icon-btn danger" data-delete-project="${id}" data-project-name="${escapeHtml(name || '')}">${icon('trash', 13)}</button>
     </div>`;
   }
   if (ENTITY_KINDS.includes(kind)) {
@@ -124,9 +124,9 @@ export function rowActions(kind, id) {
 }
 
 // Wires the placeholder "coming soon" alert for [data-stub] actions, and — when the
-// matching opts.* callback is given — the real edit/delete paths for [data-edit-project]
-// (rowActions('project', id)) and [data-edit-entity]/[data-delete-entity]
-// (rowActions('developer'|'agent'|'city', id)) buttons.
+// matching opts.* callback is given — the real edit/archive paths for [data-edit-project]/
+// [data-delete-project] (rowActions('project', id, name)) and [data-edit-entity]/
+// [data-delete-entity] (rowActions('developer'|'agent'|'city', id)) buttons.
 export function bindStubs(content, opts = {}) {
   content.querySelectorAll('[data-stub]').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -136,6 +136,11 @@ export function bindStubs(content, opts = {}) {
   if (opts.onEditProject) {
     content.querySelectorAll('[data-edit-project]').forEach(btn => {
       btn.addEventListener('click', () => opts.onEditProject(btn.dataset.editProject));
+    });
+  }
+  if (opts.onDeleteProject) {
+    content.querySelectorAll('[data-delete-project]').forEach(btn => {
+      btn.addEventListener('click', () => opts.onDeleteProject(btn.dataset.deleteProject, btn.dataset.projectName));
     });
   }
   if (opts.onEditEntity) {
@@ -150,6 +155,23 @@ export function bindStubs(content, opts = {}) {
       btn.addEventListener('click', () => opts.onDeleteEntity(kind, id));
     });
   }
+}
+
+// Soft-deletes a residential project (sets deleted_at/deleted_by instead of removing the
+// row) so it drops out of every normal listing but can be brought back from the Archive
+// section. Shared by the Residential Projects list and the Dashboard's recent-projects table.
+export async function confirmArchiveProject(id, name, userId, onArchived) {
+  const ok = await customConfirm(
+    `"${name || 'This project'}" will be moved to Archive and hidden from listings. You can restore it anytime from the Archive section.`,
+    { title: 'Archive this project?', confirmLabel: 'Archive', danger: true }
+  );
+  if (!ok) return;
+  const { error } = await sb.from('residential_projects')
+    .update({ deleted_at: new Date().toISOString(), deleted_by: userId ?? null })
+    .eq('id', id);
+  if (error) { toast(error.message, true); return; }
+  toast('Project archived');
+  onArchived && onArchived();
 }
 
 export function toast(msg, isError) {

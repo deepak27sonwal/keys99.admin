@@ -1,6 +1,6 @@
 import { sb } from './supabase-client.js';
 import { openProjectForm } from './project-form.js';
-import { pageHead, emptyRow, icon, pill, fmtPrice, rowActions, bindStubs } from './utils.js';
+import { pageHead, emptyRow, icon, pill, fmtPrice, rowActions, bindStubs, confirmArchiveProject } from './utils.js';
 
 // This page's markup (the panel/toolbar/table shell, plus a <template> for one row) lives
 // in residential-projects.html, and its layout-only rules in css/residential-projects.css —
@@ -38,6 +38,7 @@ export async function residentialProjectsPage(content, currentUser, navigate, mo
     (() => {
       let q = sb.from('residential_projects')
         .select('id,project_code,project_name,project_type,status,moderation_status,starting_price,price_on_request,cities(name),localities!residential_projects_locality_id_fkey(name)')
+        .is('deleted_at', null)
         .order('updated_at', { ascending: false }).limit(200);
       if (moderationFilter) q = q.eq('moderation_status', moderationFilter);
       return q;
@@ -72,7 +73,7 @@ export async function residentialProjectsPage(content, currentUser, navigate, mo
       row.querySelector('[data-field="price"]').textContent = fmtPrice(p.starting_price, p.price_on_request);
       row.querySelector('[data-field="status"]').textContent = (p.status || '—').replace(/_/g, ' ');
       row.querySelector('[data-field="moderation"]').innerHTML = pill(p.moderation_status);
-      row.querySelector('[data-field="actions"]').innerHTML = rowActions('project', p.id);
+      row.querySelector('[data-field="actions"]').innerHTML = rowActions('project', p.id, p.project_name);
       tbody.appendChild(row);
     });
 
@@ -96,7 +97,10 @@ export async function residentialProjectsPage(content, currentUser, navigate, mo
 
   const openWizard = (projectId) => openProjectForm(content, currentUser, projectId, () => navigate('residential'));
   content.querySelector('#add-project')?.addEventListener('click', () => openWizard(null));
-  bindStubs(content, { onEditProject: openWizard });
+  bindStubs(content, {
+    onEditProject: openWizard,
+    onDeleteProject: (id, name) => confirmArchiveProject(id, name, currentUser.id, () => residentialProjectsPage(content, currentUser, navigate, moderationFilter))
+  });
 
   if (openAdd) openWizard(null);
 }

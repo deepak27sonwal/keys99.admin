@@ -5,8 +5,10 @@ import { openEntityForm, confirmDeleteEntity } from './entity-form.js';
 import { enhanceSelects } from './custom-select.js';
 import {
   escapeHtml, pill, fmtPrice, fmtDate, timeAgo, count, initials,
-  pageHead, tablePanel, emptyRow, icon, rowActions, bindStubs, toast, customConfirm
+  pageHead, tablePanel, emptyRow, icon, rowActions, bindStubs, toast, customConfirm,
+  confirmArchiveProject
 } from './utils.js';
+import { archivePage } from './archive.js';
 
 const $ = s => document.querySelector(s);
 const content = $('#content');
@@ -18,7 +20,10 @@ let currentRoles = [];
 // rendered here that can show project rows (Dashboard's "Recent Projects" table, etc.);
 // the Residential Projects list itself lives in residential-projects.js and does its own.
 function bindPageStubs() {
-  bindStubs(content, { onEditProject: (id) => openProjectForm(content, currentUser, id, () => navigate('residential')) });
+  bindStubs(content, {
+    onEditProject: (id) => openProjectForm(content, currentUser, id, () => navigate('residential')),
+    onDeleteProject: (id, name) => confirmArchiveProject(id, name, currentUser.id, () => dashboardPage())
+  });
 }
 
 /* ---------------- auth guard ---------------- */
@@ -47,9 +52,9 @@ async function guard() {
 
 async function loadSidebarCounts() {
   const [residential, enquiriesOpen, moderationPending] = await Promise.all([
-    count('residential_projects'),
+    count('residential_projects', q => q.is('deleted_at', null)),
     count('residential_enquiries', q => q.in('status', ['new', 'contacted', 'follow_up'])),
-    count('residential_projects', q => q.in('moderation_status', ['pending_verification', 'under_review', 'changes_required', 'resubmitted']))
+    count('residential_projects', q => q.is('deleted_at', null).in('moderation_status', ['pending_verification', 'under_review', 'changes_required', 'resubmitted']))
   ]);
   $('#count-residential').textContent = residential;
   $('#count-enquiries').textContent = enquiriesOpen;
@@ -206,7 +211,7 @@ async function dashboardPage() {
     pendingModeration, [published, underReview, pendingVerification, changesRequired, draft],
     recentProjects, recentEnquiries, recentHistory
   ] = await Promise.all([
-    count('residential_projects'),
+    count('residential_projects', q => q.is('deleted_at', null)),
     count('developers'),
     count('agents'),
     count('agents', q => q.eq('verified', true)),
@@ -214,9 +219,9 @@ async function dashboardPage() {
     count('residential_enquiries', q => q.eq('status', 'new')),
     count('cities'),
     count('localities'),
-    count('residential_projects', q => q.in('moderation_status', ['pending_verification', 'under_review', 'changes_required', 'resubmitted'])),
-    Promise.all(MOD_STATUSES.map(s => count('residential_projects', q => q.eq('moderation_status', s)))),
-    sb.from('residential_projects').select('id,project_code,project_name,project_type,status,moderation_status,starting_price,price_on_request,cities(name),localities!residential_projects_locality_id_fkey(name)').order('updated_at', { ascending: false }).limit(4),
+    count('residential_projects', q => q.is('deleted_at', null).in('moderation_status', ['pending_verification', 'under_review', 'changes_required', 'resubmitted'])),
+    Promise.all(MOD_STATUSES.map(s => count('residential_projects', q => q.is('deleted_at', null).eq('moderation_status', s)))),
+    sb.from('residential_projects').select('id,project_code,project_name,project_type,status,moderation_status,starting_price,price_on_request,cities(name),localities!residential_projects_locality_id_fkey(name)').is('deleted_at', null).order('updated_at', { ascending: false }).limit(4),
     sb.from('residential_enquiries').select('id,contact_person,phone,enquiry_type,status,created_at,residential_projects(project_name)').order('created_at', { ascending: false }).limit(4),
     sb.from('residential_project_moderation_history').select('id,to_status,action,changed_at,residential_projects(project_name)').order('changed_at', { ascending: false }).limit(5)
   ]);
@@ -303,7 +308,7 @@ async function dashboardPage() {
                 <td>${fmtPrice(p.starting_price, p.price_on_request)}</td>
                 <td>${escapeHtml((p.status || '—').replace(/_/g, ' '))}</td>
                 <td>${pill(p.moderation_status)}</td>
-                <td>${rowActions('project', p.id)}</td>
+                <td>${rowActions('project', p.id, p.project_name)}</td>
               </tr>`).join('') : emptyRow(7, 'No residential projects yet.')}
             </tbody>
           </table></div>
@@ -847,7 +852,7 @@ async function moderationPage() {
     content.innerHTML = pageHead('Moderation Queue', 'Review, approve and publish projects') + tabsHtml + `<div class="empty">Loading…</div>`;
 
     const tab = MOD_TABS.find(t => t.key === activeTab);
-    let q = sb.from('residential_projects').select('id,project_code,project_name,moderation_status,updated_at').order('updated_at', { ascending: false }).limit(200);
+    let q = sb.from('residential_projects').select('id,project_code,project_name,moderation_status,updated_at').is('deleted_at', null).order('updated_at', { ascending: false }).limit(200);
     if (tab.statuses) q = q.in('moderation_status', tab.statuses);
     const { data, error } = await q;
 
@@ -915,6 +920,7 @@ const PAGES = {
   agents: agentsPage,
   enquiries: (openId) => enquiriesPage(openId),
   moderation: moderationPage,
+  archive: () => archivePage(content, navigate),
   settings: settingsPage,
   profile: profilePage
 };
@@ -990,7 +996,7 @@ async function runGlobalSearch(q) {
 
   const like = `%${q}%`;
   const [projects, developers, enquiries] = await Promise.all([
-    sb.from('residential_projects').select('id,project_name,project_code').or(`project_name.ilike.${like},project_code.ilike.${like}`).limit(5),
+    sb.from('residential_projects').select('id,project_name,project_code').is('deleted_at', null).or(`project_name.ilike.${like},project_code.ilike.${like}`).limit(5),
     sb.from('developers').select('id,name').ilike('name', like).limit(5),
     sb.from('residential_enquiries').select('id,contact_person,phone').ilike('contact_person', like).limit(5)
   ]);
@@ -1051,6 +1057,7 @@ async function loadNotifPanel() {
 
   const [{ data: pending }, { data: newEnquiries }] = await Promise.all([
     sb.from('residential_projects').select('id,project_name,moderation_status,updated_at')
+      .is('deleted_at', null)
       .in('moderation_status', ['pending_verification', 'under_review', 'resubmitted', 'changes_required'])
       .order('updated_at', { ascending: false }).limit(5),
     sb.from('residential_enquiries').select('id,contact_person,phone,created_at').eq('status', 'new').order('created_at', { ascending: false }).limit(5)
