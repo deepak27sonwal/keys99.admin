@@ -289,7 +289,6 @@ async function dashboardPage() {
           <button class="dash-tab active" data-tab="projects">Projects</button>
           <button class="dash-tab" data-tab="enquiries">Enquiries</button>
           <button class="dash-tab" data-tab="activity">Activity</button>
-          <button class="dash-tab" data-tab="quickactions">Quick Actions</button>
         </div>
 
         <div class="panel dash-tab-panel active" data-tab-panel="projects">
@@ -328,17 +327,6 @@ async function dashboardPage() {
       </div>
 
       <div class="right-col">
-        <div class="panel dash-tab-panel" data-tab-panel="quickactions">
-          <div class="panel-head"><h2>Quick Actions</h2></div>
-          <div class="qa-panel">
-            <button class="qa-primary" data-nav="residential">+ Add New Project</button>
-            <button class="qa-item" data-nav="enquiries">${icon('mail')}Manage Enquiries</button>
-            <button class="qa-item" data-nav="moderation">${icon('check')}Moderation Queue</button>
-            <button class="qa-item" data-nav="developers">${icon('developer')}Add New Developer</button>
-            <button class="qa-item" data-nav="settings">${icon('gear')}Settings</button>
-          </div>
-        </div>
-
         <div class="panel dash-tab-panel" data-tab-panel="activity">
           <div class="panel-head"><h2>Recent Activity</h2></div>
           <div class="activity">
@@ -920,7 +908,7 @@ async function profilePage() {
 
 const PAGES = {
   dashboard: dashboardPage,
-  residential: (filter) => residentialProjectsPage(content, currentUser, navigate, filter),
+  residential: (filter, openAdd) => residentialProjectsPage(content, currentUser, navigate, filter, openAdd),
   commercial: commercialPage,
   developers: developersPage,
   cities: citiesPage,
@@ -945,7 +933,7 @@ async function navigate(page, opts = {}) {
     if (opts.replace) history.replaceState({ page }, '', hash);
     else if (location.hash !== hash) history.pushState({ page }, '', hash);
   }
-  await PAGES[page](opts.filter ?? opts.openId);
+  await PAGES[page](opts.filter ?? opts.openId, opts.openAdd);
 }
 
 window.addEventListener('popstate', (e) => {
@@ -960,7 +948,7 @@ function closeSidebar() {
   $('#sidebar-backdrop').classList.remove('open');
 }
 
-document.querySelectorAll('.sb-item[data-page]').forEach(b => b.addEventListener('click', () => navigate(b.dataset.page)));
+document.querySelectorAll('.sb-item[data-page]').forEach(b => b.addEventListener('click', () => navigate(b.dataset.page, { openAdd: b.dataset.add === '1' })));
 $('#logout-btn').addEventListener('click', async () => { await sb.auth.signOut(); location.replace('./login.html'); });
 $('#menu-btn').addEventListener('click', () => {
   $('#sidebar').classList.toggle('open');

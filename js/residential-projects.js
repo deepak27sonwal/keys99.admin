@@ -28,7 +28,9 @@ const STATUS_LABELS = { draft: 'Draft' };
 // moderationFilter: optional moderation_status to restrict the list to (e.g. 'draft', from
 //   the Dashboard's Draft Projects stat card) — lets an admin find and resume drafts instead
 //   of scrolling the full catalog. Cleared by reloading the page without a filter.
-export async function residentialProjectsPage(content, currentUser, navigate, moderationFilter) {
+// openAdd: when true (from the sidebar's "Add Project" shortcut), opens the Add Project
+//   wizard immediately once the list has rendered.
+export async function residentialProjectsPage(content, currentUser, navigate, moderationFilter, openAdd) {
   content.innerHTML = pageHead('Residential Projects', 'Manage the residential listing catalog') + `<div class="empty">Loading…</div>`;
 
   const [{ panelHtml, rowTemplate }, { data, error }] = await Promise.all([
@@ -95,4 +97,6 @@ export async function residentialProjectsPage(content, currentUser, navigate, mo
   const openWizard = (projectId) => openProjectForm(content, currentUser, projectId, () => navigate('residential'));
   content.querySelector('#add-project')?.addEventListener('click', () => openWizard(null));
   bindStubs(content, { onEditProject: openWizard });
+
+  if (openAdd) openWizard(null);
 }
