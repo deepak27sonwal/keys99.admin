@@ -245,7 +245,12 @@ tr:last-child td{border-bottom:0}
   }
   .sidebar.open{transform:translateX(0)}
   .tb-menu-btn{display:flex}
-  .tb-search{display:none}
+  /* The logo is redundant with the sidebar's on mobile (reached via the hamburger) — drop
+     it here so the search bar, which actually works now, gets the room instead of being
+     hidden outright. */
+  .tb-logo{display:none}
+  .tb-search{max-width:none}
+  .topbar{gap:10px}
   .kpi-row{grid-template-columns:repeat(4,1fr);gap:10px}
   .kpi{padding:12px 10px}
   .kpi-icon{width:30px;height:30px;margin-bottom:8px}
