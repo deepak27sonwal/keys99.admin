@@ -2,6 +2,7 @@ import { openProjectForm, isWizardOpen, handleWizardPopState } from './project-f
 import { sb } from './supabase-client.js';
 import { residentialProjectsPage } from './residential-projects.js';
 import { openEntityForm, confirmDeleteEntity } from './entity-form.js';
+import { enhanceSelects } from './custom-select.js';
 import {
   escapeHtml, pill, fmtPrice, fmtDate, timeAgo, count, initials,
   pageHead, tablePanel, emptyRow, icon, rowActions, bindStubs, toast, customConfirm
@@ -348,6 +349,7 @@ async function dashboardPage() {
     </div>
   `;
 
+  enhanceSelects(content);
   content.querySelectorAll('[data-nav]').forEach(b => b.addEventListener('click', () => navigate(b.dataset.nav, { filter: b.dataset.filter })));
   content.querySelectorAll('.dash-tab').forEach(btn => btn.addEventListener('click', () => {
     const tab = btn.dataset.tab;
@@ -356,10 +358,13 @@ async function dashboardPage() {
   }));
   $('#period-select')?.addEventListener('change', async (e) => {
     const chartBody = $('#chart-body');
+    const trigger = e.target.closest('.cs-wrap')?.querySelector('.cs-trigger');
     e.target.disabled = true;
+    if (trigger) trigger.disabled = true;
     chartBody.innerHTML = `<div class="empty">Loading…</div>`;
     chartBody.innerHTML = await loadOverviewChart(e.target.value);
     e.target.disabled = false;
+    if (trigger) trigger.disabled = false;
   });
   bindPageStubs();
 }

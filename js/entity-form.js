@@ -1,5 +1,6 @@
 import { sb } from './supabase-client.js';
 import { escapeHtml, toast, customConfirm } from './utils.js';
+import { enhanceSelects } from './custom-select.js';
 
 // A small generic modal for the simple, single-table add/edit forms (Developers, Agents,
 // Cities) — these don't need the multi-step wizard machinery in project-form.js, just a
@@ -68,6 +69,7 @@ export async function openEntityForm({ title, subtitle, table, fields, existingI
       </div>
     </div>`;
   document.body.appendChild(overlay);
+  enhanceSelects(overlay);
 
   const escHandler = (e) => { if (e.key === 'Escape') closeModal(overlay); };
   overlay._escHandler = escHandler;

@@ -1,5 +1,6 @@
 import { sb } from './supabase-client.js';
 import { toast } from './utils.js';
+import { enhanceSelects } from './custom-select.js';
 
 /* ============ small utils ============ */
 
@@ -930,6 +931,7 @@ function validateRepeatStep(items, fields) {
 
 // wires up handlers that need live DOM access not covered by data-bind (toggles, uploads)
 function handleSpecialBindings() {
+  enhanceSelects(content);
   content.querySelectorAll('[data-toggle-parktype]').forEach(el => {
     el.onclick = () => {
       const i = Number(el.dataset.toggleParktype), val = el.dataset.val;
