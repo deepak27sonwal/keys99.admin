@@ -9,7 +9,7 @@
 }
 *{box-sizing:border-box}
 html,body{margin:0;min-height:100%}
-body{font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;background:var(--bg);color:var(--ink)}
+body{font-family:Inter,system-ui,-apple-system,Segoe UI,sans-serif;background:var(--bg);color:var(--ink);overflow-x:hidden}
 a{color:inherit;text-decoration:none}
 button{font:inherit;cursor:pointer;border:0;background:none}
 input,select,textarea{font:inherit}
@@ -214,6 +214,10 @@ tr:last-child td{border-bottom:0}
   .dash-tabs{display:flex}
   .dash-tab-panel{display:none}
   .dash-tab-panel.active{display:block}
+
+  .toolbar{flex-wrap:wrap;width:100%}
+  .toolbar .btn-primary{flex:1 1 auto}
+  .list-search{min-width:0;flex:1 1 160px}
 }
 @media(min-width:861px){
   .sidebar-backdrop{display:none}
