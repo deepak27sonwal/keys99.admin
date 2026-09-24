@@ -103,6 +103,8 @@ input,select,textarea{font:inherit}
 .panel-head h2{font-size:14.5px;margin:0}
 .panel-link{font-size:12px;font-weight:700;color:var(--green)}
 .panel-link:hover{text-decoration:underline}
+.link-btn{font-size:12.5px;font-weight:700;color:var(--green);background:none;border:none;padding:0;cursor:pointer}
+.link-btn:hover{text-decoration:underline}
 
 .period-select{position:relative;display:flex;align-items:center;border:1px solid var(--line);border-radius:8px;background:var(--bg)}
 .period-select select{appearance:none;-webkit-appearance:none;border:0;background:transparent;padding:7px 26px 7px 12px;font-size:12px;font-weight:700;color:var(--green);cursor:pointer;outline:none}
@@ -272,6 +274,23 @@ tr:last-child td{border-bottom:0}
 .check-group{display:grid;grid-template-columns:1fr 1fr;gap:8px 18px}
 .check-group label{display:flex;align-items:center;gap:8px;font-size:12.5px;color:var(--ink-soft);font-weight:600}
 .check-group input[type=checkbox]{width:15px;height:15px;accent-color:var(--green)}
+
+/* ---------- Modal (entity add/edit forms, locality manager) ---------- */
+.modal-overlay{position:fixed;inset:0;background:rgba(2,20,18,.5);z-index:70;display:flex;align-items:center;justify-content:center;padding:20px;overflow-y:auto}
+.modal-box{background:var(--white);border-radius:var(--radius-md);width:100%;max-width:560px;max-height:calc(100vh - 40px);display:flex;flex-direction:column;box-shadow:0 20px 60px rgba(2,20,18,.3)}
+.modal-head{display:flex;align-items:center;justify-content:space-between;padding:18px 22px;border-bottom:1px solid var(--line)}
+.modal-head h2{font-size:16px;margin:0}
+.modal-head p{margin:2px 0 0;font-size:12px;color:var(--muted)}
+.modal-close{background:none;border:none;color:var(--muted);cursor:pointer;padding:4px;line-height:0}
+.modal-body{padding:22px;overflow-y:auto}
+.modal-footer{display:flex;justify-content:flex-end;gap:10px;padding:16px 22px;border-top:1px solid var(--line)}
+.modal-list{display:flex;flex-direction:column;gap:8px;margin-bottom:16px}
+.modal-list-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 12px;border:1px solid var(--line);border-radius:9px;font-size:13px}
+.modal-list-empty{font-size:12.5px;color:var(--muted);padding:8px 2px}
+@media(max-width:520px){
+  .modal-box{max-width:100%}
+  .modal-body,.modal-head,.modal-footer{padding-left:16px;padding-right:16px}
+}
 
 .form-footer{display:flex;align-items:center;justify-content:space-between;padding:16px 26px;border-top:1px solid var(--line)}
 .footer-step-label{font-size:12px;color:var(--muted);font-weight:600}

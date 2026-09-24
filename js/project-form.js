@@ -1,4 +1,5 @@
 import { sb } from './supabase-client.js';
+import { toast } from './utils.js';
 
 /* ============ small utils ============ */
 
@@ -858,14 +859,6 @@ function renderReview() {
 }
 
 /* ============ toast ============ */
-
-function toast(msg, isError) {
-  const t = document.createElement('div');
-  t.className = 'toast' + (isError ? ' error' : '');
-  t.textContent = msg;
-  document.body.appendChild(t);
-  setTimeout(() => t.remove(), 3200);
-}
 
 /* ============ navigation / persistence ============ */
 

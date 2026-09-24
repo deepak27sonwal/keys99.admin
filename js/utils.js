@@ -93,12 +93,20 @@ export function icon(name, size = 16) {
   return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[name] || ''}</svg>`;
 }
 
+const ENTITY_KINDS = ['developer', 'agent', 'city'];
+
 export function rowActions(kind, id) {
   if (kind === 'project') {
     return `<div class="row-actions">
       <button class="icon-btn" data-edit-project="${id}">${icon('edit', 13)}</button>
       <button class="icon-btn" data-edit-project="${id}">${icon('eye', 13)}</button>
       <button class="icon-btn danger" data-stub="delete" data-kind="${kind}">${icon('trash', 13)}</button>
+    </div>`;
+  }
+  if (ENTITY_KINDS.includes(kind)) {
+    return `<div class="row-actions">
+      <button class="icon-btn" data-edit-entity="${kind}:${id}">${icon('edit', 13)}</button>
+      <button class="icon-btn danger" data-delete-entity="${kind}:${id}">${icon('trash', 13)}</button>
     </div>`;
   }
   return `<div class="row-actions">
@@ -108,10 +116,10 @@ export function rowActions(kind, id) {
   </div>`;
 }
 
-// Wires the placeholder "coming soon" alert for [data-stub] actions, and — when
-// opts.onEditProject is given — the real "+ Add Project" edit path for [data-edit-project]
-// buttons (rendered by rowActions('project', id) above, e.g. on the Dashboard and the
-// Residential Projects list).
+// Wires the placeholder "coming soon" alert for [data-stub] actions, and — when the
+// matching opts.* callback is given — the real edit/delete paths for [data-edit-project]
+// (rowActions('project', id)) and [data-edit-entity]/[data-delete-entity]
+// (rowActions('developer'|'agent'|'city', id)) buttons.
 export function bindStubs(content, opts = {}) {
   content.querySelectorAll('[data-stub]').forEach(btn => {
     btn.addEventListener('click', () => {
@@ -123,4 +131,24 @@ export function bindStubs(content, opts = {}) {
       btn.addEventListener('click', () => opts.onEditProject(btn.dataset.editProject));
     });
   }
+  if (opts.onEditEntity) {
+    content.querySelectorAll('[data-edit-entity]').forEach(btn => {
+      const [kind, id] = btn.dataset.editEntity.split(':');
+      btn.addEventListener('click', () => opts.onEditEntity(kind, id));
+    });
+  }
+  if (opts.onDeleteEntity) {
+    content.querySelectorAll('[data-delete-entity]').forEach(btn => {
+      const [kind, id] = btn.dataset.deleteEntity.split(':');
+      btn.addEventListener('click', () => opts.onDeleteEntity(kind, id));
+    });
+  }
+}
+
+export function toast(msg, isError) {
+  const t = document.createElement('div');
+  t.className = 'toast' + (isError ? ' error' : '');
+  t.textContent = msg;
+  document.body.appendChild(t);
+  setTimeout(() => t.remove(), 3200);
 }

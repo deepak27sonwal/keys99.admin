@@ -1,9 +1,10 @@
 import { openProjectForm, isWizardOpen, handleWizardPopState } from './project-form.js';
 import { sb } from './supabase-client.js';
 import { residentialProjectsPage } from './residential-projects.js';
+import { openEntityForm, confirmDeleteEntity } from './entity-form.js';
 import {
   escapeHtml, pill, fmtPrice, fmtDate, timeAgo, count, initials,
-  pageHead, tablePanel, emptyRow, icon, rowActions, bindStubs
+  pageHead, tablePanel, emptyRow, icon, rowActions, bindStubs, toast
 } from './utils.js';
 
 const $ = s => document.querySelector(s);
@@ -370,8 +371,32 @@ async function developersPage() {
   content.innerHTML = pageHead('Developers', 'Builder and developer master data') +
     tablePanel('All Developers', toolbar, ['Name', 'RERA ID', 'Email', 'Phone', 'Verified', 'Actions'], rows);
 
-  $('#add-developer')?.addEventListener('click', () => alert('Developer add/edit form is coming soon.'));
-  bindPageStubs();
+  $('#add-developer')?.addEventListener('click', () => openDeveloperForm(null));
+  bindStubs(content, {
+    onEditEntity: (kind, id) => kind === 'developer' && openDeveloperForm(id),
+    onDeleteEntity: (kind, id) => kind === 'developer' && confirmDeleteEntity('developers', id, 'this developer', developersPage)
+  });
+}
+
+const DEVELOPER_FIELDS = [
+  { key: 'name', label: 'Developer Name', req: true, full: true },
+  { key: 'rera_id', label: 'RERA ID' },
+  { key: 'website', label: 'Website', type: 'url' },
+  { key: 'contact_email', label: 'Contact Email', type: 'email' },
+  { key: 'contact_phone', label: 'Contact Phone', type: 'tel' },
+  { key: 'description', label: 'Description', type: 'textarea', full: true },
+  { key: 'status', label: 'Status', type: 'select', options: [{ value: 'active', label: 'Active' }, { value: 'inactive', label: 'Inactive' }], default: 'active' },
+  { key: 'verified', label: 'Verified developer', type: 'checkbox', full: true }
+];
+
+function openDeveloperForm(id) {
+  openEntityForm({
+    title: id ? 'Edit Developer' : 'Add Developer',
+    table: 'developers',
+    fields: DEVELOPER_FIELDS,
+    existingId: id,
+    onSaved: developersPage
+  });
 }
 
 /* ---------------- Cities & Localities ---------------- */
@@ -382,19 +407,102 @@ async function citiesPage() {
 
   const toolbar = `<div class="toolbar"><button class="btn-primary" id="add-city">+ Add City</button></div>`;
   const rows = error
-    ? emptyRow(4, error.message)
+    ? emptyRow(5, error.message)
     : (data.length ? data.map(c => `
       <tr>
         <td><strong>${escapeHtml(c.name)}</strong></td>
         <td>${escapeHtml(c.state || '—')}</td>
-        <td>${(c.localities || []).length} localities</td>
+        <td><button class="link-btn" data-localities="${c.id}">${(c.localities || []).length} localities</button></td>
         <td>${c.is_active ? pill('active') : pill('inactive')}</td>
-      </tr>`).join('') : emptyRow(4, 'No cities added yet.'));
+        <td>${rowActions('city', c.id)}</td>
+      </tr>`).join('') : emptyRow(5, 'No cities added yet.'));
 
   content.innerHTML = pageHead('Cities & Localities', 'Coverage areas for residential listings') +
-    tablePanel('All Cities', toolbar, ['City', 'State', 'Localities', 'Status'], rows);
+    tablePanel('All Cities', toolbar, ['City', 'State', 'Localities', 'Status', 'Actions'], rows);
 
-  $('#add-city')?.addEventListener('click', () => alert('City/locality management form is coming soon.'));
+  $('#add-city')?.addEventListener('click', () => openCityForm(null));
+  content.querySelectorAll('[data-localities]').forEach(btn => {
+    btn.addEventListener('click', () => manageLocalities(btn.dataset.localities, btn.closest('tr').querySelector('strong').textContent));
+  });
+  bindStubs(content, {
+    onEditEntity: (kind, id) => kind === 'city' && openCityForm(id),
+    onDeleteEntity: (kind, id) => kind === 'city' && confirmDeleteEntity('cities', id, 'this city (and its localities)', citiesPage)
+  });
+}
+
+const CITY_FIELDS = [
+  { key: 'name', label: 'City Name', req: true },
+  { key: 'state', label: 'State', req: true },
+  { key: 'is_active', label: 'Active', type: 'checkbox', full: true, default: true }
+];
+
+function openCityForm(id) {
+  openEntityForm({
+    title: id ? 'Edit City' : 'Add City',
+    table: 'cities',
+    fields: CITY_FIELDS,
+    existingId: id,
+    onSaved: citiesPage
+  });
+}
+
+async function manageLocalities(cityId, cityName) {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal-box">
+      <div class="modal-head">
+        <div><h2>Localities</h2><p>${escapeHtml(cityName || '')}</p></div>
+        <button type="button" class="modal-close" data-close>✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="modal-list" id="locality-list"><div class="modal-list-empty">Loading…</div></div>
+        <div class="field full">
+          <label>Add Locality</label>
+          <div style="display:flex;gap:8px">
+            <input id="new-locality-name" type="text" placeholder="Locality name" style="flex:1">
+            <button type="button" class="btn-primary" id="add-locality-btn">+ Add</button>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer"><button type="button" class="btn-outline" data-close>Close</button></div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  const closeModal = () => { overlay.remove(); document.removeEventListener('keydown', escHandler); };
+  const escHandler = (e) => { if (e.key === 'Escape') closeModal(); };
+  document.addEventListener('keydown', escHandler);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) closeModal(); });
+  overlay.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', closeModal));
+
+  async function reload() {
+    const listEl = overlay.querySelector('#locality-list');
+    const { data, error } = await sb.from('localities').select('id,name,is_active').eq('city_id', cityId).order('name', { ascending: true });
+    if (error) { listEl.innerHTML = `<div class="modal-list-empty">${escapeHtml(error.message)}</div>`; return; }
+    listEl.innerHTML = data.length
+      ? data.map(l => `<div class="modal-list-row"><span>${escapeHtml(l.name)} ${l.is_active ? '' : pill('inactive')}</span><button type="button" class="icon-btn danger" data-remove-locality="${l.id}">${icon('trash', 13)}</button></div>`).join('')
+      : `<div class="modal-list-empty">No localities in ${escapeHtml(cityName || 'this city')} yet.</div>`;
+    listEl.querySelectorAll('[data-remove-locality]').forEach(b => b.addEventListener('click', async () => {
+      if (!confirm('Delete this locality?')) return;
+      const { error } = await sb.from('localities').delete().eq('id', b.dataset.removeLocality);
+      if (error) { toast(error.message, true); return; }
+      toast('Deleted');
+      reload();
+    }));
+  }
+
+  overlay.querySelector('#add-locality-btn').addEventListener('click', async () => {
+    const input = overlay.querySelector('#new-locality-name');
+    const name = input.value.trim();
+    if (!name) { toast('Enter a locality name', true); return; }
+    const { error } = await sb.from('localities').insert({ city_id: cityId, name });
+    if (error) { toast(error.message, true); return; }
+    input.value = '';
+    toast('Added');
+    reload();
+  });
+
+  reload();
 }
 
 /* ---------------- Agents ---------------- */
@@ -419,8 +527,33 @@ async function agentsPage() {
   content.innerHTML = pageHead('Agents', 'Agent profiles and verification') +
     tablePanel('All Agents', toolbar, ['Name', 'Company', 'Email', 'Phone', 'Verified', 'Actions'], rows);
 
-  $('#add-agent')?.addEventListener('click', () => alert('Agent add/edit form is coming soon.'));
-  bindPageStubs();
+  $('#add-agent')?.addEventListener('click', () => openAgentForm(null));
+  bindStubs(content, {
+    onEditEntity: (kind, id) => kind === 'agent' && openAgentForm(id),
+    onDeleteEntity: (kind, id) => kind === 'agent' && confirmDeleteEntity('agents', id, 'this agent', agentsPage)
+  });
+}
+
+const AGENT_FIELDS = [
+  { key: 'full_name', label: 'Full Name', req: true, full: true },
+  { key: 'company_name', label: 'Company Name' },
+  { key: 'rera_id', label: 'RERA ID' },
+  { key: 'email', label: 'Email', type: 'email' },
+  { key: 'phone', label: 'Phone', type: 'tel' },
+  { key: 'whatsapp', label: 'WhatsApp', type: 'tel' },
+  { key: 'bio', label: 'Bio', type: 'textarea', full: true },
+  { key: 'status', label: 'Status', type: 'select', options: [{ value: 'active', label: 'Active' }, { value: 'inactive', label: 'Inactive' }], default: 'active' },
+  { key: 'verified', label: 'Verified agent', type: 'checkbox', full: true }
+];
+
+function openAgentForm(id) {
+  openEntityForm({
+    title: id ? 'Edit Agent' : 'Add Agent',
+    table: 'agents',
+    fields: AGENT_FIELDS,
+    existingId: id,
+    onSaved: agentsPage
+  });
 }
 
 /* ---------------- Enquiries ---------------- */
