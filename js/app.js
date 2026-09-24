@@ -52,7 +52,7 @@ async function guard() {
 
 async function loadSidebarCounts() {
   const [residential, enquiriesOpen, moderationPending] = await Promise.all([
-    count('residential_projects', q => q.is('deleted_at', null)),
+    count('residential_projects', q => q.is('deleted_at', null).eq('moderation_status', 'published')),
     count('residential_enquiries', q => q.in('status', ['new', 'contacted', 'follow_up'])),
     count('residential_projects', q => q.is('deleted_at', null).in('moderation_status', ['pending_verification', 'under_review', 'changes_required', 'resubmitted']))
   ]);

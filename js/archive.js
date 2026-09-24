@@ -3,8 +3,10 @@ import { pageHead, tablePanel, emptyRow, icon, escapeHtml, fmtDate, toast, custo
 
 // Archived (soft-deleted) residential projects — the "Delete" action on the Residential
 // Projects list and the Dashboard's recent-projects table sets deleted_at instead of
-// removing the row, so a mistaken delete can be undone here. Permanent delete is a
-// separate, explicit action since it cascades to the project's enquiries, media, etc.
+// removing the row, so a mistaken delete can be undone here. Restoring puts the project
+// straight back live (moderation_status: 'published'), skipping the moderation queue,
+// since only already-live projects are expected to go through Archive. Permanent delete
+// is a separate, explicit action since it cascades to the project's enquiries, media, etc.
 export async function archivePage(content, navigate) {
   content.innerHTML = pageHead('Archive', 'Projects removed from the live listings — restore or permanently delete them') + `<div class="empty">Loading…</div>`;
 
@@ -34,9 +36,11 @@ export async function archivePage(content, navigate) {
   content.querySelectorAll('[data-purge]').forEach(btn => btn.addEventListener('click', () => purge(btn.dataset.purge, btn.dataset.name)));
 
   async function restore(id, name) {
-    const { error } = await sb.from('residential_projects').update({ deleted_at: null, deleted_by: null }).eq('id', id);
+    const { error } = await sb.from('residential_projects')
+      .update({ deleted_at: null, deleted_by: null, moderation_status: 'published', published_at: new Date().toISOString() })
+      .eq('id', id);
     if (error) { toast(error.message, true); return; }
-    toast(`"${name}" restored`);
+    toast(`"${name}" restored and published`);
     archivePage(content, navigate);
   }
 
