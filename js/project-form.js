@@ -37,7 +37,7 @@ let intentionalExit = false;
 
 const STEP_NAMES = [
   'Basic Information', 'Project Location', 'Size & Scale', 'Status & Construction',
-  'Residential Configurations', 'Pricing & Cost', 'Apartment Specifications', 'Tower / Building Details',
+  'Residential Configurations', 'Apartment Specifications', 'Tower / Building Details',
   'Amenities & Features', 'Nearby Locations', 'Project Media', 'Pros & Cons',
   'Project Documents', 'Litigation & Legal', 'Construction Updates', 'Project FAQ',
   'Contact / Enquiry', 'SEO', 'Review & Submit'
@@ -47,8 +47,7 @@ const STEP_SUB = [
   'Where the project is located.',
   'Land, towers, floors and unit scale of the project.',
   'Construction progress and possession timelines.',
-  'One BHK can have multiple area/price variants — add each as a separate record.',
-  'Project-level pricing, charges and disclaimers.',
+  'One BHK can have multiple price/area configurations — add each as a separate record.',
   'Standard specifications used across the project.',
   'Add one record per tower/building in the project.',
   'Group amenities by category — check the ones available, or add custom ones.',
@@ -63,6 +62,7 @@ const STEP_SUB = [
   'Search engine metadata for the public project page.',
   'Review every section before saving as draft or submitting for verification.'
 ];
+const TOTAL_STEPS = STEP_NAMES.length;
 // index into which core-save happens on "Next" (after this step, the project row can be created)
 const FIRST_SAVE_AFTER_STEP = 4;
 
@@ -115,18 +115,6 @@ const FIELDS = {
     { key: 'rera_possession_date', label: 'RERA Possession Date', type: 'date' },
     { key: 'target_possession_date', label: 'Target Possession Date', type: 'date' }
   ],
-  pricing: [
-    { key: 'price_on_request', label: 'Price on Request (project-wide override)', type: 'checkbox' },
-    { key: 'base_price', label: 'Base Price', type: 'number', unit: '₹' },
-    { key: 'floor_rise_charges', label: 'Floor Rise Charges', type: 'number', unit: '₹' },
-    { key: 'parking_charges', label: 'Parking Charges', type: 'number', unit: '₹' },
-    { key: 'clubhouse_charges', label: 'Clubhouse Charges', type: 'number', unit: '₹' },
-    { key: 'maintenance_charges', label: 'Maintenance Charges', type: 'number', unit: '₹' },
-    { key: 'other_charges', label: 'Other Charges', type: 'number', unit: '₹' },
-    { key: 'gst_applicable', label: 'GST Applicable', type: 'checkbox' },
-    { key: 'price_disclaimer', label: 'Price Disclaimer', type: 'textarea', full: true },
-    { key: 'registration_stamp_duty_disclaimer', label: 'Registration & Stamp Duty Disclaimer', type: 'textarea', full: true }
-  ],
   specs: [
     { key: 'flooring', label: 'Flooring', type: 'textarea' },
     { key: 'doors', label: 'Doors', type: 'textarea' },
@@ -166,7 +154,7 @@ const NEARBY_CATEGORIES = enumOpts(['transport', 'education', 'healthcare', 'sho
 /* ============ default row factories ============ */
 
 const DEFAULTS = {
-  configuration: () => ({ _k: uid(), bhk_type: '1 BHK', variant_name: '', area_unit: 'sq_ft', carpet_area: '', built_up_area: '', super_built_up_area: '', number_of_units: '', starting_price: '', maximum_price: '', price_type: 'total_price', price_on_request: false, availability: 'available', parking_included: 'not_available', parking_type: [], description: '' }),
+  configuration: () => ({ _k: uid(), bhk_type: '1 BHK', area_unit: 'sq_ft', carpet_area: '', built_up_area: '', super_built_up_area: '', number_of_units: '', starting_price: '', maximum_price: '', price_type: 'total_price', price_on_request: false, availability: 'available', parking_included: 'not_available', parking_type: [], description: '' }),
   tower: () => ({ _k: uid(), tower_name: '', tower_number: '', number_of_floors: '', number_of_units: '', configurations: [], tower_status: 'under_construction', construction_stage: '', construction_start_date: '', expected_completion_date: '', possession_status: '', construction_details: '' }),
   amenity: (category, name) => ({ _k: uid(), category, amenity_name: name, amenity_type: name, description: '', is_available: true }),
   nearby: () => ({ _k: uid(), category: 'transport', location_type: '', name: '', distance: '', distance_unit: 'km', description: '' }),
@@ -251,6 +239,7 @@ export function handleWizardPopState(e) {
   if (st && st.pfWizard) {
     stepIndex = st.step;
     renderStepBody();
+    window.scrollTo(0, 0);
     return true;
   }
   if (!intentionalExit && touched && !confirm('Leave this form? Unsaved changes on the current step may be lost.')) {
@@ -320,12 +309,12 @@ async function loadProject(id) {
 /* ============ shell + step render ============ */
 
 function renderShell() {
-  const pct = Math.round((stepIndex / 19) * 100);
+  const pct = Math.round((stepIndex / TOTAL_STEPS) * 100);
   content.innerHTML = `<div class="wrap">
     <div class="form-head">
       <div class="form-head-left">
         <button class="back-btn" id="pf-close" title="${stepIndex > 1 ? 'Back' : 'Close'}">←</button>
-        <div><h1>${isEdit ? 'Edit' : 'Add'} Residential Project</h1><p id="pf-step-label">Step ${stepIndex} of 19 · ${STEP_NAMES[stepIndex - 1]}</p></div>
+        <div><h1>${isEdit ? 'Edit' : 'Add'} Residential Project</h1><p id="pf-step-label">Step ${stepIndex} of ${TOTAL_STEPS} · ${STEP_NAMES[stepIndex - 1]}</p></div>
       </div>
       <div class="form-head-right">
         <button class="btn-ghost" id="pf-save-draft">Save as Draft</button>
@@ -378,22 +367,27 @@ function gotoStep(n) {
     stepIndex = n;
     pushWizardState();
     renderStepBody();
+    window.scrollTo(0, 0);
   }
 }
 
 function renderStepBody() {
   renderStepper();
-  const pct = Math.round((stepIndex / 19) * 100);
+  const pct = Math.round((stepIndex / TOTAL_STEPS) * 100);
   $('#pf-progress').style.width = pct + '%';
-  $('#pf-step-label').textContent = `Step ${stepIndex} of 19 · ${STEP_NAMES[stepIndex - 1]}`;
+  $('#pf-step-label').textContent = `Step ${stepIndex} of ${TOTAL_STEPS} · ${STEP_NAMES[stepIndex - 1]}`;
   $('#pf-panel-head').innerHTML = `<h2>${esc(STEP_NAMES[stepIndex - 1])}</h2><p>${esc(STEP_SUB[stepIndex - 1])}</p>`;
   $('#pf-panel-body').innerHTML = renderBody(stepIndex);
   $('#pf-footer-label').textContent = `${pct}% complete`;
   $('#pf-back').disabled = stepIndex === 1;
-  $('#pf-next').textContent = stepIndex === 19 ? 'Submit for Verification →' : `Next: ${STEP_NAMES[stepIndex] || ''} →`;
+  $('#pf-next').textContent = stepIndex === TOTAL_STEPS ? 'Submit for Verification →' : `Next: ${STEP_NAMES[stepIndex] || ''} →`;
   $('#pf-close').title = stepIndex > 1 ? 'Back' : 'Close';
   handleSpecialBindings();
-  window.scrollTo(0, 0);
+  // No scrollTo here on purpose — renderStepBody() is also called for in-place updates on
+  // the current step (toggling an amenity chip, adding/removing a repeat-card row, an
+  // upload finishing, etc.), and jumping the page to the top on every one of those was the
+  // "page moves up when clicking amenities" bug. Only an actual step change should scroll;
+  // see goNext(), gotoStep() and handleWizardPopState() below, which call it explicitly.
 }
 
 /* ============ generic field rendering ============ */
@@ -572,20 +566,19 @@ function renderBody(i) {
     case 3: return renderFieldsGrid(FIELDS.size, state.project, 'project');
     case 4: return renderFieldsGrid(FIELDS.status, state.project, 'project');
     case 5: return renderConfigurations();
-    case 6: return renderPricing();
-    case 7: return renderFieldsGrid(FIELDS.specs, state.project, 'project');
-    case 8: return renderTowers();
-    case 9: return renderAmenities();
-    case 10: return renderNearby();
-    case 11: return renderMedia();
-    case 12: return renderProsCons();
-    case 13: return renderDocuments();
-    case 14: return renderLitigation();
-    case 15: return renderUpdates();
-    case 16: return renderFaqs();
-    case 17: return renderFieldsGrid(FIELDS.contact, state.project, 'project');
-    case 18: return renderSeo();
-    case 19: return renderReview();
+    case 6: return renderFieldsGrid(FIELDS.specs, state.project, 'project');
+    case 7: return renderTowers();
+    case 8: return renderAmenities();
+    case 9: return renderNearby();
+    case 10: return renderMedia();
+    case 11: return renderProsCons();
+    case 12: return renderDocuments();
+    case 13: return renderLitigation();
+    case 14: return renderUpdates();
+    case 15: return renderFaqs();
+    case 16: return renderFieldsGrid(FIELDS.contact, state.project, 'project');
+    case 17: return renderSeo();
+    case 18: return renderReview();
     default: return '';
   }
 }
@@ -600,20 +593,14 @@ function renderBasic() {
   </div>`;
 }
 
+// Project-level starting/maximum price shown on the public listing card — derived from the
+// BHK configurations added in Step 5 rather than typed in separately (there's no dedicated
+// pricing step; see projectPayload()).
 function priceRangeFromConfigs() {
   const starts = state.configurations.map(c => Number(c.starting_price)).filter(n => n > 0);
   const maxes = state.configurations.map(c => Number(c.maximum_price || c.starting_price)).filter(n => n > 0);
   if (!starts.length) return { min: null, max: null };
   return { min: Math.min(...starts), max: maxes.length ? Math.max(...maxes) : Math.min(...starts) };
-}
-
-function renderPricing() {
-  const range = priceRangeFromConfigs();
-  const fmt = v => v == null ? '—' : `₹${Number(v).toLocaleString('en-IN')}`;
-  const rangeDisplay = state.project.price_on_request ? 'Price on request' : (range.min == null ? 'Add unit variants in Step 5 to calculate this' : (range.min === range.max ? fmt(range.min) : `${fmt(range.min)} – ${fmt(range.max)}`));
-  const rangeField = `<div class="field full"><label>Starting – Maximum Price</label><input type="text" value="${esc(rangeDisplay)}" disabled><span class="hint">Calculated from the unit variants added in Residential Configurations (Step 5) — not entered here.</span></div>`;
-  const fieldsHtml = FIELDS.pricing.map(s => renderField(s, state.project[s.key], `data-bind="project.${s.key}"`)).join('');
-  return `<div class="form-grid">${rangeField}${fieldsHtml}</div>`;
 }
 
 function renderSeo() {
@@ -643,13 +630,12 @@ function renderRepeatStep(key, fields, opts) {
 
 const CONFIG_FIELDS = [
   { key: 'bhk_type', label: 'BHK', req: true },
-  { key: 'variant_name', label: 'Variant Name', placeholder: 'e.g. 2 BHK Premium' },
   { key: 'area_unit', label: 'Area Unit', type: 'select', options: AREA_UNIT_OPTIONS },
   { key: 'number_of_units', label: 'Number of Units', type: 'number' },
   { key: 'carpet_area', label: 'Carpet Area', type: 'number', unit: 'area' },
   { key: 'built_up_area', label: 'Built-up Area', type: 'number', unit: 'area' },
   { key: 'super_built_up_area', label: 'Super Built-up Area', type: 'number', unit: 'area' },
-  { key: 'starting_price', label: 'Starting Price', type: 'number', unit: '₹' },
+  { key: 'starting_price', label: 'Starting Price', type: 'number', unit: '₹', req: true },
   { key: 'maximum_price', label: 'Maximum Price', type: 'number', unit: '₹' },
   { key: 'price_type', label: 'Price Type', type: 'select', options: enumOpts(['total_price', 'price_per_sq_ft', 'price_per_sq_m']) },
   { key: 'availability', label: 'Availability', type: 'select', options: enumOpts(['available', 'sold_out', 'on_request']) },
@@ -657,7 +643,7 @@ const CONFIG_FIELDS = [
 ];
 function renderConfigurations() {
   return renderRepeatStep('configurations', CONFIG_FIELDS, {
-    singular: 'Configuration', emptyText: 'No configurations added yet.', addLabel: 'Add Unit Variant',
+    singular: 'BHK Configuration', emptyText: 'No configurations added yet.', addLabel: 'Add BHK Configuration',
     extraHtml: (c, i) => {
       const parkTypes = ['covered', 'open', 'mechanical', 'ev', 'other'];
       const parkChips = parkTypes.map(t => `<span class="chip${(c.parking_type || []).includes(t) ? ' active' : ''}" data-toggle-parktype="${i}" data-val="${t}" style="cursor:pointer">${esc(t)}</span>`).join('');
@@ -846,25 +832,26 @@ function renderReview() {
     <div class="review-card-head"><b>${esc(title)}</b><button type="button" data-goto="${stepNum}">Edit</button></div>
     <dl>${rows.map(([k, v]) => `<div><dt>${esc(k)}:</dt> <dd>${esc(v || '—')}</dd></div>`).join('')}</dl>
   </div>`;
+  const range = priceRangeFromConfigs();
+  const priceText = range.min == null ? 'Not set' : (range.min === range.max ? `₹${range.min.toLocaleString('en-IN')}` : `₹${range.min.toLocaleString('en-IN')} – ₹${range.max.toLocaleString('en-IN')}`);
   const html = `<div class="review-grid">
     ${section('1. Basic Information', [['Project', p.project_name], ['Developer', dev], ['Type', p.project_type], ['Highlights', `${p.highlights.length} added`]], 1)}
     ${section('2. Project Location', [['Address', p.address], ['City / Locality', `${loc}, ${city}`], ['Pincode', p.pincode]], 2)}
     ${section('3. Size & Scale', [['Land Area', p.total_land_area ? `${p.total_land_area} ${p.land_area_unit}` : '—'], ['Towers', p.total_towers_buildings], ['Total Units', p.total_residential_units]], 3)}
     ${section('4. Status & Construction', [['Status', p.status], ['Construction Stage', p.construction_stage], ['Target Possession', p.target_possession_date]], 4)}
-    ${section('5. Configurations', [['Variants', `${state.configurations.length} added`]], 5)}
-    ${section('6. Pricing & Cost', [['Starting Price', p.price_on_request ? 'On Request' : priceRangeFromConfigs().min], ['GST Applicable', p.gst_applicable ? 'Yes' : 'No']], 6)}
-    ${section('7. Apartment Specifications', [['Flooring', p.flooring], ['Kitchen', p.kitchen]], 7)}
-    ${section('8. Tower / Building Details', [['Towers added', `${state.towers.length}`]], 8)}
-    ${section('9. Amenities & Features', [['Selected', `${state.amenities.length} amenities`]], 9)}
-    ${section('10. Nearby Locations', [['Added', `${state.nearby.length} landmarks`]], 10)}
-    ${section('11. Project Media', [['Main image', state.media.main.media_url ? 'Uploaded' : 'Not set'], ['Gallery', `${state.media.gallery.length} images`], ['Videos', `${state.media.videos.length} added`]], 11)}
-    ${section('12. Pros & Cons', [['Pros', `${state.prosCons.filter(x => x.item_type === 'pro').length}`], ['Cons', `${state.prosCons.filter(x => x.item_type === 'con').length}`]], 12)}
-    ${section('13. Project Documents', [['Documents', `${state.documents.length} added`]], 13)}
-    ${section('14. Litigation & Legal', [['Entries', `${state.litigation.length}`]], 14)}
-    ${section('15. Construction Updates', [['Updates', `${state.updates.length}`]], 15)}
-    ${section('16. Project FAQ', [['FAQs added', `${state.faqs.length}`]], 16)}
-    ${section('17. Contact / Enquiry', [['Assigned Agent', agent]], 17)}
-    ${section('18. SEO', [['Slug', p.slug], ['SEO Title', p.seo_title]], 18)}
+    ${section('5. Configurations', [['Variants', `${state.configurations.length} added`], ['Price Range', priceText]], 5)}
+    ${section('6. Apartment Specifications', [['Flooring', p.flooring], ['Kitchen', p.kitchen]], 6)}
+    ${section('7. Tower / Building Details', [['Towers added', `${state.towers.length}`]], 7)}
+    ${section('8. Amenities & Features', [['Selected', `${state.amenities.length} amenities`]], 8)}
+    ${section('9. Nearby Locations', [['Added', `${state.nearby.length} landmarks`]], 9)}
+    ${section('10. Project Media', [['Main image', state.media.main.media_url ? 'Uploaded' : 'Not set'], ['Gallery', `${state.media.gallery.length} images`], ['Videos', `${state.media.videos.length} added`]], 10)}
+    ${section('11. Pros & Cons', [['Pros', `${state.prosCons.filter(x => x.item_type === 'pro').length}`], ['Cons', `${state.prosCons.filter(x => x.item_type === 'con').length}`]], 11)}
+    ${section('12. Project Documents', [['Documents', `${state.documents.length} added`]], 12)}
+    ${section('13. Litigation & Legal', [['Entries', `${state.litigation.length}`]], 13)}
+    ${section('14. Construction Updates', [['Updates', `${state.updates.length}`]], 14)}
+    ${section('15. Project FAQ', [['FAQs added', `${state.faqs.length}`]], 15)}
+    ${section('16. Contact / Enquiry', [['Assigned Agent', agent]], 16)}
+    ${section('17. SEO', [['Slug', p.slug], ['SEO Title', p.seo_title]], 17)}
   </div>
   <div class="confirm-row"><input type="checkbox" id="pf-confirm"><label for="pf-confirm">I confirm this information is accurate and ready for verification. <span class="req">*</span></label></div>`;
   return html;
@@ -893,7 +880,13 @@ async function goNext() {
     const missing = validateFields(specs, state.project);
     if (missing.length) { toast(`Please fill: ${missing.join(', ')}`, true); return; }
   }
-  if (stepIndex === 19) {
+  const repeatSpec = repeatStepSpecs(stepIndex);
+  if (repeatSpec) {
+    const [arrayKey, fields] = repeatSpec;
+    const missing = validateRepeatStep(getPath(state, arrayKey) || [], fields);
+    if (missing.length) { toast(`Please fill: ${missing.join(', ')}`, true); return; }
+  }
+  if (stepIndex === TOTAL_STEPS) {
     if (!$('#pf-confirm')?.checked) { toast('Please confirm the information is accurate before submitting.', true); return; }
     await submitForVerification();
     return;
@@ -909,11 +902,37 @@ async function goNext() {
   stepIndex++;
   pushWizardState();
   renderStepBody();
+  window.scrollTo(0, 0);
 }
 
 function stepFieldSpecs(i) {
-  const map = { 1: FIELDS.basic, 2: FIELDS.location, 3: FIELDS.size, 4: FIELDS.status, 6: FIELDS.pricing, 7: FIELDS.specs, 17: FIELDS.contact, 18: FIELDS.seo };
+  const map = { 1: FIELDS.basic, 2: FIELDS.location, 3: FIELDS.size, 4: FIELDS.status, 6: FIELDS.specs, 16: FIELDS.contact, 17: FIELDS.seo };
   return map[i] || null;
+}
+
+// Repeatable steps' required fields aren't covered by stepFieldSpecs() above (that only
+// validates the single-record FIELDS.* steps) — without this, a required field left blank
+// on a repeat-card step (e.g. a Construction Update with no date) would pass validation,
+// then fail at the database with a NOT NULL / invalid-date error, and Next would silently
+// do nothing.
+function repeatStepSpecs(i) {
+  const map = {
+    5: ['configurations', CONFIG_FIELDS], 7: ['towers', TOWER_FIELDS], 9: ['nearby', NEARBY_FIELDS],
+    12: ['documents', DOC_FIELDS], 14: ['updates', UPDATE_FIELDS], 15: ['faqs', FAQ_FIELDS]
+  };
+  return map[i] || null;
+}
+
+function validateRepeatStep(items, fields) {
+  const missing = [];
+  items.forEach((item, idx) => {
+    for (const f of fields) {
+      if (f.req && (item[f.key] === null || item[f.key] === undefined || item[f.key] === '')) {
+        missing.push(`${f.label} (#${idx + 1})`);
+      }
+    }
+  });
+  return missing;
 }
 
 // wires up handlers that need live DOM access not covered by data-bind (toggles, uploads)
@@ -1075,7 +1094,7 @@ async function persistStep(i) {
   try {
     if (i === 5) {
       const err = await replaceChildRows('residential_configurations', state.configurations.map((c, idx) => ({
-        bhk_type: c.bhk_type, variant_name: c.variant_name || null, area_unit: c.area_unit,
+        bhk_type: c.bhk_type, area_unit: c.area_unit,
         carpet_area: num(c.carpet_area), built_up_area: num(c.built_up_area), super_built_up_area: num(c.super_built_up_area),
         starting_price: num(c.starting_price), maximum_price: num(c.maximum_price), price_type: c.price_type,
         price_on_request: !!c.price_on_request, availability: c.availability, number_of_units: num(c.number_of_units),
@@ -1083,7 +1102,7 @@ async function persistStep(i) {
         description: c.description || null, display_order: idx
       })));
       if (err) throw new Error(err);
-    } else if (i === 8) {
+    } else if (i === 7) {
       const err = await replaceChildRows('residential_towers', state.towers.map((t, idx) => ({
         tower_name: t.tower_name, tower_number: t.tower_number || null, number_of_floors: num(t.number_of_floors),
         number_of_units: num(t.number_of_units), configurations: t.configurations || [], tower_status: t.tower_status,
@@ -1092,33 +1111,35 @@ async function persistStep(i) {
         construction_details: t.construction_details || null, display_order: idx
       })));
       if (err) throw new Error(err);
-    } else if (i === 9) {
+    } else if (i === 8) {
       const err = await replaceChildRows('residential_amenities', state.amenities.map((a, idx) => ({
         category: a.category, amenity_type: a.amenity_type || a.amenity_name, amenity_name: a.amenity_name,
         description: a.description || null, is_available: a.is_available !== false, display_order: idx
       })));
       if (err) throw new Error(err);
-    } else if (i === 10) {
+    } else if (i === 9) {
+      // location_type is NOT NULL in the database but optional in the UI — must default to
+      // '' (not null) here, or the insert fails whenever a landmark's "Type" is left blank.
       const err = await replaceChildRows('residential_nearby_locations', state.nearby.map((n, idx) => ({
-        category: n.category, location_type: n.location_type || null, name: n.name, distance: num(n.distance),
+        category: n.category, location_type: n.location_type || '', name: n.name, distance: num(n.distance),
         distance_unit: n.distance_unit, description: n.description || null, display_order: idx
       })));
       if (err) throw new Error(err);
-    } else if (i === 11) {
+    } else if (i === 10) {
       const err = await replaceChildRows('residential_media', mediaRows());
       if (err) throw new Error(err);
-    } else if (i === 12) {
+    } else if (i === 11) {
       const err = await replaceChildRows('residential_project_pros_cons', state.prosCons.map((p, idx) => ({
         item_type: p.item_type, content: p.content, display_order: idx, created_by: currentUser.id
       })));
       if (err) throw new Error(err);
-    } else if (i === 13) {
+    } else if (i === 12) {
       const err = await replaceChildRows('residential_documents', state.documents.filter(d => d.file_path).map(d => ({
         document_type: d.document_type, title: d.title, file_path: d.file_path, file_url: d.file_url,
         visibility: d.visibility, description: d.description || null, uploaded_by: currentUser.id
       })));
       if (err) throw new Error(err);
-    } else if (i === 14) {
+    } else if (i === 13) {
       const err = await replaceChildRows('residential_litigation', state.litigation.map(l => ({
         status: l.status, case_title: l.case_title || null, court_tribunal: l.court_tribunal || null,
         case_type: l.case_type || null, filing_date: l.filing_date || null, current_status: l.current_status || null,
@@ -1126,7 +1147,7 @@ async function persistStep(i) {
         supporting_document_url: l.supporting_document_url || null, created_by: currentUser.id
       })));
       if (err) throw new Error(err);
-    } else if (i === 15) {
+    } else if (i === 14) {
       await sb.from('residential_construction_updates').delete().eq('project_id', projectId);
       for (const u of state.updates) {
         const { data, error } = await sb.from('residential_construction_updates').insert({
@@ -1139,7 +1160,7 @@ async function persistStep(i) {
           await sb.from('residential_construction_update_media').insert(u.media.map(m => ({ update_id: data.id, media_path: m.media_path, media_url: m.media_url })));
         }
       }
-    } else if (i === 16) {
+    } else if (i === 15) {
       const err = await replaceChildRows('residential_faqs', state.faqs.map((f, idx) => ({
         question: f.question, answer: f.answer, display_order: idx, is_published: f.is_published !== false, created_by: currentUser.id
       })));
@@ -1181,7 +1202,7 @@ async function saveCurrentAndDraft() {
 async function submitForVerification() {
   $('#pf-next').disabled = true;
   try {
-    for (let i = FIRST_SAVE_AFTER_STEP; i <= 16; i++) {
+    for (let i = FIRST_SAVE_AFTER_STEP; i <= 15; i++) {
       const ok = await persistStep(i);
       if (!ok) return;
     }
