@@ -9,6 +9,7 @@ import {
   confirmArchiveProject
 } from './utils.js';
 import { archivePage } from './archive.js';
+import { reportsPage } from './reports.js';
 
 const $ = s => document.querySelector(s);
 const content = $('#content');
@@ -921,6 +922,11 @@ const PAGES = {
   enquiries: (openId) => enquiriesPage(openId),
   moderation: moderationPage,
   archive: () => archivePage(content, navigate),
+  'report-projects': () => reportsPage(content, navigate, 'projects'),
+  'report-enquiries': () => reportsPage(content, navigate, 'enquiries'),
+  'report-developers': () => reportsPage(content, navigate, 'developers'),
+  'report-agents': () => reportsPage(content, navigate, 'agents'),
+  'report-moderation': () => reportsPage(content, navigate, 'moderation'),
   settings: settingsPage,
   profile: profilePage
 };
