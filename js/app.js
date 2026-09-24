@@ -625,26 +625,187 @@ async function enquiriesPage() {
 
 /* ---------------- Moderation Queue ---------------- */
 
-async function moderationPage() {
-  content.innerHTML = pageHead('Moderation Queue', 'Review, approve and publish projects') + `<div class="empty">Loading…</div>`;
-  const { data, error } = await sb.from('residential_projects')
-    .select('id,project_code,project_name,moderation_status,updated_at')
-    .in('moderation_status', ['pending_verification', 'under_review', 'changes_required', 'resubmitted'])
-    .order('updated_at', { ascending: false }).limit(200);
+const MOD_TABS = [
+  { key: 'awaiting', label: 'Awaiting Action', statuses: ['pending_verification', 'under_review', 'resubmitted', 'changes_required'] },
+  { key: 'published', label: 'Published', statuses: ['published'] },
+  { key: 'rejected', label: 'Rejected', statuses: ['rejected'] },
+  { key: 'suspended', label: 'Suspended', statuses: ['suspended'] },
+  { key: 'archived', label: 'Archived', statuses: ['archived'] },
+  { key: 'all', label: 'All', statuses: null }
+];
 
-  const rows = error
-    ? emptyRow(4, error.message)
-    : (data.length ? data.map(p => `
+const MOD_ACTIONS = {
+  startReview: { label: 'Start Review', icon: 'refresh', toStatus: 'under_review', action: 'under_review' },
+  approve: { label: 'Approve & Publish', icon: 'check', toStatus: 'published', setApprovedAt: true, setPublishedAt: true, action: 'approved' },
+  requestChanges: { label: 'Request Changes', icon: 'edit', toStatus: 'changes_required', requireComment: true, action: 'changes_requested' },
+  reject: { label: 'Reject', icon: 'close', toStatus: 'rejected', requireComment: true, action: 'rejected' },
+  suspend: { label: 'Suspend', icon: 'pause', toStatus: 'suspended', requireComment: true, action: 'suspended' },
+  republish: { label: 'Republish', icon: 'check', toStatus: 'published', setPublishedAt: true, action: 'republished' },
+  archive: { label: 'Archive', icon: 'archive', toStatus: 'archived', action: 'archived' },
+  restore: { label: 'Restore to Draft', icon: 'refresh', toStatus: 'draft', action: 'restored' }
+};
+
+function actionKeysForStatus(status) {
+  switch (status) {
+    case 'pending_verification':
+    case 'resubmitted': return ['startReview', 'approve', 'requestChanges', 'reject'];
+    case 'under_review': return ['approve', 'requestChanges', 'reject'];
+    case 'changes_required': return ['reject'];
+    case 'published': return ['suspend', 'archive'];
+    case 'suspended': return ['republish', 'archive'];
+    case 'rejected': return ['restore', 'archive'];
+    case 'archived': return ['restore'];
+    default: return [];
+  }
+}
+
+// A small modal to collect the required reason/comment for actions like Request Changes,
+// Reject and Suspend — resolves with the trimmed comment, or null if cancelled.
+function promptComment(actionLabel, projectName) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal-box">
+        <div class="modal-head">
+          <div><h2>${escapeHtml(actionLabel)}</h2><p>${escapeHtml(projectName)}</p></div>
+          <button type="button" class="modal-close" data-close>✕</button>
+        </div>
+        <div class="modal-body">
+          <div class="field full">
+            <label>Reason <span class="req">*</span></label>
+            <textarea id="mod-comment" placeholder="Explain why, so the submitter knows what to fix…"></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn-outline" data-close>Cancel</button>
+          <button type="button" class="btn-primary" id="mod-comment-submit">${escapeHtml(actionLabel)}</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+
+    const finish = (value) => {
+      overlay.remove();
+      document.removeEventListener('keydown', escHandler);
+      resolve(value);
+    };
+    const escHandler = (e) => { if (e.key === 'Escape') finish(null); };
+    document.addEventListener('keydown', escHandler);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) finish(null); });
+    overlay.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', () => finish(null)));
+    overlay.querySelector('#mod-comment-submit').addEventListener('click', () => {
+      const val = overlay.querySelector('#mod-comment').value.trim();
+      if (!val) { toast('Please enter a reason', true); return; }
+      finish(val);
+    });
+  });
+}
+
+async function viewModerationHistory(project) {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal-box">
+      <div class="modal-head">
+        <div><h2>Moderation History</h2><p>${escapeHtml(project.project_name)}</p></div>
+        <button type="button" class="modal-close" data-close>✕</button>
+      </div>
+      <div class="modal-body"><div class="modal-list" id="mod-history-list"><div class="modal-list-empty">Loading…</div></div></div>
+      <div class="modal-footer"><button type="button" class="btn-outline" data-close>Close</button></div>
+    </div>`;
+  document.body.appendChild(overlay);
+  const close = () => { overlay.remove(); document.removeEventListener('keydown', escHandler); };
+  const escHandler = (e) => { if (e.key === 'Escape') close(); };
+  document.addEventListener('keydown', escHandler);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+  overlay.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', close));
+
+  const { data, error } = await sb.from('residential_project_moderation_history')
+    .select('id,from_status,to_status,action,comment,changed_at')
+    .eq('project_id', project.id).order('changed_at', { ascending: false });
+
+  const listEl = overlay.querySelector('#mod-history-list');
+  if (error) { listEl.innerHTML = `<div class="modal-list-empty">${escapeHtml(error.message)}</div>`; return; }
+  listEl.innerHTML = data.length ? data.map(h => `
+    <div class="modal-list-row" style="align-items:flex-start;flex-direction:column;gap:6px">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        ${h.from_status ? pill(h.from_status) + ' →' : ''} ${pill(h.to_status)}
+        <span style="font-size:11px;color:var(--muted)">${fmtDate(h.changed_at)}</span>
+      </div>
+      ${h.comment ? `<div style="font-size:12.5px;color:var(--ink-soft)">${escapeHtml(h.comment)}</div>` : ''}
+    </div>`).join('') : `<div class="modal-list-empty">No moderation history yet.</div>`;
+}
+
+async function runModAction(project, actionKey, reload) {
+  const cfg = MOD_ACTIONS[actionKey];
+  let comment = null;
+  if (cfg.requireComment) {
+    comment = await promptComment(cfg.label, project.project_name);
+    if (comment === null) return;
+  } else if (!confirm(`${cfg.label} "${project.project_name}"?`)) {
+    return;
+  }
+
+  const payload = { moderation_status: cfg.toStatus };
+  if (cfg.setApprovedAt) payload.approved_at = new Date().toISOString();
+  if (cfg.setPublishedAt) payload.published_at = new Date().toISOString();
+
+  const { error } = await sb.from('residential_projects').update(payload).eq('id', project.id);
+  if (error) { toast(error.message, true); return; }
+
+  await sb.from('residential_project_moderation_history').insert({
+    project_id: project.id, from_status: project.moderation_status, to_status: cfg.toStatus,
+    action: cfg.action, comment, changed_by: currentUser.id
+  });
+
+  toast(cfg.label + ' — done');
+  reload();
+}
+
+async function moderationPage() {
+  let activeTab = 'awaiting';
+
+  async function render() {
+    const tabsHtml = `<div class="tab-row">${MOD_TABS.map(t =>
+      `<button type="button" class="tab-pill${t.key === activeTab ? ' active' : ''}" data-mod-tab="${t.key}">${t.label}</button>`
+    ).join('')}</div>`;
+    content.innerHTML = pageHead('Moderation Queue', 'Review, approve and publish projects') + tabsHtml + `<div class="empty">Loading…</div>`;
+
+    const tab = MOD_TABS.find(t => t.key === activeTab);
+    let q = sb.from('residential_projects').select('id,project_code,project_name,moderation_status,updated_at').order('updated_at', { ascending: false }).limit(200);
+    if (tab.statuses) q = q.in('moderation_status', tab.statuses);
+    const { data, error } = await q;
+
+    const rows = error
+      ? emptyRow(4, error.message)
+      : (data.length ? data.map(p => {
+        const actions = actionKeysForStatus(p.moderation_status).map(key =>
+          `<button class="icon-btn" data-mod-action="${key}" data-id="${p.id}" title="${escapeHtml(MOD_ACTIONS[key].label)}">${icon(MOD_ACTIONS[key].icon, 13)}</button>`
+        ).join('');
+        return `
       <tr>
         <td><div class="proj-name">${escapeHtml(p.project_name)}</div><div class="proj-code">${escapeHtml(p.project_code)}</div></td>
         <td>${pill(p.moderation_status)}</td>
         <td>${fmtDate(p.updated_at)}</td>
-        <td><button class="icon-btn" data-stub="view">${icon('eye', 13)}</button></td>
-      </tr>`).join('') : emptyRow(4, 'Moderation queue is empty.'));
+        <td><div class="row-actions">
+          <button class="icon-btn" data-edit-project="${p.id}" title="Edit">${icon('edit', 13)}</button>
+          <button class="icon-btn" data-mod-history="${p.id}" title="History">${icon('history', 13)}</button>
+          ${actions}
+        </div></td>
+      </tr>`;
+      }).join('') : emptyRow(4, 'Nothing here.'));
 
-  content.innerHTML = pageHead('Moderation Queue', 'Review, approve and publish projects') +
-    tablePanel('Awaiting Action', '', ['Project', 'Status', 'Updated', 'Actions'], rows);
-  bindPageStubs();
+    content.innerHTML = pageHead('Moderation Queue', 'Review, approve and publish projects') + tabsHtml +
+      tablePanel(tab.label, '', ['Project', 'Status', 'Updated', 'Actions'], rows);
+
+    const byId = Object.fromEntries((data || []).map(p => [p.id, p]));
+    content.querySelectorAll('[data-mod-tab]').forEach(btn => btn.addEventListener('click', () => { activeTab = btn.dataset.modTab; render(); }));
+    content.querySelectorAll('[data-mod-action]').forEach(btn => btn.addEventListener('click', () => runModAction(byId[btn.dataset.id], btn.dataset.modAction, render)));
+    content.querySelectorAll('[data-mod-history]').forEach(btn => btn.addEventListener('click', () => viewModerationHistory(byId[btn.dataset.modHistory])));
+    bindPageStubs();
+  }
+
+  await render();
 }
 
 /* ---------------- Settings & Profile ---------------- */
