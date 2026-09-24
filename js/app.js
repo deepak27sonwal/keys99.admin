@@ -67,33 +67,67 @@ function smoothPath(ys, x0 = 44, dx = 90) {
   return d;
 }
 
-function monthLabels(n) {
-  const labels = [];
+const CHART_POINTS = 6;
+
+// Turns a period-select label into an ordered list of { end: Date, label: string } points —
+// the chart always shows CHART_POINTS evenly-spaced samples across the chosen range, each
+// plotting the cumulative project count as of that moment. The date-math and label format
+// scale with the range so "Today" reads in hours while "Last 5 Years" reads in years.
+function periodBuckets(period) {
   const now = new Date();
-  for (let i = n - 1; i >= 0; i--) {
-    const d = new Date(now.getFullYear(), now.getMonth() - i, 1);
-    labels.push(d.toLocaleDateString('en-IN', { month: 'short' }));
+  let start, end = now;
+  switch (period) {
+    case 'Today': start = new Date(now.getFullYear(), now.getMonth(), now.getDate()); break;
+    case 'Yesterday':
+      end = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+      start = new Date(end.getFullYear(), end.getMonth(), end.getDate() - 1);
+      break;
+    case 'Last Week': start = new Date(now - 7 * 86400000); break;
+    case 'Last 15 Days': start = new Date(now - 15 * 86400000); break;
+    case 'Last 30 Days': start = new Date(now - 30 * 86400000); break;
+    case 'Last 3 Months': start = new Date(now.getFullYear(), now.getMonth() - 3, now.getDate()); break;
+    case 'Last 1 Year': start = new Date(now.getFullYear() - 1, now.getMonth(), now.getDate()); break;
+    case 'Last 3 Years': start = new Date(now.getFullYear() - 3, now.getMonth(), now.getDate()); break;
+    case 'Last 5 Years': start = new Date(now.getFullYear() - 5, now.getMonth(), now.getDate()); break;
+    case 'Last 6 Months':
+    default: start = new Date(now.getFullYear(), now.getMonth() - 6, now.getDate());
   }
-  return labels;
+
+  const spanMs = end - start;
+  const fmt = spanMs <= 2 * 86400000
+    ? (d) => d.toLocaleTimeString('en-IN', { hour: 'numeric' })
+    : spanMs <= 400 * 86400000
+      ? (d) => d.toLocaleDateString('en-IN', { day: 'numeric', month: 'short' })
+      : (d) => d.toLocaleDateString('en-IN', { month: 'short', year: '2-digit' });
+
+  const points = [];
+  for (let i = 0; i < CHART_POINTS; i++) {
+    const t = new Date(start.getTime() + (spanMs * (i + 1)) / CHART_POINTS);
+    points.push({ end: t, label: fmt(t) });
+  }
+  return points;
 }
 
-function buildOverviewChart(residentialMonthly, commercialMonthly) {
-  const maxVal = Math.max(1, ...residentialMonthly, ...commercialMonthly);
+function buildOverviewChart(residentialSeries, commercialSeries, labels) {
+  const n = residentialSeries.length;
+  const dx = n > 1 ? (494 - 44) / (n - 1) : 0;
+  const x = i => 44 + i * dx;
+
+  const maxVal = Math.max(1, ...residentialSeries, ...commercialSeries);
   const niceMax = Math.max(10, Math.ceil((maxVal * 1.15) / 5) * 5);
   const y = v => 160 - (v / niceMax) * 140;
 
-  const rYs = residentialMonthly.map(y);
-  const cYs = commercialMonthly.map(y);
-  const rPath = smoothPath(rYs);
-  const cPath = smoothPath(cYs);
-  const areaPath = `${rPath} L494,160 L44,160 Z`;
-  const months = monthLabels(6);
-  const lastR = residentialMonthly[residentialMonthly.length - 1];
-  const lastC = commercialMonthly[commercialMonthly.length - 1];
+  const rYs = residentialSeries.map(y);
+  const cYs = commercialSeries.map(y);
+  const rPath = smoothPath(rYs, 44, dx);
+  const cPath = smoothPath(cYs, 44, dx);
+  const areaPath = `${rPath} L${x(n - 1)},160 L44,160 Z`;
+  const lastR = residentialSeries[n - 1];
+  const lastC = commercialSeries[n - 1];
 
-  const dotsR = residentialMonthly.map((v, i) => `<circle cx="${44 + i * 90}" cy="${y(v)}" r="${i === 5 ? 5 : 4}" stroke="#fff" stroke-width="2"/>`).join('');
-  const dotsC = commercialMonthly.map((v, i) => `<circle cx="${44 + i * 90}" cy="${y(v)}" r="${i === 5 ? 4 : 3.5}" stroke="#fff" stroke-width="2"/>`).join('');
-  const monthText = months.map((m, i) => `<text x="${44 + i * 90}" y="180">${m}</text>`).join('');
+  const dotsR = residentialSeries.map((v, i) => `<circle cx="${x(i)}" cy="${y(v)}" r="${i === n - 1 ? 5 : 4}" stroke="#fff" stroke-width="2"/>`).join('');
+  const dotsC = commercialSeries.map((v, i) => `<circle cx="${x(i)}" cy="${y(v)}" r="${i === n - 1 ? 4 : 3.5}" stroke="#fff" stroke-width="2"/>`).join('');
+  const labelText = labels.map((l, i) => `<text x="${x(i)}" y="180">${escapeHtml(l)}</text>`).join('');
 
   const g0 = niceMax, g1 = niceMax * 0.75, g2 = niceMax * 0.5, g3 = niceMax * 0.25;
 
@@ -121,10 +155,17 @@ function buildOverviewChart(residentialMonthly, commercialMonthly) {
     <path d="${cPath}" fill="none" stroke="#f0ab1c" stroke-width="2.5" stroke-linecap="round"/>
     <g fill="#046b5e">${dotsR}</g>
     <g fill="#f0ab1c">${dotsC}</g>
-    <g font-size="9.5" font-weight="700" fill="#046b5e"><text x="494" y="${y(lastR) - 8}" text-anchor="end">${lastR}</text></g>
-    <g font-size="9.5" font-weight="700" fill="#b7791f"><text x="494" y="${y(lastC) - 8}" text-anchor="end">${lastC}</text></g>
-    <g font-size="10.5" fill="#6b7f85" font-family="Inter">${monthText}</g>
+    <g font-size="9.5" font-weight="700" fill="#046b5e"><text x="${x(n - 1)}" y="${y(lastR) - 8}" text-anchor="end">${lastR}</text></g>
+    <g font-size="9.5" font-weight="700" fill="#b7791f"><text x="${x(n - 1)}" y="${y(lastC) - 8}" text-anchor="end">${lastC}</text></g>
+    <g font-size="10.5" fill="#6b7f85" font-family="Inter">${labelText}</g>
   </svg>`;
+}
+
+async function loadOverviewChart(period) {
+  const buckets = periodBuckets(period);
+  const residentialSeries = await Promise.all(buckets.map(b => count('residential_projects', q => q.lte('created_at', b.end.toISOString()))));
+  const commercialSeries = buckets.map(() => 0); // commercial table doesn't exist yet
+  return buildOverviewChart(residentialSeries, commercialSeries, buckets.map(b => b.label));
 }
 
 function donut(segments, centerValue, centerLabel, size) {
@@ -179,14 +220,7 @@ async function dashboardPage() {
     sb.from('residential_project_moderation_history').select('id,to_status,action,changed_at,residential_projects(project_name)').order('changed_at', { ascending: false }).limit(5)
   ]);
 
-  // Monthly cumulative growth (last 6 months), residential only — commercial table doesn't exist yet.
-  const now = new Date();
-  const monthEnds = Array.from({ length: 6 }, (_, i) => new Date(now.getFullYear(), now.getMonth() - (5 - i) + 1, 0, 23, 59, 59));
-  const residentialMonthly = await Promise.all(
-    monthEnds.map(d => count('residential_projects', q => q.lte('created_at', d.toISOString())))
-  );
-  const commercialMonthly = [0, 0, 0, 0, 0, 0];
-
+  const chartHtml = await loadOverviewChart('Last 6 Months');
   const totalProjects = residentialTotal; // commercial not counted yet
   const now2 = new Date();
 
@@ -204,6 +238,8 @@ async function dashboardPage() {
       <div class="kpi kpi-link" data-nav="moderation"><span class="kpi-icon warn">${icon('clock', 17)}</span><div class="value">${pendingModeration}</div><div class="label">Pending Moderation</div><div class="trend flat">Needs <span>review</span></div></div>
       <div class="kpi kpi-link" data-nav="enquiries"><span class="kpi-icon gold">${icon('mail', 17)}</span><div class="value">${enquiriesTotal}</div><div class="label">Enquiries</div><div class="trend">${enquiriesNew} <span>new</span></div></div>
       <div class="kpi kpi-link" data-nav="residential" data-filter="draft"><span class="kpi-icon muted">${icon('edit', 17)}</span><div class="value">${draft}</div><div class="label">Draft Projects</div><div class="trend flat"><span>Continue editing</span></div></div>
+      <div class="kpi kpi-link" data-nav="cities"><span class="kpi-icon pink">${icon('pin', 17)}</span><div class="value">${citiesTotal}</div><div class="label">Cities</div><div class="trend"><span>Coverage areas</span></div></div>
+      <div class="kpi kpi-link" data-nav="cities"><span class="kpi-icon cyan">${icon('layers', 17)}</span><div class="value">${localitiesTotal}</div><div class="label">Localities</div><div class="trend"><span>All cities</span></div></div>
     </div>
 
     <div class="body-grid">
@@ -223,7 +259,7 @@ async function dashboardPage() {
               </div>
             </div>
             <div class="chart-legend"><span><i class="legend-dot" style="background:var(--green)"></i>Residential</span><span><i class="legend-dot" style="background:var(--gold)"></i>Commercial</span></div>
-            <div class="chart-body">${buildOverviewChart(residentialMonthly, commercialMonthly)}</div>
+            <div class="chart-body" id="chart-body">${chartHtml}</div>
           </div>
 
           <div class="panel donut-panel">
@@ -318,6 +354,13 @@ async function dashboardPage() {
     content.querySelectorAll('.dash-tab').forEach(b => b.classList.toggle('active', b === btn));
     content.querySelectorAll('.dash-tab-panel').forEach(p => p.classList.toggle('active', p.dataset.tabPanel === tab));
   }));
+  $('#period-select')?.addEventListener('change', async (e) => {
+    const chartBody = $('#chart-body');
+    e.target.disabled = true;
+    chartBody.innerHTML = `<div class="empty">Loading…</div>`;
+    chartBody.innerHTML = await loadOverviewChart(e.target.value);
+    e.target.disabled = false;
+  });
   bindPageStubs();
 }
 
