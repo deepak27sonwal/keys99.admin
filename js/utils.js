@@ -130,7 +130,7 @@ export function rowActions(kind, id) {
 export function bindStubs(content, opts = {}) {
   content.querySelectorAll('[data-stub]').forEach(btn => {
     btn.addEventListener('click', () => {
-      alert('The full editor for this section is coming soon — it will be built next, mapped directly to the Supabase schema.');
+      customAlert('The full editor for this section is coming soon — it will be built next, mapped directly to the Supabase schema.');
     });
   });
   if (opts.onEditProject) {
@@ -158,4 +158,52 @@ export function toast(msg, isError) {
   t.textContent = msg;
   document.body.appendChild(t);
   setTimeout(() => t.remove(), 3200);
+}
+
+// Custom-styled replacements for the browser's native alert()/confirm(), matching the rest
+// of the app's modal look instead of the OS dialog box. Both resolve once the person
+// responds — customAlert() always resolves, customConfirm() resolves true/false.
+export function customAlert(message, opts = {}) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal-box" style="max-width:400px">
+        ${opts.title ? `<div class="modal-head"><div><h2>${escapeHtml(opts.title)}</h2></div><button type="button" class="modal-close" data-ok>✕</button></div>` : ''}
+        <div class="modal-body"><p class="confirm-message">${escapeHtml(message)}</p></div>
+        <div class="modal-footer"><button type="button" class="btn-primary" data-ok>${escapeHtml(opts.okLabel || 'OK')}</button></div>
+      </div>`;
+    document.body.appendChild(overlay);
+    const close = () => { overlay.remove(); document.removeEventListener('keydown', escHandler); resolve(); };
+    const escHandler = (e) => { if (e.key === 'Escape' || e.key === 'Enter') close(); };
+    document.addEventListener('keydown', escHandler);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+    overlay.querySelectorAll('[data-ok]').forEach(b => b.addEventListener('click', close));
+  });
+}
+
+export function customConfirm(message, opts = {}) {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal-box" style="max-width:420px">
+        <div class="modal-head">
+          <div><h2>${escapeHtml(opts.title || 'Are you sure?')}</h2></div>
+          <button type="button" class="modal-close" data-cancel>✕</button>
+        </div>
+        <div class="modal-body"><p class="confirm-message">${escapeHtml(message)}</p></div>
+        <div class="modal-footer">
+          <button type="button" class="btn-outline" data-cancel>${escapeHtml(opts.cancelLabel || 'Cancel')}</button>
+          <button type="button" class="btn-primary${opts.danger ? ' danger' : ''}" data-confirm>${escapeHtml(opts.confirmLabel || 'Confirm')}</button>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    const finish = (val) => { overlay.remove(); document.removeEventListener('keydown', escHandler); resolve(val); };
+    const escHandler = (e) => { if (e.key === 'Escape') finish(false); };
+    document.addEventListener('keydown', escHandler);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) finish(false); });
+    overlay.querySelectorAll('[data-cancel]').forEach(b => b.addEventListener('click', () => finish(false)));
+    overlay.querySelector('[data-confirm]').addEventListener('click', () => finish(true));
+  });
 }

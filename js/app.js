@@ -4,7 +4,7 @@ import { residentialProjectsPage } from './residential-projects.js';
 import { openEntityForm, confirmDeleteEntity } from './entity-form.js';
 import {
   escapeHtml, pill, fmtPrice, fmtDate, timeAgo, count, initials,
-  pageHead, tablePanel, emptyRow, icon, rowActions, bindStubs, toast
+  pageHead, tablePanel, emptyRow, icon, rowActions, bindStubs, toast, customConfirm
 } from './utils.js';
 
 const $ = s => document.querySelector(s);
@@ -526,7 +526,7 @@ async function manageLocalities(cityId, cityName) {
       ? data.map(l => `<div class="modal-list-row"><span>${escapeHtml(l.name)} ${l.is_active ? '' : pill('inactive')}</span><button type="button" class="icon-btn danger" data-remove-locality="${l.id}">${icon('trash', 13)}</button></div>`).join('')
       : `<div class="modal-list-empty">No localities in ${escapeHtml(cityName || 'this city')} yet.</div>`;
     listEl.querySelectorAll('[data-remove-locality]').forEach(b => b.addEventListener('click', async () => {
-      if (!confirm('Delete this locality?')) return;
+      if (!(await customConfirm('This cannot be undone.', { title: 'Delete this locality?', confirmLabel: 'Delete', danger: true }))) return;
       const { error } = await sb.from('localities').delete().eq('id', b.dataset.removeLocality);
       if (error) { toast(error.message, true); return; }
       toast('Deleted');
@@ -742,7 +742,7 @@ async function runModAction(project, actionKey, reload) {
   if (cfg.requireComment) {
     comment = await promptComment(cfg.label, project.project_name);
     if (comment === null) return;
-  } else if (!confirm(`${cfg.label} "${project.project_name}"?`)) {
+  } else if (!(await customConfirm(project.project_name, { title: `${cfg.label}?`, confirmLabel: cfg.label }))) {
     return;
   }
 

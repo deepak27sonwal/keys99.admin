@@ -1,5 +1,5 @@
 import { sb } from './supabase-client.js';
-import { escapeHtml, toast } from './utils.js';
+import { escapeHtml, toast, customConfirm } from './utils.js';
 
 // A small generic modal for the simple, single-table add/edit forms (Developers, Agents,
 // Cities) — these don't need the multi-step wizard machinery in project-form.js, just a
@@ -96,7 +96,8 @@ export async function openEntityForm({ title, subtitle, table, fields, existingI
 }
 
 export async function confirmDeleteEntity(table, id, label, onDeleted) {
-  if (!confirm(`Delete ${label || 'this record'}? This cannot be undone.`)) return;
+  const ok = await customConfirm('This cannot be undone.', { title: `Delete ${label || 'this record'}?`, confirmLabel: 'Delete', danger: true });
+  if (!ok) return;
   const { error } = await sb.from(table).delete().eq('id', id);
   if (error) { toast(error.message, true); return; }
   toast('Deleted');

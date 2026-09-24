@@ -174,6 +174,8 @@ tr:last-child td{border-bottom:0}
 .list-search{display:flex;align-items:center;gap:8px;background:var(--bg);border:1px solid var(--line);border-radius:9px;padding:8px 12px;font-size:12.5px;color:var(--muted);min-width:220px}
 .list-search input{flex:1;border:0;background:transparent;outline:none;color:var(--ink)}
 .btn-primary{display:inline-flex;align-items:center;gap:6px;background:linear-gradient(135deg,var(--green),var(--green-dark));color:#fff;font-weight:700;font-size:12.5px;padding:9px 16px;border-radius:9px;white-space:nowrap}
+.btn-primary.danger{background:linear-gradient(135deg,#e02424,#a91d1d)}
+.confirm-message{margin:0;font-size:13.5px;line-height:1.55;color:var(--ink-soft)}
 .notice{padding:16px 20px;color:var(--ink-soft);font-size:13px;line-height:1.6}
 .notice.coming-soon{background:#fdf2df;color:var(--warn);border-radius:0}
 
