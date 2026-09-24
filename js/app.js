@@ -606,26 +606,108 @@ function openAgentForm(id) {
 
 /* ---------------- Enquiries ---------------- */
 
-async function enquiriesPage() {
+const ENQUIRY_STATUSES = ['new', 'contacted', 'follow_up', 'site_visit_scheduled', 'converted', 'closed', 'spam'];
+const ENQUIRY_CLOSING_STATUSES = ['converted', 'closed', 'spam'];
+
+async function enquiriesPage(openId) {
   content.innerHTML = pageHead('Enquiries', 'Residential project leads') + `<div class="empty">Loading…</div>`;
-  const { data, error } = await sb.from('residential_enquiries')
-    .select('id,contact_person,phone,email,enquiry_type,status,created_at,residential_projects(project_name)')
-    .order('created_at', { ascending: false }).limit(200);
+  const [{ data, error }, { data: agentsList }] = await Promise.all([
+    sb.from('residential_enquiries')
+      .select('id,contact_person,phone,whatsapp,email,enquiry_type,message,preferred_contact_method,preferred_visit_date,assigned_agent_id,source,status,admin_notes,contacted_at,closed_at,created_at,residential_projects(project_name),agents(full_name)')
+      .order('created_at', { ascending: false }).limit(200),
+    sb.from('agents').select('id,full_name').order('full_name', { ascending: true })
+  ]);
 
   const rows = error
-    ? emptyRow(6, error.message)
+    ? emptyRow(7, error.message)
     : (data.length ? data.map(e => `
       <tr>
         <td>${escapeHtml(e.contact_person)}</td>
         <td>${escapeHtml(e.phone)}</td>
         <td>${escapeHtml(e.residential_projects?.project_name || '—')}</td>
-        <td>${escapeHtml((e.enquiry_type || '—').replace(/_/g, ' '))}</td>
+        <td>${escapeHtml(e.agents?.full_name || 'Unassigned')}</td>
         <td>${fmtDate(e.created_at)}</td>
         <td>${pill(e.status)}</td>
-      </tr>`).join('') : emptyRow(6, 'No enquiries yet.'));
+        <td><button type="button" class="icon-btn" data-view-enquiry="${e.id}">${icon('eye', 13)}</button></td>
+      </tr>`).join('') : emptyRow(7, 'No enquiries yet.'));
 
   content.innerHTML = pageHead('Enquiries', 'Residential project leads') +
-    tablePanel('All Enquiries', '', ['Name', 'Phone', 'Project', 'Type', 'Date', 'Status'], rows);
+    tablePanel('All Enquiries', '', ['Name', 'Phone', 'Project', 'Assigned', 'Date', 'Status', 'Actions'], rows);
+
+  const byId = Object.fromEntries((data || []).map(e => [e.id, e]));
+  content.querySelectorAll('[data-view-enquiry]').forEach(btn => {
+    btn.addEventListener('click', () => viewEnquiry(byId[btn.dataset.viewEnquiry], agentsList || [], () => enquiriesPage()));
+  });
+
+  if (openId && byId[openId]) viewEnquiry(byId[openId], agentsList || [], () => enquiriesPage());
+}
+
+function viewEnquiry(e, agentsList, onSaved) {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal-box" style="max-width:560px">
+      <div class="modal-head">
+        <div><h2>${escapeHtml(e.contact_person)}</h2><p>${escapeHtml(e.residential_projects?.project_name || 'Project deleted')}</p></div>
+        <button type="button" class="modal-close" data-close>✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="detail-grid" style="margin-bottom:16px">
+          <div><b>Phone</b><div>${escapeHtml(e.phone)}</div></div>
+          <div><b>WhatsApp</b><div>${escapeHtml(e.whatsapp || '—')}</div></div>
+          <div><b>Email</b><div>${escapeHtml(e.email || '—')}</div></div>
+          <div><b>Enquiry Type</b><div>${escapeHtml((e.enquiry_type || '—').replace(/_/g, ' '))}</div></div>
+          <div><b>Preferred Contact</b><div>${escapeHtml((e.preferred_contact_method || '—').replace(/_/g, ' '))}</div></div>
+          <div><b>Preferred Visit Date</b><div>${fmtDate(e.preferred_visit_date)}</div></div>
+          <div><b>Source</b><div>${escapeHtml(e.source || '—')}</div></div>
+          <div><b>Received</b><div>${fmtDate(e.created_at)}</div></div>
+        </div>
+        ${e.message ? `<div class="field full" style="margin-bottom:16px"><label>Message</label><p class="confirm-message" style="background:var(--bg);padding:10px 12px;border-radius:9px">${escapeHtml(e.message)}</p></div>` : ''}
+        <div class="form-grid">
+          <div class="field"><label>Status</label>
+            <select data-field="status">${ENQUIRY_STATUSES.map(s => `<option value="${s}"${s === e.status ? ' selected' : ''}>${escapeHtml(s.replace(/_/g, ' '))}</option>`).join('')}</select>
+          </div>
+          <div class="field"><label>Assign Agent</label>
+            <select data-field="assigned_agent_id"><option value="">Unassigned</option>${agentsList.map(a => `<option value="${a.id}"${a.id === e.assigned_agent_id ? ' selected' : ''}>${escapeHtml(a.full_name)}</option>`).join('')}</select>
+          </div>
+          <div class="field full"><label>Admin Notes</label>
+            <textarea data-field="admin_notes" placeholder="Internal notes about this lead…">${escapeHtml(e.admin_notes || '')}</textarea>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn-outline" data-close>Cancel</button>
+        <button type="button" class="btn-primary" data-save>Save Changes</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+  enhanceSelects(overlay);
+
+  const close = () => { overlay.remove(); document.removeEventListener('keydown', escHandler); };
+  const escHandler = (ev) => { if (ev.key === 'Escape') close(); };
+  document.addEventListener('keydown', escHandler);
+  overlay.addEventListener('click', (ev) => { if (ev.target === overlay) close(); });
+  overlay.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', close));
+
+  overlay.querySelector('[data-save]').addEventListener('click', async () => {
+    const status = overlay.querySelector('[data-field="status"]').value;
+    const assignedAgentId = overlay.querySelector('[data-field="assigned_agent_id"]').value || null;
+    const adminNotes = overlay.querySelector('[data-field="admin_notes"]').value.trim() || null;
+
+    const payload = { status, assigned_agent_id: assignedAgentId, admin_notes: adminNotes };
+    if (status === 'contacted' && !e.contacted_at) payload.contacted_at = new Date().toISOString();
+    if (ENQUIRY_CLOSING_STATUSES.includes(status) && !e.closed_at) payload.closed_at = new Date().toISOString();
+
+    const saveBtn = overlay.querySelector('[data-save]');
+    saveBtn.disabled = true;
+    const { error } = await sb.from('residential_enquiries').update(payload).eq('id', e.id);
+    saveBtn.disabled = false;
+    if (error) { toast(error.message, true); return; }
+
+    toast('Enquiry updated');
+    close();
+    onSaved && onSaved();
+  });
 }
 
 /* ---------------- Moderation Queue ---------------- */
@@ -843,7 +925,7 @@ const PAGES = {
   developers: developersPage,
   cities: citiesPage,
   agents: agentsPage,
-  enquiries: enquiriesPage,
+  enquiries: (openId) => enquiriesPage(openId),
   moderation: moderationPage,
   settings: settingsPage,
   profile: profilePage
@@ -863,7 +945,7 @@ async function navigate(page, opts = {}) {
     if (opts.replace) history.replaceState({ page }, '', hash);
     else if (location.hash !== hash) history.pushState({ page }, '', hash);
   }
-  await PAGES[page](opts.filter);
+  await PAGES[page](opts.filter ?? opts.openId);
 }
 
 window.addEventListener('popstate', (e) => {
@@ -886,9 +968,132 @@ $('#menu-btn').addEventListener('click', () => {
 });
 $('#sidebar-backdrop').addEventListener('click', closeSidebar);
 
+/* ---------------- global search ---------------- */
+
+function initGlobalSearch() {
+  const input = $('#tb-search-input');
+  const results = $('#tb-search-results');
+  if (!input) return;
+
+  let debounceTimer;
+  input.addEventListener('input', () => {
+    clearTimeout(debounceTimer);
+    const q = input.value.trim();
+    if (!q) { results.hidden = true; results.innerHTML = ''; return; }
+    debounceTimer = setTimeout(() => runGlobalSearch(q), 250);
+  });
+  input.addEventListener('focus', () => { if (input.value.trim()) results.hidden = false; });
+  document.addEventListener('click', (e) => { if (!$('#tb-search-wrap').contains(e.target)) results.hidden = true; });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') results.hidden = true; });
+}
+
+function searchResultGroup(label, iconName, items) {
+  if (!items.length) return '';
+  return `<div class="sr-group-label">${escapeHtml(label)}</div>${items.map(it =>
+    `<div class="sr-item" data-sr-idx="${it.idx}"><span class="sr-item-icon">${icon(iconName, 14)}</span><div class="sr-item-text"><div class="sr-item-title">${escapeHtml(it.title)}</div><div class="sr-item-sub">${escapeHtml(it.sub)}</div></div></div>`
+  ).join('')}`;
+}
+
+async function runGlobalSearch(q) {
+  const input = $('#tb-search-input');
+  const results = $('#tb-search-results');
+  results.hidden = false;
+  results.innerHTML = `<div class="sr-empty">Searching…</div>`;
+
+  const like = `%${q}%`;
+  const [projects, developers, enquiries] = await Promise.all([
+    sb.from('residential_projects').select('id,project_name,project_code').or(`project_name.ilike.${like},project_code.ilike.${like}`).limit(5),
+    sb.from('developers').select('id,name').ilike('name', like).limit(5),
+    sb.from('residential_enquiries').select('id,contact_person,phone').ilike('contact_person', like).limit(5)
+  ]);
+
+  const actions = [];
+  const mkItem = (title, sub, action) => { actions.push(action); return { idx: actions.length - 1, title, sub }; };
+
+  const projectItems = (projects.data || []).map(p => mkItem(p.project_name, p.project_code, async () => {
+    results.hidden = true; input.value = '';
+    openProjectForm(content, currentUser, p.id, () => navigate('residential'));
+  }));
+  const developerItems = (developers.data || []).map(d => mkItem(d.name, 'Developer', async () => {
+    results.hidden = true; input.value = '';
+    await navigate('developers');
+    openDeveloperForm(d.id);
+  }));
+  const enquiryItems = (enquiries.data || []).map(e => mkItem(e.contact_person, e.phone, async () => {
+    results.hidden = true; input.value = '';
+    await navigate('enquiries', { openId: e.id });
+  }));
+
+  const html = searchResultGroup('Residential Projects', 'home', projectItems)
+    + searchResultGroup('Developers', 'developer', developerItems)
+    + searchResultGroup('Enquiries', 'mail', enquiryItems);
+
+  results.innerHTML = html || `<div class="sr-empty">No results for "${escapeHtml(q)}"</div>`;
+  results.querySelectorAll('[data-sr-idx]').forEach(el => {
+    el.addEventListener('click', () => actions[Number(el.dataset.srIdx)]());
+  });
+}
+
+/* ---------------- notification panel ---------------- */
+
+function initNotifPanel() {
+  const btn = $('#notif-btn');
+  const panel = $('#notif-panel');
+  if (!btn) return;
+  btn.addEventListener('click', async (e) => {
+    e.stopPropagation();
+    const opening = panel.hidden;
+    panel.hidden = !panel.hidden;
+    if (opening) await loadNotifPanel();
+  });
+  document.addEventListener('click', (e) => { if (!panel.hidden && !$('#notif-wrap').contains(e.target)) panel.hidden = true; });
+  document.addEventListener('keydown', (e) => { if (e.key === 'Escape') panel.hidden = true; });
+}
+
+function notifItem(navKey, id, dotColor, title, sub) {
+  return `<div class="notif-item" data-notif-nav="${navKey}"${id ? ` data-notif-id="${id}"` : ''}>
+    <span class="notif-item-dot"${dotColor ? ` style="background:${dotColor}"` : ''}></span>
+    <div class="notif-item-text"><div class="notif-item-title">${escapeHtml(title)}</div><div class="notif-item-sub">${escapeHtml(sub)}</div></div>
+  </div>`;
+}
+
+async function loadNotifPanel() {
+  const panel = $('#notif-panel');
+  panel.innerHTML = `<div class="notif-panel-head">Notifications</div><div class="notif-empty">Loading…</div>`;
+
+  const [{ data: pending }, { data: newEnquiries }] = await Promise.all([
+    sb.from('residential_projects').select('id,project_name,moderation_status,updated_at')
+      .in('moderation_status', ['pending_verification', 'under_review', 'resubmitted', 'changes_required'])
+      .order('updated_at', { ascending: false }).limit(5),
+    sb.from('residential_enquiries').select('id,contact_person,phone,created_at').eq('status', 'new').order('created_at', { ascending: false }).limit(5)
+  ]);
+
+  const sections = [];
+  if (pending?.length) sections.push(`<div class="notif-section"><div class="notif-section-label">Pending Moderation</div>${
+    pending.map(p => notifItem('moderation', null, 'var(--gold)', p.project_name, `${(p.moderation_status || '').replace(/_/g, ' ')} · ${timeAgo(p.updated_at)}`)).join('')
+  }</div>`);
+  if (newEnquiries?.length) sections.push(`<div class="notif-section"><div class="notif-section-label">New Enquiries</div>${
+    newEnquiries.map(e => notifItem('enquiries', e.id, 'var(--blue)', e.contact_person, `${e.phone} · ${timeAgo(e.created_at)}`)).join('')
+  }</div>`);
+
+  panel.innerHTML = `<div class="notif-panel-head">Notifications</div>`
+    + (sections.length ? sections.join('') : `<div class="notif-empty">You're all caught up.</div>`)
+    + `<div class="notif-panel-foot"><button type="button" data-notif-nav="moderation">Moderation Queue</button><button type="button" data-notif-nav="enquiries">All Enquiries</button></div>`;
+
+  panel.querySelectorAll('[data-notif-nav]').forEach(el => {
+    el.addEventListener('click', () => {
+      panel.hidden = true;
+      const id = el.dataset.notifId;
+      navigate(el.dataset.notifNav, id ? { openId: id } : {});
+    });
+  });
+}
+
 /* ---------------- boot ---------------- */
 
 if (await guard()) {
+  initGlobalSearch();
+  initNotifPanel();
   loadSidebarCounts();
   navigate('dashboard', { replace: true });
 }

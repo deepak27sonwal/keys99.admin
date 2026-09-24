@@ -61,6 +61,7 @@ export async function residentialProjectsPage(content, currentUser, navigate, mo
       const tpl = document.createElement('template');
       tpl.innerHTML = rowTemplate;
       const row = tpl.content.firstElementChild;
+      row.dataset.searchText = `${p.project_name} ${p.project_code}`.toLowerCase();
       row.querySelector('[data-field="icon"]').innerHTML = icon('home', 16);
       row.querySelector('[data-field="project_name"]').textContent = p.project_name;
       row.querySelector('[data-field="project_code"]').textContent = p.project_code;
@@ -71,6 +72,23 @@ export async function residentialProjectsPage(content, currentUser, navigate, mo
       row.querySelector('[data-field="moderation"]').innerHTML = pill(p.moderation_status);
       row.querySelector('[data-field="actions"]').innerHTML = rowActions('project', p.id);
       tbody.appendChild(row);
+    });
+
+    const noMatchRow = document.createElement('tr');
+    noMatchRow.hidden = true;
+    noMatchRow.innerHTML = `<td colspan="7"><div class="empty">No projects match your search.</div></td>`;
+    tbody.appendChild(noMatchRow);
+
+    const searchInput = content.querySelector('#project-search-input');
+    searchInput?.addEventListener('input', () => {
+      const q = searchInput.value.trim().toLowerCase();
+      let anyVisible = false;
+      tbody.querySelectorAll('tr[data-search-text]').forEach(row => {
+        const match = !q || row.dataset.searchText.includes(q);
+        row.hidden = !match;
+        if (match) anyVisible = true;
+      });
+      noMatchRow.hidden = anyVisible || !q;
     });
   }
 
