@@ -949,6 +949,12 @@ async function goNext() {
   try {
     const ok = await persistStep(stepIndex);
     if (!ok) return;
+  } catch (e) {
+    // Without this, an unexpected error here (a thrown exception rather than a returned
+    // {error} — a network drop mid-request, a bug) left the wizard stuck on the current
+    // step with the Next button simply doing nothing and no visible explanation.
+    toast(e.message || 'Something went wrong saving this step — please try again.', true);
+    return;
   } finally {
     $('#pf-next').disabled = false;
   }
@@ -1310,13 +1316,17 @@ async function saveCurrentAndDraft() {
   handleSpecialBindings();
   $('#pf-save-draft').disabled = true;
   try {
+    // persistStep() already calls saveProjectCore() internally for any step from
+    // FIRST_SAVE_AFTER_STEP onward — calling it again here duplicated every draft save
+    // (harmless on its own, since the second call just re-updates the row it just created/
+    // updated, but it doubled the network round trips and made a slow connection or a
+    // transient error twice as likely to hit right on this step).
     const ok = await persistStep(Math.max(stepIndex, stepIndex < FIRST_SAVE_AFTER_STEP ? FIRST_SAVE_AFTER_STEP - 1 : stepIndex));
     if (stepIndex < FIRST_SAVE_AFTER_STEP) {
       toast('Fill Basic Info, Location and Status & Construction to save — kept locally for now.');
     } else if (ok !== false) {
-      const { error } = await saveProjectCore();
-      if (error) toast(error, true);
-      else { toast('Saved as draft'); renderStepBody(); }
+      toast('Saved as draft');
+      renderStepBody();
     }
   } finally {
     $('#pf-save-draft').disabled = false;
