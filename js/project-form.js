@@ -99,6 +99,10 @@ const FIRST_SAVE_AFTER_STEP = 4;
 const CONSTRUCTION_STAGE_OPTIONS = enumOpts(['pre_launch', 'excavation', 'foundation', 'structure', 'brickwork', 'finishing', 'final_completion', 'ready_to_move', 'other']);
 const POSSESSION_STATUS_OPTIONS = enumOpts(['not_started', 'under_construction', 'possession_started', 'ready_to_move', 'completed']);
 const AREA_UNIT_OPTIONS = enumOpts(['sq_ft', 'sq_m']);
+// Project-level built-up area can be quoted in acres for large projects — kept separate
+// from AREA_UNIT_OPTIONS since that one's also used for per-configuration carpet/built-up
+// area (a single apartment's area), where acres never makes sense.
+const PROJECT_AREA_UNIT_OPTIONS = enumOpts(['sq_ft', 'sq_m', 'acre']);
 
 /* ============ field defs (map 1:1 to residential_projects columns) ============ */
 
@@ -123,14 +127,14 @@ const FIELDS = {
     { key: 'total_land_area', label: 'Total Land Area', type: 'number' },
     { key: 'land_area_unit', label: 'Land Area Unit', type: 'select', options: enumOpts(['acre', 'sq_ft', 'sq_m']) },
     { key: 'total_towers_buildings', label: 'Total Towers / Buildings', type: 'number' },
-    { key: 'total_floors', label: 'Total Floors', type: 'number' },
+    { key: 'total_floors', label: 'Total Floors', type: 'text', placeholder: 'e.g. 18 or G+12' },
     { key: 'total_residential_units', label: 'Total Residential Units', type: 'number' },
     { key: 'units_per_floor', label: 'Units per Floor', type: 'number' },
     { key: 'number_of_phases', label: 'Number of Phases', type: 'number' },
     { key: 'open_green_area_value', label: 'Open / Green Area', type: 'number' },
     { key: 'open_green_area_unit', label: 'Open / Green Area Unit', type: 'select', options: enumOpts(['acre', 'sq_ft', 'sq_m', 'percent']) },
     { key: 'built_up_project_area', label: 'Built-up Project Area', type: 'number' },
-    { key: 'built_up_project_area_unit', label: 'Built-up Area Unit', type: 'select', options: AREA_UNIT_OPTIONS }
+    { key: 'built_up_project_area_unit', label: 'Built-up Area Unit', type: 'select', options: PROJECT_AREA_UNIT_OPTIONS }
   ],
   status: [
     { key: 'status', label: 'Project Status', req: true, type: 'select', options: enumOpts(['upcoming', 'under_construction', 'ready_to_move', 'completed']) },
@@ -1180,7 +1184,7 @@ function projectPayload() {
     city_id: p.city_id, locality_id: p.locality_id, address: p.address, pincode: p.pincode,
     latitude: num(p.latitude), longitude: num(p.longitude),
     total_land_area: num(p.total_land_area), land_area_unit: str(p.land_area_unit),
-    total_towers_buildings: num(p.total_towers_buildings), total_floors: num(p.total_floors),
+    total_towers_buildings: num(p.total_towers_buildings), total_floors: str(p.total_floors),
     total_residential_units: num(p.total_residential_units), units_per_floor: num(p.units_per_floor),
     number_of_phases: num(p.number_of_phases), units_per_phase: num(p.units_per_phase),
     open_green_area_value: num(p.open_green_area_value), open_green_area_unit: str(p.open_green_area_unit),
