@@ -127,7 +127,6 @@ const FIELDS = {
     { key: 'total_residential_units', label: 'Total Residential Units', type: 'number' },
     { key: 'units_per_floor', label: 'Units per Floor', type: 'number' },
     { key: 'number_of_phases', label: 'Number of Phases', type: 'number' },
-    { key: 'units_per_phase', label: 'Units per Phase', type: 'number' },
     { key: 'open_green_area_value', label: 'Open / Green Area', type: 'number' },
     { key: 'open_green_area_unit', label: 'Open / Green Area Unit', type: 'select', options: enumOpts(['acre', 'sq_ft', 'sq_m', 'percent']) },
     { key: 'built_up_project_area', label: 'Built-up Project Area', type: 'number' },
@@ -448,6 +447,37 @@ function renderFieldsGrid(specs, values, bindPrefix) {
   return `<div class="form-grid">${specs.map(s => renderField(s, values[s.key], `data-bind="${bindPrefix}.${s.key}"`)).join('')}</div>`;
 }
 
+// A number field with its unit select attached directly to its right edge, as one compact
+// control, instead of the value and unit sitting as two separate fields in the grid.
+function renderFieldWithUnit(valueSpec, unitSpec, values, bindPrefix) {
+  const value = values[valueSpec.key];
+  const unitValue = values[unitSpec.key];
+  const opts = typeof unitSpec.options === 'function' ? unitSpec.options() : unitSpec.options;
+  const input = `<input data-bind="${bindPrefix}.${valueSpec.key}" type="number" value="${value == null ? '' : esc(String(value))}" placeholder="${esc(valueSpec.placeholder || '')}">`;
+  const select = `<select data-bind="${bindPrefix}.${unitSpec.key}">${opts.map(o => `<option value="${esc(o.value)}"${String(unitValue ?? '') === String(o.value) ? ' selected' : ''}>${esc(o.label)}</option>`).join('')}</select>`;
+  return `<div class="field"><label>${esc(valueSpec.label)}</label><div class="field-unit-group">${input}${select}</div></div>`;
+}
+
+// Size & Scale's own layout: area fields pair with their unit right next to them instead of
+// as a separate grid cell, and the grid stays 2-up even on mobile (size-scale-grid overrides
+// the usual mobile single-column collapse) since these are short number fields, not the long
+// text inputs the rest of the wizard has to make room for.
+function renderSizeScale() {
+  const f = Object.fromEntries(FIELDS.size.map(s => [s.key, s]));
+  const p = state.project;
+  const plain = (key) => renderField(f[key], p[key], `data-bind="project.${key}"`);
+  return `<div class="form-grid size-scale-grid">
+    ${renderFieldWithUnit(f.total_land_area, f.land_area_unit, p, 'project')}
+    ${renderFieldWithUnit(f.open_green_area_value, f.open_green_area_unit, p, 'project')}
+    ${renderFieldWithUnit(f.built_up_project_area, f.built_up_project_area_unit, p, 'project')}
+    ${plain('total_towers_buildings')}
+    ${plain('total_floors')}
+    ${plain('total_residential_units')}
+    ${plain('units_per_floor')}
+    ${plain('number_of_phases')}
+  </div>`;
+}
+
 function validateFields(specs, values) {
   const missing = [];
   for (const s of specs) {
@@ -592,7 +622,7 @@ function renderBody(i) {
   switch (i) {
     case 1: return renderBasic();
     case 2: return renderFieldsGrid(FIELDS.location, state.project, 'project');
-    case 3: return renderFieldsGrid(FIELDS.size, state.project, 'project');
+    case 3: return renderSizeScale();
     case 4: return renderFieldsGrid(FIELDS.status, state.project, 'project');
     case 5: return renderConfigurations();
     case 6: return renderFieldsGrid(FIELDS.specs, state.project, 'project');
