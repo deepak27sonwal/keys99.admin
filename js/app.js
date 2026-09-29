@@ -177,7 +177,13 @@ function buildOverviewChart(residentialSeries, commercialSeries, labels) {
 
 async function loadOverviewChart(period) {
   const buckets = periodBuckets(period);
-  const residentialSeries = await Promise.all(buckets.map(b => count('residential_projects', q => q.lte('created_at', b.end.toISOString()))));
+  // Published, non-archived listings as of each bucket's end time — matches what "Residential"
+  // means everywhere else on this dashboard (the sidebar count, the Moderation Status donut),
+  // not every project regardless of draft/archived state. A flat line is correct, not a bug:
+  // it means no project was newly published within that window, which for "Today" on a
+  // catalog that hasn't changed today is the honest answer.
+  const residentialSeries = await Promise.all(buckets.map(b => count('residential_projects', q =>
+    q.is('deleted_at', null).eq('moderation_status', 'published').lte('published_at', b.end.toISOString()))));
   const commercialSeries = buckets.map(() => 0); // commercial table doesn't exist yet
   return buildOverviewChart(residentialSeries, commercialSeries, buckets.map(b => b.label));
 }
