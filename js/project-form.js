@@ -96,7 +96,8 @@ const FIRST_SAVE_AFTER_STEP = 4;
 
 /* ============ shared enum option lists (avoid re-declaring the same DB check-constraint values per step) ============ */
 
-const CONSTRUCTION_STAGE_OPTIONS = enumOpts(['pre_launch', 'excavation', 'foundation', 'structure', 'brickwork', 'finishing', 'final_completion', 'ready_to_move', 'other']);
+// Must match the DB's residential_projects_construction_stage_check constraint exactly.
+const CONSTRUCTION_STAGE_OPTIONS = enumOpts(['new_launch', 'under_construction', 'nearing_possession', 'possession_started', 'ready_to_move', 'completed', 'resale']);
 const POSSESSION_STATUS_OPTIONS = enumOpts(['not_started', 'under_construction', 'possession_started', 'ready_to_move', 'completed']);
 const AREA_UNIT_OPTIONS = enumOpts(['sq_ft', 'sq_m']);
 // Project-level built-up area can be quoted in acres for large projects — kept separate
@@ -137,14 +138,9 @@ const FIELDS = {
     { key: 'built_up_project_area_unit', label: 'Built-up Area Unit', type: 'select', options: PROJECT_AREA_UNIT_OPTIONS }
   ],
   status: [
-    { key: 'status', label: 'Project Status', req: true, type: 'select', options: enumOpts(['upcoming', 'under_construction', 'ready_to_move', 'completed']) },
+    { key: 'status', label: 'Project Status', req: true, type: 'select', options: enumOpts(['upcoming', 'new_launch', 'under_construction', 'ready_to_move', 'completed']) },
     { key: 'construction_stage', label: 'Construction Stage', type: 'select', options: CONSTRUCTION_STAGE_OPTIONS },
-    { key: 'possession_status', label: 'Possession Status', type: 'select', options: POSSESSION_STATUS_OPTIONS },
-    { key: 'project_phase', label: 'Project Phase', placeholder: 'e.g. Phase 1' },
-    { key: 'construction_start_date', label: 'Construction Start Date', type: 'date' },
-    { key: 'expected_completion_date', label: 'Expected Completion Date', type: 'date' },
-    { key: 'rera_possession_date', label: 'RERA Possession Date', type: 'date' },
-    { key: 'target_possession_date', label: 'Target Possession Date', type: 'date' }
+    { key: 'possession_status', label: 'Possession Status', type: 'select', options: POSSESSION_STATUS_OPTIONS }
   ],
   specs: [
     { key: 'flooring', label: 'Flooring', type: 'textarea' },
@@ -195,8 +191,19 @@ const DEFAULTS = {
   update: () => ({ _k: uid(), update_title: '', update_date: '', construction_stage: '', description: '', is_published: true, media: [] }),
   faq: () => ({ _k: uid(), question: '', answer: '', is_published: true }),
   galleryItem: () => ({ _k: uid(), category: 'exterior', title: '', image_path: null, image_url: null }),
-  video: () => ({ _k: uid(), media_type: 'video', platform: 'youtube', title: '', media_url: '' })
+  video: () => ({ _k: uid(), media_type: 'video', platform: 'youtube', title: '', media_url: '' }),
+  phase: () => ({ _k: uid(), phase_name: '', construction_start_date: '', expected_completion_date: '', rera_possession_date: '', target_possession_date: '', configurations: [] })
 };
+
+const BHK_PRESET = ['1 BHK', '1.5 BHK', '2 BHK', '2.5 BHK', '3 BHK', '3.5 BHK', '4 BHK', '4.5 BHK', '5 BHK'];
+
+const PHASE_FIELDS = [
+  { key: 'phase_name', label: 'Phase Name', req: true, placeholder: 'e.g. Phase 1' },
+  { key: 'construction_start_date', label: 'Construction Start Date', type: 'date' },
+  { key: 'expected_completion_date', label: 'Expected Completion Date', type: 'date' },
+  { key: 'rera_possession_date', label: 'RERA Possession Date', type: 'date' },
+  { key: 'target_possession_date', label: 'Target Possession Date', type: 'date' }
+];
 
 function freshState() {
   return {
@@ -204,13 +211,13 @@ function freshState() {
       project_name: '', developer_id: '', project_type: 'apartment', launch_date: '', rera_number: '', overview: '', highlights: [],
       city_id: '', locality_id: '', address: '', pincode: '', latitude: '', longitude: '',
       total_land_area: '', land_area_unit: 'acre', total_towers_buildings: '', total_floors: '', total_residential_units: '', units_per_floor: '', number_of_phases: '', units_per_phase: '', open_green_area_value: '', open_green_area_unit: 'acre', built_up_project_area: '', built_up_project_area_unit: 'sq_ft',
-      status: 'upcoming', construction_stage: '', possession_status: '', project_phase: '', construction_start_date: '', expected_completion_date: '', rera_possession_date: '', target_possession_date: '',
+      status: 'upcoming', construction_stage: '', possession_status: '',
       starting_price: '', maximum_price: '', price_on_request: false, base_price: '', floor_rise_charges: '', parking_charges: '', clubhouse_charges: '', maintenance_charges: '', other_charges: '', gst_applicable: false, price_disclaimer: '', registration_stamp_duty_disclaimer: '',
       flooring: '', doors: '', windows: '', kitchen: '', bathroom: '', electrical: '', walls_paint: '', balcony: '', other_specifications: '',
       agent_id: '',
       slug: '', seo_title: '', seo_description: '', canonical_url: ''
     },
-    configurations: [], towers: [], amenities: [], nearby: [], prosCons: [], documents: [], litigation: [], updates: [], faqs: [],
+    configurations: [], towers: [], amenities: [], nearby: [], prosCons: [], documents: [], litigation: [], updates: [], faqs: [], phases: [],
     media: { main: {}, masterPlan: {}, gallery: [], videos: [] }
   };
 }
@@ -306,7 +313,8 @@ async function loadProject(id) {
   Object.keys(s.project).forEach(k => { if (k in p && p[k] !== null) s.project[k] = p[k]; });
   s.project.highlights = p.highlights || [];
 
-  const [cfg, tow, ame, near, pc, docs, lit, upd, faqs] = await Promise.all([
+  const [phases, cfg, tow, ame, near, pc, docs, lit, upd, faqs] = await Promise.all([
+    sb.from('residential_project_phases').select('*').eq('project_id', id).order('display_order'),
     sb.from('residential_configurations').select('*').eq('project_id', id).order('display_order'),
     sb.from('residential_towers').select('*').eq('project_id', id).order('display_order'),
     sb.from('residential_amenities').select('*').eq('project_id', id).order('display_order'),
@@ -317,6 +325,7 @@ async function loadProject(id) {
     sb.from('residential_construction_updates').select('*,residential_construction_update_media(*)').eq('project_id', id).order('display_order'),
     sb.from('residential_faqs').select('*').eq('project_id', id).order('display_order')
   ]);
+  s.phases = (phases.data || []).map(r => ({ ...r, _k: r.id, configurations: r.configurations || [] }));
   s.configurations = (cfg.data || []).map(r => ({ ...r, _k: r.id, parking_type: r.parking_type || [] }));
   s.towers = (tow.data || []).map(r => ({ ...r, _k: r.id, configurations: r.configurations || [] }));
   s.amenities = (ame.data || []).map(r => ({ ...r, _k: r.id }));
@@ -549,7 +558,7 @@ function addRepeatItem(key, arg) {
   else if (key === 'prosCons') item = DEFAULTS.prosCons(arg);
   else {
     const factoryName = key.endsWith('s') ? key.slice(0, -1) : key;
-    const map = { configurations: 'configuration', towers: 'tower', nearby: 'nearby', documents: 'document', litigation: 'litigation', updates: 'update', faqs: 'faq' };
+    const map = { configurations: 'configuration', towers: 'tower', nearby: 'nearby', documents: 'document', litigation: 'litigation', updates: 'update', faqs: 'faq', phases: 'phase' };
     item = DEFAULTS[map[key] || factoryName] ? DEFAULTS[map[key] || factoryName]() : { _k: uid() };
   }
   arr.push(item);
@@ -627,7 +636,7 @@ function renderBody(i) {
     case 1: return renderBasic();
     case 2: return renderFieldsGrid(FIELDS.location, state.project, 'project');
     case 3: return renderSizeScale();
-    case 4: return renderFieldsGrid(FIELDS.status, state.project, 'project');
+    case 4: return renderFieldsGrid(FIELDS.status, state.project, 'project') + `<h4 style="margin:20px 0 10px">Project Phases</h4>` + renderPhases();
     case 5: return renderConfigurations();
     case 6: return renderFieldsGrid(FIELDS.specs, state.project, 'project');
     case 7: return renderTowers();
@@ -731,6 +740,33 @@ function renderTowers() {
   return renderRepeatStep('towers', TOWER_FIELDS, {
     titleOf: t => t.tower_name, singular: 'Tower', emptyText: 'No towers added yet.', addLabel: 'Add Tower / Building',
     extraHtml: (t, i) => chipRowHtml('Configurations in this tower', '', t.configurations, `towers.${i}.configurations`, `pf-tower-cfg-${i}`)
+  });
+}
+
+function bhkChipsHtml(values, bindPath, idx) {
+  const vals = values || [];
+  const presetChips = BHK_PRESET.map(v => {
+    const on = vals.includes(v);
+    return `<span class="chip${on ? ' active' : ''}" data-toggle-bhk="${bindPath}" data-val="${esc(v)}" style="cursor:pointer">${esc(v)}</span>`;
+  }).join('');
+  const customVals = vals.filter(v => !BHK_PRESET.includes(v));
+  const customChips = customVals.map(v => {
+    const i = vals.indexOf(v);
+    return `<span class="chip active">${esc(v)}<span style="cursor:pointer;margin-left:6px" data-remove-chip="${bindPath}" data-idx="${i}">✕</span></span>`;
+  }).join('');
+  const inputId = `pf-phase-bhk-${idx}`;
+  return `<div class="field full">
+    <label>Configuration</label>
+    <div class="chip-row">${presetChips}${customChips}
+    <input type="text" id="${inputId}" placeholder="Custom BHK…" style="border:1px solid #d5dfde;border-radius:20px;padding:7px 12px;font-size:12px;width:140px">
+    <span class="chip chip-add" data-add-chip="${bindPath}" data-input="${inputId}">+ Add</span></div>
+  </div>`;
+}
+
+function renderPhases() {
+  return renderRepeatStep('phases', PHASE_FIELDS, {
+    titleOf: p => p.phase_name, singular: 'Phase', emptyText: 'No phases added yet.', addLabel: 'Add Phase',
+    extraHtml: (p, i) => bhkChipsHtml(p.configurations, `phases.${i}.configurations`, i)
   });
 }
 
@@ -933,7 +969,7 @@ function renderReview() {
     ${section('1. Basic Information', [['Project', p.project_name], ['Developer', dev], ['Type', p.project_type], ['Highlights', `${p.highlights.length} added`]], 1)}
     ${section('2. Project Location', [['Address', p.address], ['City / Locality', `${loc}, ${city}`], ['Pincode', p.pincode]], 2)}
     ${section('3. Size & Scale', [['Land Area', p.total_land_area ? `${p.total_land_area} ${p.land_area_unit}` : '—'], ['Towers', p.total_towers_buildings], ['Total Units', p.total_residential_units]], 3)}
-    ${section('4. Status & Construction', [['Status', p.status], ['Construction Stage', p.construction_stage], ['Target Possession', p.target_possession_date]], 4)}
+    ${section('4. Status & Construction', [['Status', p.status], ['Construction Stage', p.construction_stage], ['Phases', state.phases.length || '—']], 4)}
     ${section('5. Configurations', [['Variants', `${state.configurations.length} added`], ['Price Range', priceText]], 5)}
     ${section('6. Apartment Specifications', [['Flooring', p.flooring], ['Kitchen', p.kitchen]], 6)}
     ${section('7. Tower / Building Details', [['Towers added', `${state.towers.length}`]], 7)}
@@ -1010,7 +1046,7 @@ function stepFieldSpecs(i) {
 // do nothing.
 function repeatStepSpecs(i) {
   const map = {
-    5: ['configurations', CONFIG_FIELDS], 7: ['towers', TOWER_FIELDS], 9: ['nearby', NEARBY_FIELDS],
+    4: ['phases', PHASE_FIELDS], 5: ['configurations', CONFIG_FIELDS], 7: ['towers', TOWER_FIELDS], 9: ['nearby', NEARBY_FIELDS],
     12: ['documents', DOC_FIELDS], 14: ['updates', UPDATE_FIELDS], 15: ['faqs', FAQ_FIELDS]
   };
   return map[i] || null;
@@ -1038,6 +1074,17 @@ function handleSpecialBindings() {
       const idx = arr.indexOf(val);
       if (idx >= 0) arr.splice(idx, 1); else arr.push(val);
       state.configurations[i].parking_type = arr;
+      touched = true;
+      renderStepBody();
+    };
+  });
+  content.querySelectorAll('[data-toggle-bhk]').forEach(el => {
+    el.onclick = () => {
+      const path = el.dataset.toggleBhk, val = el.dataset.val;
+      const arr = getPath(state, path) || [];
+      const idx = arr.indexOf(val);
+      if (idx >= 0) arr.splice(idx, 1); else arr.push(val);
+      setPath(state, path, arr);
       touched = true;
       renderStepBody();
     };
@@ -1190,9 +1237,6 @@ function projectPayload() {
     open_green_area_value: num(p.open_green_area_value), open_green_area_unit: str(p.open_green_area_unit),
     built_up_project_area: num(p.built_up_project_area), built_up_project_area_unit: str(p.built_up_project_area_unit),
     status: p.status, construction_stage: str(p.construction_stage), possession_status: str(p.possession_status),
-    project_phase: str(p.project_phase), construction_start_date: str(p.construction_start_date),
-    expected_completion_date: str(p.expected_completion_date), rera_possession_date: str(p.rera_possession_date),
-    target_possession_date: str(p.target_possession_date),
     starting_price: priceRangeFromConfigs().min, maximum_price: priceRangeFromConfigs().max, price_on_request: !!p.price_on_request,
     base_price: num(p.base_price), floor_rise_charges: num(p.floor_rise_charges), parking_charges: num(p.parking_charges),
     clubhouse_charges: num(p.clubhouse_charges), maintenance_charges: num(p.maintenance_charges), other_charges: num(p.other_charges),
@@ -1245,7 +1289,15 @@ async function persistStep(i) {
 
   const num = v => (v === '' || v === null || v === undefined ? null : Number(v));
   try {
-    if (i === 5) {
+    if (i === 4) {
+      const err = await replaceChildRows('residential_project_phases', state.phases.map((p, idx) => ({
+        phase_name: p.phase_name, construction_start_date: p.construction_start_date || null,
+        expected_completion_date: p.expected_completion_date || null, rera_possession_date: p.rera_possession_date || null,
+        target_possession_date: p.target_possession_date || null, configurations: p.configurations?.length ? p.configurations : [],
+        display_order: idx
+      })));
+      if (err) throw new Error(err);
+    } else if (i === 5) {
       const err = await replaceChildRows('residential_configurations', state.configurations.map((c, idx) => ({
         bhk_type: c.bhk_type, area_unit: c.area_unit,
         carpet_area: num(c.carpet_area), built_up_area: num(c.built_up_area), super_built_up_area: num(c.super_built_up_area),
