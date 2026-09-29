@@ -1292,10 +1292,17 @@ function mediaRows() {
   // storage_mapping_check) — leaving it out made every save fail *after* replaceChildRows()
   // had already deleted the previous rows, so a failed Project Media save silently wiped
   // out whatever photos were already on the project.
-  if (state.media.main.media_path) rows.push({ media_type: 'main_image', media_path: state.media.main.media_path, media_url: state.media.main.media_url, storage_bucket: 'residential-media', is_primary: true });
-  if (state.media.masterPlan.media_path) rows.push({ media_type: 'master_plan', media_path: state.media.masterPlan.media_path, media_url: state.media.masterPlan.media_url, storage_bucket: 'residential-media' });
-  state.media.gallery.forEach((g, i) => rows.push({ media_type: 'gallery', category: g.category || 'exterior', media_path: g.media_path, media_url: g.media_url, storage_bucket: 'residential-media', alt_text: g.alt_text || null, display_order: i }));
-  state.media.videos.forEach((v, i) => rows.push({ media_type: v.media_type || 'video', platform: v.platform, title: v.title || null, media_url: v.media_url, display_order: i }));
+  //
+  // display_order and is_primary are NOT NULL columns with DB-side defaults (0 / false),
+  // but replaceChildRows() sends every row in ONE batch insert, and PostgREST builds that
+  // as a single statement using the union of keys across all rows — any row missing a key
+  // present on another row gets an explicit NULL for it instead of falling back to the
+  // column default. So every row needs every one of these keys set, even if just to the
+  // same value the default would have given it.
+  if (state.media.main.media_path) rows.push({ media_type: 'main_image', media_path: state.media.main.media_path, media_url: state.media.main.media_url, storage_bucket: 'residential-media', is_primary: true, display_order: 0 });
+  if (state.media.masterPlan.media_path) rows.push({ media_type: 'master_plan', media_path: state.media.masterPlan.media_path, media_url: state.media.masterPlan.media_url, storage_bucket: 'residential-media', is_primary: false, display_order: 0 });
+  state.media.gallery.forEach((g, i) => rows.push({ media_type: 'gallery', category: g.category || 'exterior', media_path: g.media_path, media_url: g.media_url, storage_bucket: 'residential-media', alt_text: g.alt_text || null, is_primary: false, display_order: i }));
+  state.media.videos.forEach((v, i) => rows.push({ media_type: v.media_type || 'video', platform: v.platform, title: v.title || null, media_url: v.media_url, is_primary: false, display_order: i }));
   return rows;
 }
 
