@@ -1,7 +1,6 @@
 import { sb } from './supabase-client.js';
 import { toast } from './utils.js';
 import { enhanceSelects } from './custom-select.js';
-import { SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY } from './config.js';
 
 /* ============ small utils ============ */
 
@@ -862,7 +861,7 @@ function renderMedia() {
   const galleryUploads = Object.entries(uploads).filter(([k]) => k.startsWith('media.gallery.')).map(([key, up]) =>
     up.error
       ? `<div class="upload-thumb upload-error"><span class="name">⚠️ ${esc(up.error)}</span><button type="button" data-dismiss-upload="${key}">✕</button></div>`
-      : `<div class="upload-thumb uploading"><div class="upload-spinner"></div><span class="name">${esc(up.name)} · ${up.pct}%</span></div>`
+      : `<div class="upload-thumb uploading"><div class="upload-spinner"></div><span class="name">Uploading ${esc(up.name)}…</span></div>`
   ).join('');
 
   const videos = state.media.videos.map((v, i) => `<div class="form-grid" style="margin-bottom:10px">
@@ -1067,9 +1066,16 @@ function renderUploadSlot(key, inputHtml) {
   if (up.error) {
     return `<div class="upload-box upload-error"><span>⚠️ ${esc(up.error)}</span><label class="retry-link">Try again${inputHtml}</label></div>`;
   }
-  return `<div class="upload-box uploading"><div class="upload-spinner"></div><div class="upload-progress-wrap"><div class="name">${esc(up.name)}${up.size ? ` · ${fmtBytes(up.size)}` : ''}</div><div class="upload-progress-track"><div class="upload-progress-fill" style="width:${up.pct}%"></div></div></div><span class="pct">${up.pct}%</span></div>`;
+  return `<div class="upload-box uploading"><div class="upload-spinner"></div><div class="upload-progress-wrap"><div class="name">Uploading ${esc(up.name)}${up.size ? ` · ${fmtBytes(up.size)}` : ''}…</div></div></div>`;
 }
 
+// Uses the Supabase JS storage client directly (the same call every other upload in this
+// app already relies on) rather than a hand-rolled request against the Storage REST API —
+// re-implementing auth/headers by hand risked subtly diverging from what the SDK sends and
+// getting rejected by Storage's row-level security, which isn't a risk worth taking here.
+// That does mean there's no byte-level progress percentage (the SDK's upload() is a plain
+// fetch with no progress events) — the spinner + filename is an honest "in progress" status
+// instead of a fabricated number.
 async function handleUpload(file, bucket, folder, key, cb) {
   if (!file || !projectId) return;
 
@@ -1087,21 +1093,16 @@ async function handleUpload(file, bucket, folder, key, cb) {
     }
   }
 
-  uploads[key] = { pct: 0, name: file.name, size: file.size };
+  uploads[key] = { name: file.name, size: file.size };
   renderStepBody();
 
   const safeName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, '_');
   const path = `${projectId}/${folder}/${Date.now()}-${safeName}`;
-
-  try {
-    await uploadWithProgress(bucket, path, file, pct => {
-      uploads[key] = { pct, name: file.name, size: file.size };
-      renderStepBody();
-    });
-  } catch (e) {
-    uploads[key] = { error: e.message || 'Upload failed — check your connection and try again.', name: file.name };
+  const { error } = await sb.storage.from(bucket).upload(path, file, { upsert: true });
+  if (error) {
+    uploads[key] = { error: error.message, name: file.name };
     renderStepBody();
-    toast(uploads[key].error, true);
+    toast(error.message, true);
     return;
   }
 
@@ -1111,31 +1112,6 @@ async function handleUpload(file, bucket, folder, key, cb) {
   touched = true;
   renderStepBody();
   toast('Uploaded');
-}
-
-// supabase-js's storage.upload() is a plain fetch under the hood with no progress events, so
-// real percentage feedback needs a raw XHR POST against the same Storage REST endpoint,
-// authenticated the same way the SDK does (bearer session token + publishable apikey).
-function uploadWithProgress(bucket, path, file, onProgress) {
-  return new Promise(async (resolve, reject) => {
-    const { data: { session } } = await sb.auth.getSession();
-    const url = `${SUPABASE_URL}/storage/v1/object/${bucket}/${path.split('/').map(encodeURIComponent).join('/')}`;
-    const xhr = new XMLHttpRequest();
-    xhr.open('POST', url, true);
-    xhr.setRequestHeader('Authorization', `Bearer ${session?.access_token || SUPABASE_PUBLISHABLE_KEY}`);
-    xhr.setRequestHeader('apikey', SUPABASE_PUBLISHABLE_KEY);
-    xhr.setRequestHeader('x-upsert', 'true');
-    xhr.setRequestHeader('content-type', file.type || 'application/octet-stream');
-    xhr.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100)); };
-    xhr.onload = () => {
-      if (xhr.status >= 200 && xhr.status < 300) { onProgress(100); resolve(); return; }
-      let message = `Upload failed (${xhr.status})`;
-      try { message = JSON.parse(xhr.responseText).message || message; } catch { /* non-JSON error body */ }
-      reject(new Error(message));
-    };
-    xhr.onerror = () => reject(new Error('Network error during upload — check your connection and try again.'));
-    xhr.send(file);
-  });
 }
 
 /* ============ save logic ============ */
