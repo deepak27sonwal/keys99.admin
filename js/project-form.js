@@ -1,6 +1,7 @@
 import { sb } from './supabase-client.js';
 import { toast } from './utils.js';
 import { enhanceSelects } from './custom-select.js';
+import { SUPABASE_URL, SUPABASE_PUBLISHABLE_KEY } from './config.js';
 
 /* ============ small utils ============ */
 
@@ -36,6 +37,32 @@ let lookups = { developers: [], cities: [], localities: [], agents: [] };
 let touched = false;
 let historyPushCount = 0;
 let intentionalExit = false;
+
+// In-flight/failed upload state, keyed by a slot id ('media.main', 'documents.2', …).
+// Kept outside `state` since it's session-only UI state, never sent to Supabase.
+let uploads = {};
+
+// Mirrors the actual Supabase Storage bucket config (file_size_limit / allowed_mime_types)
+// so bad files are rejected instantly client-side instead of round-tripping to the server.
+const UPLOAD_LIMITS = {
+  'residential-media': {
+    maxBytes: 10 * 1024 * 1024,
+    mimeTypes: ['image/jpeg', 'image/png', 'image/webp', 'image/avif', 'image/gif'],
+    label: 'JPG, PNG, WEBP, AVIF or GIF · up to 10MB'
+  },
+  'residential-documents': {
+    maxBytes: 20 * 1024 * 1024,
+    mimeTypes: ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'],
+    label: 'PDF, JPG, PNG or WEBP · up to 20MB'
+  }
+};
+
+function fmtBytes(n) {
+  if (!n && n !== 0) return '';
+  if (n < 1024) return `${n} B`;
+  if (n < 1024 * 1024) return `${(n / 1024).toFixed(1)} KB`;
+  return `${(n / (1024 * 1024)).toFixed(1)} MB`;
+}
 
 const STEP_NAMES = [
   'Basic Information', 'Project Location', 'Size & Scale', 'Status & Construction',
@@ -201,6 +228,7 @@ export async function openProjectForm(rootEl, user, existingId, exitCb) {
   historyPushCount = 0;
   intentionalExit = false;
   wizardOpen = true;
+  uploads = {};
 
   content.innerHTML = `<div class="empty">Loading project form…</div>`;
   await loadLookups();
@@ -747,9 +775,11 @@ function renderUpdates() {
   return renderRepeatStep('updates', UPDATE_FIELDS, {
     titleOf: u => u.update_title, singular: 'Update', emptyText: 'No construction updates added yet.', addLabel: 'Add Construction Update',
     extraHtml: (u, i) => {
-      const media = (u.media || []).map(m => `<div class="upload-thumb"><span class="name">${esc(m.media_path?.split('/').pop() || 'photo')}</span></div>`).join('');
-      const uploadHtml = projectId ? `<label class="upload-box">📷 Add site photo<input type="file" accept="image/*" data-update-upload="${i}"></label>${media}` : `<div class="hint">Save the project first to attach photos.</div>`;
-      return `<div class="field full">${uploadHtml}</div>`;
+      const media = (u.media || []).map(m => `<div class="upload-thumb"><span class="name">${esc(m.file_name || m.media_path?.split('/').pop() || 'photo')}${m.file_size ? ` · ${fmtBytes(m.file_size)}` : ''}</span></div>`).join('');
+      const input = `<input type="file" accept="image/*" data-update-upload="${i}">`;
+      const uploadHtml = !projectId ? `<div class="hint">Save the project first to attach photos.</div>`
+        : renderUploadSlot(`updates.${i}`, input) || `<label class="upload-box">📷 Add site photo${input}<span class="hint">${esc(UPLOAD_LIMITS['residential-media'].label)}</span></label>`;
+      return `<div class="field full">${uploadHtml}${media}</div>`;
     }
   });
 }
@@ -764,9 +794,11 @@ function renderDocuments() {
   return renderRepeatStep('documents', DOC_FIELDS, {
     titleOf: d => d.title, singular: 'Document', emptyText: 'No documents added yet.', addLabel: 'Add Document',
     extraHtml: (d, i) => {
+      const input = `<input type="file" data-doc-upload="${i}">`;
       const uploadHtml = d.file_name
-        ? `<div class="upload-thumb"><span class="name">${esc(d.file_name)}</span><button type="button" data-remove-upload="documents.${i}.file">✕</button></div>`
-        : (projectId ? `<label class="upload-box">📄 Click to upload file<input type="file" data-doc-upload="${i}"></label>` : `<div class="hint">Save the project first (through Status &amp; Construction) to upload files.</div>`);
+        ? `<div class="upload-thumb"><span class="name">${esc(d.file_name)}${d.file_size ? ` · ${fmtBytes(d.file_size)}` : ''}</span><button type="button" data-remove-upload="documents.${i}.file">✕</button></div>`
+        : !projectId ? `<div class="hint">Save the project first (through Status &amp; Construction) to upload files.</div>`
+        : renderUploadSlot(`documents.${i}`, input) || `<label class="upload-box">📄 Click to upload file${input}<span class="hint">${esc(UPLOAD_LIMITS['residential-documents'].label)}</span></label>`;
       return `<div class="field full">${uploadHtml}</div>`;
     }
   });
@@ -786,36 +818,64 @@ function renderLitigation() {
     titleOf: l => l.case_title, singular: 'Litigation Entry',
     emptyText: 'No litigation entries. Default is "No Known Litigation" if left empty.', addLabel: 'Add Litigation Entry',
     extraHtml: (l, i) => {
+      const input = `<input type="file" data-lit-upload="${i}">`;
       const uploadHtml = l.supporting_document_name
-        ? `<div class="upload-thumb"><span class="name">${esc(l.supporting_document_name)}</span><button type="button" data-remove-upload="litigation.${i}.supporting_document">✕</button></div>`
-        : (projectId ? `<label class="upload-box">📄 Attach supporting document<input type="file" data-lit-upload="${i}"></label>` : `<div class="hint">Save the project first to attach a document.</div>`);
+        ? `<div class="upload-thumb"><span class="name">${esc(l.supporting_document_name)}${l.supporting_document_size ? ` · ${fmtBytes(l.supporting_document_size)}` : ''}</span><button type="button" data-remove-upload="litigation.${i}.supporting_document">✕</button></div>`
+        : !projectId ? `<div class="hint">Save the project first to attach a document.</div>`
+        : renderUploadSlot(`litigation.${i}`, input) || `<label class="upload-box">📄 Attach supporting document${input}<span class="hint">${esc(UPLOAD_LIMITS['residential-documents'].label)}</span></label>`;
       return `<div class="field full">${uploadHtml}</div>`;
     }
   });
 }
 
+// Must match the DB's residential_media_category_check constraint exactly.
+const GALLERY_CATEGORIES = enumOpts(['exterior', 'interior', 'amenities', 'landscape', 'other']);
+
 function renderMedia() {
   if (!projectId) {
     return `<div class="empty">Save the project first (complete through Status &amp; Construction, then Save as Draft) to upload media.</div>`;
   }
+  const sizeHint = `<span class="hint">${esc(UPLOAD_LIMITS['residential-media'].label)}</span>`;
   const main = state.media.main;
   const mp = state.media.masterPlan;
-  const galleryItems = state.media.gallery.map((g, i) => `<div class="upload-thumb"><img src="${esc(g.media_url || '')}"><span class="name">${esc(g.category || '')}</span><button type="button" data-remove-gallery="${i}">✕</button></div>`).join('');
+
+  const mainInput = `<input type="file" accept="image/*" data-main-upload="1">`;
+  const mainBox = renderUploadSlot('media.main', mainInput) || (main.media_url
+    ? `<div class="upload-thumb"><img src="${esc(main.media_url)}" loading="lazy" onerror="this.style.display='none'"><span class="name">Main image set${main.file_size ? ` · ${fmtBytes(main.file_size)}` : ''}</span><button type="button" data-remove-upload="media.main">✕</button></div>`
+    : `<label class="upload-box">📷 Click to upload main image${mainInput}${sizeHint}</label>`);
+
+  const mpInput = `<input type="file" accept="image/*" data-masterplan-upload="1">`;
+  const mpBox = renderUploadSlot('media.masterPlan', mpInput) || (mp.media_url
+    ? `<div class="upload-thumb"><img src="${esc(mp.media_url)}" loading="lazy" onerror="this.style.display='none'"><span class="name">Master plan set${mp.file_size ? ` · ${fmtBytes(mp.file_size)}` : ''}</span><button type="button" data-remove-upload="media.masterPlan">✕</button></div>`
+    : `<label class="upload-box">🗺️ Click to upload master plan${mpInput}${sizeHint}</label>`);
+
+  const galleryItems = state.media.gallery.map((g, i) => `
+    <div class="upload-thumb upload-thumb-wide">
+      <img src="${esc(g.media_url || '')}" loading="lazy" onerror="this.style.display='none'">
+      <div class="upload-thumb-body">
+        <span class="name">${esc(g.file_name || 'Photo')}${g.file_size ? ` · ${fmtBytes(g.file_size)}` : ''}</span>
+        <select data-bind="media.gallery.${i}.category">${GALLERY_CATEGORIES.map(o => `<option value="${esc(o.value)}"${(g.category || 'exterior') === o.value ? ' selected' : ''}>${esc(o.label)}</option>`).join('')}</select>
+        <input type="text" placeholder="Alt text (for SEO &amp; accessibility)" value="${esc(g.alt_text || '')}" data-bind="media.gallery.${i}.alt_text">
+      </div>
+      <button type="button" data-remove-gallery="${i}">✕</button>
+    </div>`).join('');
+  const galleryUploads = Object.entries(uploads).filter(([k]) => k.startsWith('media.gallery.')).map(([key, up]) =>
+    up.error
+      ? `<div class="upload-thumb upload-error"><span class="name">⚠️ ${esc(up.error)}</span><button type="button" data-dismiss-upload="${key}">✕</button></div>`
+      : `<div class="upload-thumb uploading"><div class="upload-spinner"></div><span class="name">${esc(up.name)} · ${up.pct}%</span></div>`
+  ).join('');
+
   const videos = state.media.videos.map((v, i) => `<div class="form-grid" style="margin-bottom:10px">
       ${renderField({ label: 'Platform', type: 'select', options: enumOpts(['youtube', 'facebook', 'instagram', 'other']) }, v.platform, `data-bind="media.videos.${i}.platform"`)}
       ${renderField({ label: v.media_type === 'reel' ? 'Reel Title' : 'Video Title' }, v.title, `data-bind="media.videos.${i}.title"`)}
       ${renderField({ label: 'URL', full: true }, v.media_url, `data-bind="media.videos.${i}.media_url"`)}
     </div>`).join('');
   return `
-    <div class="field full"><label>Main Image</label>
-      ${main.media_url ? `<div class="upload-thumb"><img src="${esc(main.media_url)}"><span class="name">Main image set</span><button type="button" data-remove-upload="media.main">✕</button></div>` : `<label class="upload-box">📷 Click to upload main image<input type="file" accept="image/*" data-main-upload="1"></label>`}
-    </div>
-    <div class="field full"><label>Master Plan</label>
-      ${mp.media_url ? `<div class="upload-thumb"><img src="${esc(mp.media_url)}"><span class="name">Master plan set</span><button type="button" data-remove-upload="media.masterPlan">✕</button></div>` : `<label class="upload-box">🗺️ Click to upload master plan<input type="file" accept="image/*" data-masterplan-upload="1"></label>`}
-    </div>
-    <div class="field full"><label>Gallery</label>
-      ${galleryItems}
-      <label class="upload-box">🖼️ Add gallery photo<input type="file" accept="image/*" data-gallery-upload="1"></label>
+    <div class="field full"><label>Main Image</label>${mainBox}</div>
+    <div class="field full"><label>Master Plan</label>${mpBox}</div>
+    <div class="field full"><label>Gallery <span class="hint">${state.media.gallery.length} photo${state.media.gallery.length === 1 ? '' : 's'}</span></label>
+      ${galleryItems}${galleryUploads}
+      <label class="upload-box">🖼️ Add gallery photo<input type="file" accept="image/*" data-gallery-upload="1">${sizeHint}</label>
     </div>
     <div class="field full"><label>Videos / Virtual Tour / Reels</label>${videos}
       <button type="button" class="add-repeat" data-add-item="media.videos">+ Add Video Link</button>
@@ -967,33 +1027,115 @@ function handleSpecialBindings() {
   content.querySelectorAll('[data-remove-gallery]').forEach(el => {
     el.onclick = () => { state.media.gallery.splice(Number(el.dataset.removeGallery), 1); touched = true; renderStepBody(); };
   });
-  content.querySelectorAll('input[type=file][data-main-upload]').forEach(el => { el.onchange = () => handleUpload(el.files[0], 'residential-media', 'media/main', r => { state.media.main = { media_type: 'main_image', ...r }; renderStepBody(); }); });
-  content.querySelectorAll('input[type=file][data-masterplan-upload]').forEach(el => { el.onchange = () => handleUpload(el.files[0], 'residential-media', 'media/master-plan', r => { state.media.masterPlan = { media_type: 'master_plan', ...r }; renderStepBody(); }); });
-  content.querySelectorAll('input[type=file][data-gallery-upload]').forEach(el => { el.onchange = () => handleUpload(el.files[0], 'residential-media', 'media/gallery', r => { state.media.gallery.push({ _k: uid(), media_type: 'gallery', category: 'exterior', ...r }); renderStepBody(); }); });
+  content.querySelectorAll('[data-dismiss-upload]').forEach(el => {
+    el.onclick = () => { delete uploads[el.dataset.dismissUpload]; renderStepBody(); };
+  });
+  content.querySelectorAll('input[type=file][data-main-upload]').forEach(el => {
+    el.onchange = () => handleUpload(el.files[0], 'residential-media', 'media/main', 'media.main',
+      r => { state.media.main = { media_type: 'main_image', ...r }; });
+  });
+  content.querySelectorAll('input[type=file][data-masterplan-upload]').forEach(el => {
+    el.onchange = () => handleUpload(el.files[0], 'residential-media', 'media/master-plan', 'media.masterPlan',
+      r => { state.media.masterPlan = { media_type: 'master_plan', ...r }; });
+  });
+  content.querySelectorAll('input[type=file][data-gallery-upload]').forEach(el => {
+    el.onchange = () => handleUpload(el.files[0], 'residential-media', 'media/gallery', `media.gallery.${uid()}`,
+      r => { state.media.gallery.push({ _k: uid(), media_type: 'gallery', category: 'exterior', alt_text: '', ...r }); });
+  });
   content.querySelectorAll('input[type=file][data-doc-upload]').forEach(el => {
-    el.onchange = () => { const i = Number(el.dataset.docUpload); handleUpload(el.files[0], 'residential-documents', 'documents', r => { state.documents[i].file_path = r.media_path; state.documents[i].file_url = r.media_url || null; state.documents[i].file_name = el.files[0].name; renderStepBody(); }); };
+    el.onchange = () => { const i = Number(el.dataset.docUpload); handleUpload(el.files[0], 'residential-documents', 'documents', `documents.${i}`,
+      r => { state.documents[i].file_path = r.media_path; state.documents[i].file_url = r.media_url || null; state.documents[i].file_name = r.file_name; state.documents[i].file_size = r.file_size; }); };
   });
   content.querySelectorAll('input[type=file][data-lit-upload]').forEach(el => {
-    el.onchange = () => { const i = Number(el.dataset.litUpload); handleUpload(el.files[0], 'residential-documents', 'litigation', r => { state.litigation[i].supporting_document_path = r.media_path; state.litigation[i].supporting_document_url = r.media_url || null; state.litigation[i].supporting_document_name = el.files[0].name; renderStepBody(); }); };
+    el.onchange = () => { const i = Number(el.dataset.litUpload); handleUpload(el.files[0], 'residential-documents', 'litigation', `litigation.${i}`,
+      r => { state.litigation[i].supporting_document_path = r.media_path; state.litigation[i].supporting_document_url = r.media_url || null; state.litigation[i].supporting_document_name = r.file_name; state.litigation[i].supporting_document_size = r.file_size; }); };
   });
   content.querySelectorAll('input[type=file][data-update-upload]').forEach(el => {
-    el.onchange = () => { const i = Number(el.dataset.updateUpload); handleUpload(el.files[0], 'residential-media', 'construction-updates', r => { state.updates[i].media = state.updates[i].media || []; state.updates[i].media.push({ _k: uid(), media_path: r.media_path, media_url: r.media_url }); renderStepBody(); }); };
+    el.onchange = () => { const i = Number(el.dataset.updateUpload); handleUpload(el.files[0], 'residential-media', 'construction-updates', `updates.${i}`,
+      r => { state.updates[i].media = state.updates[i].media || []; state.updates[i].media.push({ _k: uid(), media_path: r.media_path, media_url: r.media_url, file_name: r.file_name, file_size: r.file_size }); }); };
   });
 }
 
-async function handleUpload(file, bucket, folder, cb) {
+// Renders the in-progress/error state for a stable-key upload slot (one file at a time —
+// main image, master plan, or one row's document/litigation/site-photo attachment), or null
+// when nothing is happening so the caller falls back to its normal "empty"/"filled" markup.
+// `inputHtml` is the exact <input type=file …> markup for that slot, reused as the retry
+// control on error since the key is stable and safe to re-trigger in place.
+function renderUploadSlot(key, inputHtml) {
+  const up = uploads[key];
+  if (!up) return null;
+  if (up.error) {
+    return `<div class="upload-box upload-error"><span>⚠️ ${esc(up.error)}</span><label class="retry-link">Try again${inputHtml}</label></div>`;
+  }
+  return `<div class="upload-box uploading"><div class="upload-spinner"></div><div class="upload-progress-wrap"><div class="name">${esc(up.name)}${up.size ? ` · ${fmtBytes(up.size)}` : ''}</div><div class="upload-progress-track"><div class="upload-progress-fill" style="width:${up.pct}%"></div></div></div><span class="pct">${up.pct}%</span></div>`;
+}
+
+async function handleUpload(file, bucket, folder, key, cb) {
   if (!file || !projectId) return;
-  toast('Uploading…');
+
+  const limits = UPLOAD_LIMITS[bucket];
+  if (limits) {
+    if (file.size > limits.maxBytes) {
+      uploads[key] = { error: `Too large (${fmtBytes(file.size)}). Max is ${fmtBytes(limits.maxBytes)}.` };
+      renderStepBody();
+      return;
+    }
+    if (limits.mimeTypes.length && !limits.mimeTypes.includes(file.type)) {
+      uploads[key] = { error: `Unsupported file type${file.type ? ` (${file.type})` : ''}. Allowed: ${limits.label}.` };
+      renderStepBody();
+      return;
+    }
+  }
+
+  uploads[key] = { pct: 0, name: file.name, size: file.size };
+  renderStepBody();
+
   const safeName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, '_');
   const path = `${projectId}/${folder}/${Date.now()}-${safeName}`;
-  const { error } = await sb.storage.from(bucket).upload(path, file, { upsert: true });
-  if (error) { toast(error.message, true); return; }
-  let url = null;
-  if (bucket !== 'residential-documents') {
-    url = sb.storage.from(bucket).getPublicUrl(path).data.publicUrl;
+
+  try {
+    await uploadWithProgress(bucket, path, file, pct => {
+      uploads[key] = { pct, name: file.name, size: file.size };
+      renderStepBody();
+    });
+  } catch (e) {
+    uploads[key] = { error: e.message || 'Upload failed — check your connection and try again.', name: file.name };
+    renderStepBody();
+    toast(uploads[key].error, true);
+    return;
   }
-  cb({ media_path: path, media_url: url });
+
+  delete uploads[key];
+  const url = bucket === 'residential-documents' ? null : sb.storage.from(bucket).getPublicUrl(path).data.publicUrl;
+  cb({ media_path: path, media_url: url, file_name: file.name, file_size: file.size });
+  touched = true;
+  renderStepBody();
   toast('Uploaded');
+}
+
+// supabase-js's storage.upload() is a plain fetch under the hood with no progress events, so
+// real percentage feedback needs a raw XHR POST against the same Storage REST endpoint,
+// authenticated the same way the SDK does (bearer session token + publishable apikey).
+function uploadWithProgress(bucket, path, file, onProgress) {
+  return new Promise(async (resolve, reject) => {
+    const { data: { session } } = await sb.auth.getSession();
+    const url = `${SUPABASE_URL}/storage/v1/object/${bucket}/${path.split('/').map(encodeURIComponent).join('/')}`;
+    const xhr = new XMLHttpRequest();
+    xhr.open('POST', url, true);
+    xhr.setRequestHeader('Authorization', `Bearer ${session?.access_token || SUPABASE_PUBLISHABLE_KEY}`);
+    xhr.setRequestHeader('apikey', SUPABASE_PUBLISHABLE_KEY);
+    xhr.setRequestHeader('x-upsert', 'true');
+    xhr.setRequestHeader('content-type', file.type || 'application/octet-stream');
+    xhr.upload.onprogress = (e) => { if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100)); };
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) { onProgress(100); resolve(); return; }
+      let message = `Upload failed (${xhr.status})`;
+      try { message = JSON.parse(xhr.responseText).message || message; } catch { /* non-JSON error body */ }
+      reject(new Error(message));
+    };
+    xhr.onerror = () => reject(new Error('Network error during upload — check your connection and try again.'));
+    xhr.send(file);
+  });
 }
 
 /* ============ save logic ============ */
@@ -1170,9 +1312,13 @@ async function persistStep(i) {
 
 function mediaRows() {
   const rows = [];
-  if (state.media.main.media_path) rows.push({ media_type: 'main_image', media_path: state.media.main.media_path, media_url: state.media.main.media_url, is_primary: true });
-  if (state.media.masterPlan.media_path) rows.push({ media_type: 'master_plan', media_path: state.media.masterPlan.media_path, media_url: state.media.masterPlan.media_url });
-  state.media.gallery.forEach((g, i) => rows.push({ media_type: 'gallery', category: g.category || 'exterior', media_path: g.media_path, media_url: g.media_url, display_order: i }));
+  // storage_bucket is required by the DB whenever media_path is set (residential_media_
+  // storage_mapping_check) — leaving it out made every save fail *after* replaceChildRows()
+  // had already deleted the previous rows, so a failed Project Media save silently wiped
+  // out whatever photos were already on the project.
+  if (state.media.main.media_path) rows.push({ media_type: 'main_image', media_path: state.media.main.media_path, media_url: state.media.main.media_url, storage_bucket: 'residential-media', is_primary: true });
+  if (state.media.masterPlan.media_path) rows.push({ media_type: 'master_plan', media_path: state.media.masterPlan.media_path, media_url: state.media.masterPlan.media_url, storage_bucket: 'residential-media' });
+  state.media.gallery.forEach((g, i) => rows.push({ media_type: 'gallery', category: g.category || 'exterior', media_path: g.media_path, media_url: g.media_url, storage_bucket: 'residential-media', alt_text: g.alt_text || null, display_order: i }));
   state.media.videos.forEach((v, i) => rows.push({ media_type: v.media_type || 'video', platform: v.platform, title: v.title || null, media_url: v.media_url, display_order: i }));
   return rows;
 }
