@@ -96,9 +96,10 @@ const FIRST_SAVE_AFTER_STEP = 4;
 
 /* ============ shared enum option lists (avoid re-declaring the same DB check-constraint values per step) ============ */
 
-// Must match the DB's residential_projects_construction_stage_check constraint exactly.
-const CONSTRUCTION_STAGE_OPTIONS = enumOpts(['new_launch', 'under_construction', 'nearing_possession', 'possession_started', 'ready_to_move', 'completed', 'resale']);
-const POSSESSION_STATUS_OPTIONS = enumOpts(['not_started', 'under_construction', 'possession_started', 'ready_to_move', 'completed']);
+// Must match the DB's residential_towers_construction_stage_check / residential_construction_updates_construction_stage_check constraints (still used by Towers and Construction Updates steps).
+const CONSTRUCTION_STAGE_OPTIONS = enumOpts(['pre_launch', 'excavation', 'foundation', 'structure', 'brickwork', 'finishing', 'final_completion', 'ready_to_move', 'other']);
+// Must match the DB's residential_projects_possession_status_check constraint exactly.
+const POSSESSION_STATUS_OPTIONS = enumOpts(['new_launch', 'under_construction', 'nearing_possession', 'possession_started', 'ready_to_move', 'completed']);
 const AREA_UNIT_OPTIONS = enumOpts(['sq_ft', 'sq_m']);
 // Project-level built-up area can be quoted in acres for large projects — kept separate
 // from AREA_UNIT_OPTIONS since that one's also used for per-configuration carpet/built-up
@@ -138,8 +139,7 @@ const FIELDS = {
     { key: 'built_up_project_area_unit', label: 'Built-up Area Unit', type: 'select', options: PROJECT_AREA_UNIT_OPTIONS }
   ],
   status: [
-    { key: 'status', label: 'Project Status', req: true, type: 'select', options: enumOpts(['upcoming', 'new_launch', 'under_construction', 'ready_to_move', 'completed']) },
-    { key: 'construction_stage', label: 'Construction Stage', type: 'select', options: CONSTRUCTION_STAGE_OPTIONS },
+    { key: 'status', label: 'Project Status', req: true, type: 'select', options: enumOpts(['upcoming', 'new_launch', 'under_construction', 'ready_to_move', 'completed', 'resale']) },
     { key: 'possession_status', label: 'Possession Status', type: 'select', options: POSSESSION_STATUS_OPTIONS }
   ],
   specs: [
@@ -211,7 +211,7 @@ function freshState() {
       project_name: '', developer_id: '', project_type: 'apartment', launch_date: '', rera_number: '', overview: '', highlights: [],
       city_id: '', locality_id: '', address: '', pincode: '', latitude: '', longitude: '',
       total_land_area: '', land_area_unit: 'acre', total_towers_buildings: '', total_floors: '', total_residential_units: '', units_per_floor: '', number_of_phases: '', units_per_phase: '', open_green_area_value: '', open_green_area_unit: 'acre', built_up_project_area: '', built_up_project_area_unit: 'sq_ft',
-      status: 'upcoming', construction_stage: '', possession_status: '',
+      status: 'upcoming', possession_status: '',
       starting_price: '', maximum_price: '', price_on_request: false, base_price: '', floor_rise_charges: '', parking_charges: '', clubhouse_charges: '', maintenance_charges: '', other_charges: '', gst_applicable: false, price_disclaimer: '', registration_stamp_duty_disclaimer: '',
       flooring: '', doors: '', windows: '', kitchen: '', bathroom: '', electrical: '', walls_paint: '', balcony: '', other_specifications: '',
       agent_id: '',
@@ -969,7 +969,7 @@ function renderReview() {
     ${section('1. Basic Information', [['Project', p.project_name], ['Developer', dev], ['Type', p.project_type], ['Highlights', `${p.highlights.length} added`]], 1)}
     ${section('2. Project Location', [['Address', p.address], ['City / Locality', `${loc}, ${city}`], ['Pincode', p.pincode]], 2)}
     ${section('3. Size & Scale', [['Land Area', p.total_land_area ? `${p.total_land_area} ${p.land_area_unit}` : '—'], ['Towers', p.total_towers_buildings], ['Total Units', p.total_residential_units]], 3)}
-    ${section('4. Status & Construction', [['Status', p.status], ['Construction Stage', p.construction_stage], ['Phases', state.phases.length || '—']], 4)}
+    ${section('4. Status & Construction', [['Status', p.status], ['Possession Status', p.possession_status], ['Phases', state.phases.length || '—']], 4)}
     ${section('5. Configurations', [['Variants', `${state.configurations.length} added`], ['Price Range', priceText]], 5)}
     ${section('6. Apartment Specifications', [['Flooring', p.flooring], ['Kitchen', p.kitchen]], 6)}
     ${section('7. Tower / Building Details', [['Towers added', `${state.towers.length}`]], 7)}
@@ -1236,7 +1236,7 @@ function projectPayload() {
     number_of_phases: num(p.number_of_phases), units_per_phase: num(p.units_per_phase),
     open_green_area_value: num(p.open_green_area_value), open_green_area_unit: str(p.open_green_area_unit),
     built_up_project_area: num(p.built_up_project_area), built_up_project_area_unit: str(p.built_up_project_area_unit),
-    status: p.status, construction_stage: str(p.construction_stage), possession_status: str(p.possession_status),
+    status: p.status, possession_status: str(p.possession_status),
     starting_price: priceRangeFromConfigs().min, maximum_price: priceRangeFromConfigs().max, price_on_request: !!p.price_on_request,
     base_price: num(p.base_price), floor_rise_charges: num(p.floor_rise_charges), parking_charges: num(p.parking_charges),
     clubhouse_charges: num(p.clubhouse_charges), maintenance_charges: num(p.maintenance_charges), other_charges: num(p.other_charges),
