@@ -7,7 +7,12 @@ import { pageHead, tablePanel, emptyRow, icon, escapeHtml, fmtDate, toast, custo
 // straight back live (moderation_status: 'published'), skipping the moderation queue,
 // since only already-live projects are expected to go through Archive. Permanent delete
 // is a separate, explicit action since it cascades to the project's enquiries, media, etc.
-export async function archivePage(content, navigate) {
+export async function archivePage(content, navigate, isSuperAdmin) {
+  if (!isSuperAdmin) {
+    content.innerHTML = pageHead('Archive', 'Projects removed from the live listings') +
+      `<div class="empty">Archive is restricted to super admins.</div>`;
+    return;
+  }
   content.innerHTML = pageHead('Archive', 'Projects removed from the live listings — restore or permanently delete them') + `<div class="empty">Loading…</div>`;
 
   const { data, error } = await sb.from('residential_projects')

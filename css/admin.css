@@ -186,6 +186,8 @@ tr:last-child td{border-bottom:0}
 .pill.followup{background:#fdf2df;color:var(--warn)}
 .pill.rejected,.pill.suspended{background:#fdeaea;color:var(--danger)}
 .pill.archived{background:#f1f3f4;color:var(--muted)}
+.pill.super_admin{background:#fdf2df;color:var(--gold)}
+.pill.admin{background:#e8f1fb;color:var(--blue)}
 .row-actions{display:flex;gap:6px}
 .icon-btn{width:26px;height:26px;border-radius:7px;background:var(--bg);display:flex;align-items:center;justify-content:center;color:var(--ink-soft)}
 .icon-btn:hover{background:var(--line)}

@@ -102,12 +102,13 @@ export function icon(name, size = 16) {
 
 const ENTITY_KINDS = ['developer', 'agent', 'city'];
 
-export function rowActions(kind, id, name) {
+export function rowActions(kind, id, name, canDelete = true) {
   if (kind === 'project') {
+    const del = canDelete ? `<button class="icon-btn danger" data-delete-project="${id}" data-project-name="${escapeHtml(name || '')}">${icon('trash', 13)}</button>` : '';
     return `<div class="row-actions">
       <button class="icon-btn" data-edit-project="${id}">${icon('edit', 13)}</button>
       <button class="icon-btn" data-edit-project="${id}">${icon('eye', 13)}</button>
-      <button class="icon-btn danger" data-delete-project="${id}" data-project-name="${escapeHtml(name || '')}">${icon('trash', 13)}</button>
+      ${del}
     </div>`;
   }
   if (ENTITY_KINDS.includes(kind)) {

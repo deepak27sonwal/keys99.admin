@@ -10,12 +10,14 @@ import {
 } from './utils.js';
 import { archivePage } from './archive.js';
 import { reportsPage } from './reports.js';
+import { adminsPage } from './admins.js';
 
 const $ = s => document.querySelector(s);
 const content = $('#content');
 
 let currentUser = null;
 let currentRoles = [];
+let isSuperAdmin = false;
 
 // Wraps the shared bindStubs() with this app's edit-project wiring — used by every page
 // rendered here that can show project rows (Dashboard's "Recent Projects" table, etc.);
@@ -36,16 +38,21 @@ async function guard() {
   const { data: roles, error } = await sb.from('user_roles').select('role').eq('user_id', session.user.id);
   if (error) { console.error(error); }
   const roleList = (roles || []).map(r => r.role);
-  const allowed = roleList.some(r => ['admin', 'editor', 'agent', 'moderator'].includes(r));
+  const allowed = roleList.some(r => ['super_admin', 'admin', 'editor', 'agent', 'moderator'].includes(r));
   if (!allowed) { await sb.auth.signOut(); location.replace('./login.html'); return false; }
 
   currentUser = session.user;
   currentRoles = roleList;
+  isSuperAdmin = roleList.includes('super_admin');
 
   const label = session.user.email || 'Admin';
   $('#user-name').textContent = label;
-  $('#user-role').textContent = (roleList.includes('admin') ? 'admin' : (roleList[0] || 'admin')).toUpperCase();
+  const roleLabel = isSuperAdmin ? 'super admin' : roleList.includes('admin') ? 'admin' : (roleList[0] || 'admin');
+  $('#user-role').textContent = roleLabel.toUpperCase();
   $('#user-avatar').textContent = initials(label);
+  $('#sb-admins-section').hidden = !isSuperAdmin;
+  $('#sb-admins-nav').hidden = !isSuperAdmin;
+  $('#sb-archive-item').hidden = !isSuperAdmin;
   return true;
 }
 
@@ -309,7 +316,7 @@ async function dashboardPage() {
                 <td>${fmtPrice(p.starting_price, p.price_on_request)}</td>
                 <td>${escapeHtml((p.status || '—').replace(/_/g, ' '))}</td>
                 <td>${pill(p.moderation_status)}</td>
-                <td>${rowActions('project', p.id, p.project_name)}</td>
+                <td>${rowActions('project', p.id, p.project_name, isSuperAdmin)}</td>
               </tr>`).join('') : emptyRow(7, 'No residential projects yet.')}
             </tbody>
           </table></div>
@@ -914,19 +921,20 @@ async function profilePage() {
 
 const PAGES = {
   dashboard: dashboardPage,
-  residential: (filter, openAdd) => residentialProjectsPage(content, currentUser, navigate, filter, openAdd),
+  residential: (filter, openAdd) => residentialProjectsPage(content, currentUser, navigate, filter, openAdd, isSuperAdmin),
   commercial: commercialPage,
   developers: developersPage,
   cities: citiesPage,
   agents: agentsPage,
   enquiries: (openId) => enquiriesPage(openId),
   moderation: moderationPage,
-  archive: () => archivePage(content, navigate),
+  archive: () => archivePage(content, navigate, isSuperAdmin),
   'report-projects': () => reportsPage(content, navigate, 'projects'),
   'report-enquiries': () => reportsPage(content, navigate, 'enquiries'),
   'report-developers': () => reportsPage(content, navigate, 'developers'),
   'report-agents': () => reportsPage(content, navigate, 'agents'),
   'report-moderation': () => reportsPage(content, navigate, 'moderation'),
+  admins: () => adminsPage(content, navigate, isSuperAdmin),
   settings: settingsPage,
   profile: profilePage
 };

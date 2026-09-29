@@ -30,7 +30,10 @@ const STATUS_LABELS = { draft: 'Draft' };
 //   of scrolling the full catalog. Cleared by reloading the page without a filter.
 // openAdd: when true (from the sidebar's "Add Project" shortcut), opens the Add Project
 //   wizard immediately once the list has rendered.
-export async function residentialProjectsPage(content, currentUser, navigate, moderationFilter, openAdd) {
+// isSuperAdmin: only super admins can archive a project — a plain admin doesn't get the
+//   delete icon in the row actions at all (the server enforces this too; this just keeps
+//   the UI from offering an action that would be silently rejected).
+export async function residentialProjectsPage(content, currentUser, navigate, moderationFilter, openAdd, isSuperAdmin) {
   content.innerHTML = pageHead('Residential Projects', 'Manage the residential listing catalog') + `<div class="empty">Loading…</div>`;
 
   const [{ panelHtml, rowTemplate }, { data, error }] = await Promise.all([
@@ -50,7 +53,7 @@ export async function residentialProjectsPage(content, currentUser, navigate, mo
   if (moderationFilter) {
     content.querySelector('.panel-head h2').insertAdjacentHTML('afterend',
       `<span class="chip active" style="margin-left:8px">${STATUS_LABELS[moderationFilter] || moderationFilter}<span id="clear-filter" style="cursor:pointer;margin-left:6px">✕</span></span>`);
-    content.querySelector('#clear-filter').addEventListener('click', () => residentialProjectsPage(content, currentUser, navigate));
+    content.querySelector('#clear-filter').addEventListener('click', () => residentialProjectsPage(content, currentUser, navigate, null, false, isSuperAdmin));
   }
 
   const tbody = content.querySelector('#residential-projects-rows');
@@ -73,7 +76,7 @@ export async function residentialProjectsPage(content, currentUser, navigate, mo
       row.querySelector('[data-field="price"]').textContent = fmtPrice(p.starting_price, p.price_on_request);
       row.querySelector('[data-field="status"]').textContent = (p.status || '—').replace(/_/g, ' ');
       row.querySelector('[data-field="moderation"]').innerHTML = pill(p.moderation_status);
-      row.querySelector('[data-field="actions"]').innerHTML = rowActions('project', p.id, p.project_name);
+      row.querySelector('[data-field="actions"]').innerHTML = rowActions('project', p.id, p.project_name, isSuperAdmin);
       tbody.appendChild(row);
     });
 
