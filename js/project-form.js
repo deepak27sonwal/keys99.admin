@@ -615,7 +615,7 @@ function addRepeatItem(key, arg) {
   else if (key === 'prosCons') item = DEFAULTS.prosCons(arg);
   else {
     const factoryName = key.endsWith('s') ? key.slice(0, -1) : key;
-    const map = { configurations: 'configuration', towers: 'tower', nearby: 'nearby', documents: 'document', litigation: 'litigation', updates: 'update', faqs: 'faq', phases: 'phase' };
+    const map = { configurations: 'configuration', towers: 'tower', nearby: 'nearby', documents: 'document', litigation: 'litigation', updates: 'update', faqs: 'faq', phases: 'phase', 'media.videos': 'video' };
     item = DEFAULTS[map[key] || factoryName] ? DEFAULTS[map[key] || factoryName]() : { _k: uid() };
   }
   arr.push(item);
