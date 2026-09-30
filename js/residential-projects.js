@@ -33,7 +33,11 @@ const STATUS_LABELS = { draft: 'Draft' };
 // isSuperAdmin: only super admins can archive a project — a plain admin doesn't get the
 //   delete icon in the row actions at all (the server enforces this too; this just keeps
 //   the UI from offering an action that would be silently rejected).
-export async function residentialProjectsPage(content, currentUser, navigate, moderationFilter, openAdd, isSuperAdmin) {
+// openEditId: reopens the Edit wizard for this project id immediately once the list has
+//   rendered — used to restore an in-progress edit after a page refresh (see app.js's boot
+//   sequence, which reads this back out of the #/residential/edit/<id> URL the wizard stamps
+//   on itself while open).
+export async function residentialProjectsPage(content, currentUser, navigate, moderationFilter, openAdd, isSuperAdmin, openEditId) {
   content.innerHTML = pageHead('Residential Projects', 'Manage the residential listing catalog') + `<div class="empty">Loading…</div>`;
 
   const [{ panelHtml, rowTemplate }, { data, error }] = await Promise.all([
@@ -106,4 +110,5 @@ export async function residentialProjectsPage(content, currentUser, navigate, mo
   });
 
   if (openAdd) openWizard(null);
+  else if (openEditId) openWizard(openEditId);
 }

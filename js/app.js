@@ -927,7 +927,7 @@ async function profilePage() {
 
 const PAGES = {
   dashboard: dashboardPage,
-  residential: (filter, openAdd) => residentialProjectsPage(content, currentUser, navigate, filter, openAdd, isSuperAdmin),
+  residential: (filter, openAdd, openEditId) => residentialProjectsPage(content, currentUser, navigate, filter, openAdd, isSuperAdmin, openEditId),
   commercial: commercialPage,
   developers: developersPage,
   cities: citiesPage,
@@ -959,14 +959,33 @@ async function navigate(page, opts = {}) {
     if (opts.replace) history.replaceState({ page }, '', hash);
     else if (location.hash !== hash) history.pushState({ page }, '', hash);
   }
-  await PAGES[page](opts.filter ?? opts.openId, opts.openAdd);
+  // openProjectForm() (called from residentialProjectsPage below when opts.openAdd/openEditId
+  // is set) pushes its own more specific #/residential/add or #/residential/edit/<id> entry
+  // right on top of the plain #/residential one this function just pushed/replaced above.
+  await PAGES[page](opts.filter ?? opts.openId, opts.openAdd, opts.openEditId);
+}
+
+// Recovers which page (and, for the Residential Projects wizard, which add/edit mode) a URL
+// hash names — shared by the boot sequence below and the popstate fallback, so a refresh and
+// a back/forward land on the same page either way. The wizard stamps its own hash shape
+// (#/residential/add or #/residential/edit/<id>) on itself while open (see project-form.js's
+// pushWizardState()) specifically so this can reopen it instead of falling through to
+// whatever plain page last had a pushed/replaced history entry — previously a refresh while
+// the wizard was open had nothing to recover it from and silently dropped back to Dashboard.
+function resolveHashRoute() {
+  const raw = location.hash.replace(/^#\//, '');
+  const editMatch = raw.match(/^residential\/edit\/(.+)$/);
+  if (editMatch) return { page: 'residential', openEditId: decodeURIComponent(editMatch[1]) };
+  if (raw === 'residential/add') return { page: 'residential', openAdd: true };
+  return { page: raw || 'dashboard' };
 }
 
 window.addEventListener('popstate', (e) => {
   if (isWizardOpen() && handleWizardPopState(e)) return; // fully handled inside the wizard (step change, or a cancelled exit)
   const st = e.state;
-  const page = (st && st.page) || location.hash.replace(/^#\//, '') || 'dashboard';
-  navigate(page, { fromPopstate: true });
+  const route = resolveHashRoute();
+  const page = (st && st.page) || route.page;
+  navigate(page, { fromPopstate: true, openAdd: route.openAdd, openEditId: route.openEditId });
 });
 
 function closeSidebar() {
@@ -1110,8 +1129,9 @@ if (await guard()) {
   initGlobalSearch();
   initNotifPanel();
   loadSidebarCounts();
-  // Reopen whatever page the URL points to (e.g. after a refresh) instead of always
-  // bouncing back to the dashboard — mirrors how the popstate handler above already
-  // resolves a page from location.hash for back/forward navigation.
-  navigate(location.hash.replace(/^#\//, '') || 'dashboard', { replace: true });
+  // Reopen whatever page (and, for the wizard, add/edit mode) the URL points to instead of
+  // always bouncing back to the dashboard on a refresh — same resolveHashRoute() the popstate
+  // handler above uses for back/forward, applied once here for the initial load.
+  const bootRoute = resolveHashRoute();
+  navigate(bootRoute.page, { replace: true, openAdd: bootRoute.openAdd, openEditId: bootRoute.openEditId });
 }

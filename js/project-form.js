@@ -265,15 +265,22 @@ export async function openProjectForm(rootEl, user, existingId, exitCb) {
   }
 
   renderShell();
-  pushWizardState();
+  // Gives the wizard its own URL (#/residential/edit/<id> or #/residential/add) instead of
+  // silently reusing whatever page opened it — otherwise a refresh had nothing in the URL to
+  // tell the boot sequence a wizard was open at all, and it fell through to the Residential
+  // Projects list (or further still, to Dashboard). See app.js's boot sequence, which parses
+  // this same shape back out to reopen the wizard.
+  pushWizardState(existingId ? `#/residential/edit/${existingId}` : '#/residential/add');
 }
 
 // Every step change (Next, stepper/Edit jump) pushes one browser history entry, so the
 // phone/browser back button steps back through the wizard one step at a time — and, once
 // past the first step, exits the wizard back to whichever page opened it (also via back).
-function pushWizardState() {
+// `hash` is only passed by the initial open (see openProjectForm/showSubmitSuccess above) to
+// stamp the wizard's own URL; every later call just keeps whatever hash is already active.
+function pushWizardState(hash) {
   historyPushCount++;
-  history.pushState({ pfWizard: true, step: stepIndex }, '', location.hash);
+  history.pushState({ pfWizard: true, step: stepIndex }, '', hash || location.hash);
 }
 
 // Whether project-form.js currently owns #content — app.js's single popstate listener
@@ -1669,7 +1676,7 @@ function showSubmitSuccess() {
     uploads = {};
     state = freshState();
     renderShell();
-    pushWizardState();
+    pushWizardState('#/residential/add');
   });
 }
 
