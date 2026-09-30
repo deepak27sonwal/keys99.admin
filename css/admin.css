@@ -330,6 +330,8 @@ tr:last-child td{border-bottom:0}
 .field-unit-group input{flex:1;min-width:0}
 .field-unit-group .cs-wrap{flex:0 0 92px}
 .field-unit-group .cs-trigger-label{font-size:12px}
+.field-quickadd{display:flex;gap:6px}
+.field-quickadd .cs-wrap{flex:1;min-width:0}
 .field-error{color:var(--danger);font-size:11px}
 .field.invalid input,.field.invalid select,.field.invalid textarea{border-color:var(--danger)}
 
@@ -458,6 +460,10 @@ tr:last-child td{border-bottom:0}
   .form-grid{grid-template-columns:1fr 1fr;gap:12px 10px}
   .form-grid .field-unit-group{gap:4px}
   .form-grid .field-unit-group .cs-wrap{flex-basis:74px}
+  /* Developer / City / Locality: their select shares a narrow 2-column cell with a
+     fixed-width "+ New" button, squeezing the select to an unreadable sliver — same class of
+     bug as the area-unit fields above. Give it the full row's width instead. */
+  .form-grid .field-quickadd-wrap{grid-column:1/-1}
   .form-panel-body{padding:18px 16px}
   .form-panel-head{padding:16px 18px}
   .form-footer{flex-direction:column;align-items:stretch;gap:10px;padding:14px 16px}

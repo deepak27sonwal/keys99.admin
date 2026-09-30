@@ -437,7 +437,7 @@ function renderStepBody() {
 function renderField(spec, value, attr, item) {
   const req = spec.req ? '<span class="req">*</span>' : '';
   const hint = spec.hint ? `<span class="hint">${esc(spec.hint)}</span>` : '';
-  const fullCls = spec.full ? ' full' : '';
+  const fullCls = (spec.full ? ' full' : '') + (spec.quickAdd ? ' field-quickadd-wrap' : '');
   const placeholder = typeof spec.placeholder === 'function' ? spec.placeholder(item) : spec.placeholder;
   if (spec.type === 'checkbox') {
     return `<div class="field${fullCls}"><label style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" ${attr} ${value ? 'checked' : ''} style="width:16px;height:16px;accent-color:var(--green)"> ${esc(spec.label)}</label>${hint}</div>`;
@@ -446,7 +446,7 @@ function renderField(spec, value, attr, item) {
   if (spec.type === 'select') {
     const opts = typeof spec.options === 'function' ? spec.options() : spec.options;
     input = `<select ${attr}><option value="">Select…</option>${opts.map(o => `<option value="${esc(o.value)}"${String(value ?? '') === String(o.value) ? ' selected' : ''}>${esc(o.label)}</option>`).join('')}</select>`;
-    if (spec.quickAdd) input = `<div style="display:flex;gap:6px">${input}<button type="button" class="btn-outline" style="padding:8px 10px;white-space:nowrap" data-quickadd="${spec.quickAdd}">+ New</button></div>`;
+    if (spec.quickAdd) input = `<div class="field-quickadd">${input}<button type="button" class="btn-outline" style="padding:8px 10px;white-space:nowrap" data-quickadd="${spec.quickAdd}">+ New</button></div>`;
   } else if (spec.type === 'textarea') {
     input = `<textarea ${attr} placeholder="${esc(placeholder || '')}">${esc(value ?? '')}</textarea>`;
   } else if (spec.unit) {
