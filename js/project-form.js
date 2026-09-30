@@ -695,9 +695,10 @@ function renderRepeatStep(key, fields, opts) {
     // customRender fields (e.g. configurations' bhk_type chip picker) are validated like any
     // other field but drawn by extraHtml instead of the generic input/select/textarea markup.
     const fieldsHtml = fields.filter(s => !s.customRender).map(s => renderField(s, item[s.key], `data-bind="${key}.${i}.${s.key}"`, item)).join('');
+    const before = opts.extraHtmlBefore ? opts.extraHtmlBefore(item, i) : '';
     const extra = opts.extraHtml ? opts.extraHtml(item, i) : '';
     const title = (opts.titleOf && opts.titleOf(item, i)) || `${opts.singular} ${i + 1}`;
-    return repeatCard(title, i, `<div class="form-grid">${fieldsHtml}${extra}</div>`, key);
+    return repeatCard(title, i, `<div class="form-grid">${before}${fieldsHtml}${extra}</div>`, key);
   }).join('');
   return `<div class="repeat-list">${list || `<div class="empty">${esc(opts.emptyText)}</div>`}</div>
     <button type="button" class="add-repeat" data-add-item="${key}">+ ${esc(opts.addLabel)}</button>`;
@@ -745,10 +746,11 @@ function renderConfigurations() {
     titleOf: (c, i) => c.bhk_type
       ? `${c.bhk_type}${c.carpet_area ? ` · ${c.carpet_area} ${areaUnitLabel(c.area_unit)}` : ''}`
       : `BHK Configuration ${i + 1}`,
+    extraHtmlBefore: (c, i) => bhkTypeChipsHtml(c.bhk_type, i),
     extraHtml: (c, i) => {
       const parkTypes = ['covered', 'open', 'mechanical', 'ev', 'other'];
       const parkChips = parkTypes.map(t => `<span class="chip${(c.parking_type || []).includes(t) ? ' active' : ''}" data-toggle-parktype="${i}" data-val="${t}" style="cursor:pointer">${esc(t)}</span>`).join('');
-      return `${bhkTypeChipsHtml(c.bhk_type, i)}<div class="field full"><label>Parking Type</label><div class="chip-row">${parkChips}</div></div>`;
+      return `<div class="field full"><label>Parking Type</label><div class="chip-row">${parkChips}</div></div>`;
     }
   });
 }
