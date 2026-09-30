@@ -196,7 +196,7 @@ const NEARBY_CATEGORIES = enumOpts(['transport', 'education', 'healthcare', 'sho
 /* ============ default row factories ============ */
 
 const DEFAULTS = {
-  configuration: () => ({ _k: uid(), bhk_type: '1 BHK', area_unit: 'sq_ft', carpet_area: '', built_up_area: '', super_built_up_area: '', starting_price: '', maximum_price: '', price_type: 'total_price', price_on_request: false, availability: 'available', parking_included: 'not_available', parking_type: [], description: '' }),
+  configuration: () => ({ _k: uid(), bhk_type: '1 BHK', area_unit: 'sq_ft', carpet_area: '', built_up_area: '', super_built_up_area: '', starting_price: '', maximum_price: '', price_type: 'total_price', price_on_request: false, availability: 'available', number_of_units: '', parking_included: 'not_available', parking_type: [], description: '' }),
   tower: () => ({ _k: uid(), tower_name: '', number_of_floors: '', number_of_units: '', configurations: [], tower_status: 'under_construction', construction_stage: '', construction_start_date: '', expected_completion_date: '', possession_status: '', construction_details: '' }),
   amenity: (category, name) => ({ _k: uid(), category, amenity_name: name, amenity_type: name, description: '', is_available: true }),
   nearby: () => ({ _k: uid(), category: 'transport', location_type: '', name: '', distance: '', distance_unit: 'km', description: '' }),
@@ -574,7 +574,37 @@ function onFieldClick(e) {
   const quickAdd = e.target.closest('[data-quickadd]');
   if (quickAdd) { openQuickAdd(quickAdd.dataset.quickadd); return; }
   const upload = e.target.closest('[data-remove-upload]');
-  if (upload) { setPath(state, upload.dataset.removeUpload + '_path', null); setPath(state, upload.dataset.removeUpload + '_url', null); setPath(state, upload.dataset.removeUpload + '_name', null); renderStepBody(); return; }
+  if (upload) { removeUploadedFile(upload.dataset.removeUpload); return; }
+}
+
+// Removes an uploaded file's reference from state (and best-effort deletes it from Storage)
+// for either shape of upload key used across the form:
+//  - "media.main" / "media.masterPlan" name the media row object itself, whose fields are
+//    media_path/media_url/file_name/file_size.
+//  - "documents.0.file" / "litigation.0.supporting_document" name a field *prefix* on a flat
+//    item object, whose fields are <prefix>_path/_url/_name/_size.
+// These used to be handled by one blind `key + '_path'` setPath() for both shapes — that's
+// correct for the second shape (it targets the item's own <prefix>_path field) but wrong for
+// the first (it wrote a stray "main_path" property onto `state.media` instead of touching
+// `state.media.main.media_path`), so the Main Image / Master Plan "✕" silently did nothing.
+function removeUploadedFile(key) {
+  let bucket, path;
+  if (key.startsWith('media.')) {
+    const row = getPath(state, key) || {};
+    bucket = 'residential-media';
+    path = row.media_path;
+    row.media_path = null; row.media_url = null; row.file_name = null; row.file_size = null;
+  } else {
+    bucket = 'residential-documents';
+    path = getPath(state, key + '_path');
+    setPath(state, key + '_path', null);
+    setPath(state, key + '_url', null);
+    setPath(state, key + '_name', null);
+    setPath(state, key + '_size', null);
+  }
+  deleteStorageFile(bucket, path);
+  touched = true;
+  renderStepBody();
 }
 
 function addRepeatItem(key, arg) {
@@ -595,6 +625,15 @@ function addRepeatItem(key, arg) {
 function removeRepeatItem(key, idx) {
   touched = true;
   const arr = getPath(state, key) || [];
+  const item = arr[idx];
+  // Deleting the whole row (not just clearing its upload slot) still needs to release
+  // whatever file it holds, or every removed Document/Litigation entry and Construction
+  // Update photo leaks in Storage the same way a bare "✕" on the upload slot used to.
+  if (item) {
+    if (key === 'documents' && item.file_path) deleteStorageFile('residential-documents', item.file_path);
+    else if (key === 'litigation' && item.supporting_document_path) deleteStorageFile('residential-documents', item.supporting_document_path);
+    else if (key === 'updates' && item.media?.length) item.media.forEach(m => deleteStorageFile('residential-media', m.media_path));
+  }
   arr.splice(idx, 1);
   renderStepBody();
 }
@@ -775,6 +814,7 @@ const CONFIG_FIELDS = [
   { key: 'maximum_price', label: 'Maximum Price', type: 'number', unit: '₹', showWords: true },
   { key: 'price_type', label: 'Price Type', type: 'select', options: enumOpts(['total_price', 'price_per_sq_ft', 'price_per_sq_m']) },
   { key: 'availability', label: 'Availability', type: 'select', options: enumOpts(['available', 'sold_out', 'on_request']) },
+  { key: 'number_of_units', label: 'Number of Units', type: 'number', placeholder: 'e.g. 24' },
   { key: 'parking_included', label: 'Parking', type: 'select', options: enumOpts(['included', 'additional', 'not_available']) }
 ];
 const CONFIG_FIELDS_BY_KEY = Object.fromEntries(CONFIG_FIELDS.map(s => [s.key, s]));
@@ -1252,7 +1292,13 @@ function handleSpecialBindings() {
     };
   });
   content.querySelectorAll('[data-remove-gallery]').forEach(el => {
-    el.onclick = () => { state.media.gallery.splice(Number(el.dataset.removeGallery), 1); touched = true; renderStepBody(); };
+    el.onclick = () => {
+      const idx = Number(el.dataset.removeGallery);
+      deleteStorageFile('residential-media', state.media.gallery[idx]?.media_path);
+      state.media.gallery.splice(idx, 1);
+      touched = true;
+      renderStepBody();
+    };
   });
   content.querySelectorAll('[data-dismiss-upload]').forEach(el => {
     el.onclick = () => { delete uploads[el.dataset.dismissUpload]; renderStepBody(); };
@@ -1340,6 +1386,16 @@ async function handleUpload(file, bucket, folder, key, cb) {
   touched = true;
   renderStepBody();
   toast('Uploaded');
+}
+
+// Best-effort delete of a file from Supabase Storage when its reference is removed from the
+// form (a re-upload, a removed gallery photo, a deleted Document/Litigation/Construction
+// Update row). Fire-and-forget: a failed delete here just leaves an orphaned file in the
+// bucket, which is far better than blocking the person from removing the reference in the
+// form over a storage error they can't do anything about.
+function deleteStorageFile(bucket, path) {
+  if (!path) return;
+  sb.storage.from(bucket).remove([path]).catch(() => {});
 }
 
 /* ============ save logic ============ */
