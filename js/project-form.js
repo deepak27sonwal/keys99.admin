@@ -454,8 +454,14 @@ function renderField(spec, value, attr, item) {
   } else {
     input = `<input ${attr} type="${spec.type || 'text'}" value="${value == null ? '' : esc(String(value))}" placeholder="${esc(placeholder || '')}">`;
   }
+  // Spells the typed amount out in words right under the input (e.g. "₹ Twenty Five Lakh"),
+  // kept in sync live by onFieldInput() without a full re-render so typing doesn't lose focus.
+  const words = spec.showWords ? (() => {
+    const bindPath = (attr.match(/data-bind="([^"]+)"/) || [])[1] || '';
+    return `<div class="price-words" data-words-for="${esc(bindPath)}">${esc(fmtPriceWords(value))}</div>`;
+  })() : '';
   const label = spec.label ? `<label>${esc(spec.label)} ${req}</label>` : '';
-  return `<div class="field${fullCls}">${label}${input}${hint}</div>`;
+  return `<div class="field${fullCls}">${label}${input}${words}${hint}</div>`;
 }
 
 function renderFieldsGrid(specs, values, bindPrefix) {
@@ -516,6 +522,8 @@ function onFieldInput(e) {
   const el = e.target.closest('[data-bind]');
   if (!el || el.tagName === 'SELECT') return;
   applyBind(el);
+  const wordsEl = content.querySelector(`[data-words-for="${CSS.escape(el.dataset.bind)}"]`);
+  if (wordsEl) wordsEl.textContent = fmtPriceWords(getPath(state, el.dataset.bind));
 }
 function onFieldChange(e) {
   const el = e.target.closest('[data-bind]');
@@ -731,8 +739,8 @@ const CONFIG_FIELDS = [
   { key: 'carpet_area', label: 'Carpet Area', type: 'number', unit: 'area' },
   { key: 'built_up_area', label: 'Built-up Area', type: 'number', unit: 'area' },
   { key: 'super_built_up_area', label: 'Super Built-up Area', type: 'number', unit: 'area' },
-  { key: 'starting_price', label: 'Starting Price', type: 'number', unit: '₹', req: true },
-  { key: 'maximum_price', label: 'Maximum Price', type: 'number', unit: '₹' },
+  { key: 'starting_price', label: 'Starting Price', type: 'number', unit: '₹', req: true, showWords: true },
+  { key: 'maximum_price', label: 'Maximum Price', type: 'number', unit: '₹', showWords: true },
   { key: 'price_type', label: 'Price Type', type: 'select', options: enumOpts(['total_price', 'price_per_sq_ft', 'price_per_sq_m']) },
   { key: 'availability', label: 'Availability', type: 'select', options: enumOpts(['available', 'sold_out', 'on_request']) },
   { key: 'parking_included', label: 'Parking', type: 'select', options: enumOpts(['included', 'additional', 'not_available']) }
