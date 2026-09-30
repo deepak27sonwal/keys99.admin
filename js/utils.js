@@ -24,6 +24,50 @@ export function fmtPrice(value, priceOnRequest) {
   return `₹${n.toLocaleString('en-IN')}`;
 }
 
+const NUM_ONES = ['', 'One', 'Two', 'Three', 'Four', 'Five', 'Six', 'Seven', 'Eight', 'Nine', 'Ten',
+  'Eleven', 'Twelve', 'Thirteen', 'Fourteen', 'Fifteen', 'Sixteen', 'Seventeen', 'Eighteen', 'Nineteen'];
+const NUM_TENS = ['', '', 'Twenty', 'Thirty', 'Forty', 'Fifty', 'Sixty', 'Seventy', 'Eighty', 'Ninety'];
+
+function twoDigitWords(n) {
+  if (n < 20) return NUM_ONES[n];
+  const t = Math.floor(n / 10), o = n % 10;
+  return NUM_TENS[t] + (o ? ` ${NUM_ONES[o]}` : '');
+}
+function threeDigitWords(n) {
+  const h = Math.floor(n / 100), rest = n % 100;
+  const parts = [];
+  if (h) parts.push(`${NUM_ONES[h]} Hundred`);
+  if (rest) parts.push(twoDigitWords(rest));
+  return parts.join(' ');
+}
+
+// Converts a rupee amount into Indian-numbering words (Crore/Lakh/Thousand), e.g.
+// 2500000 -> "Twenty Five Lakh", 12345678 -> "One Crore Twenty Three Lakh Forty Five
+// Thousand Six Hundred Seventy Eight". Used for the human-facing "spelled out" price
+// display, as an alternative to fmtPrice()'s abbreviated "₹25 L" form.
+export function numberToIndianWords(value) {
+  let n = Math.round(Number(value) || 0);
+  if (n === 0) return 'Zero';
+  const negative = n < 0;
+  n = Math.abs(n);
+  const crore = Math.floor(n / 1e7); n %= 1e7;
+  const lakh = Math.floor(n / 1e5); n %= 1e5;
+  const thousand = Math.floor(n / 1e3); n %= 1e3;
+  const rest = n;
+  const parts = [];
+  if (crore) parts.push(`${threeDigitWords(crore)} Crore`);
+  if (lakh) parts.push(`${twoDigitWords(lakh)} Lakh`);
+  if (thousand) parts.push(`${twoDigitWords(thousand)} Thousand`);
+  if (rest) parts.push(threeDigitWords(rest));
+  return (negative ? 'Minus ' : '') + parts.join(' ');
+}
+
+export function fmtPriceWords(value, priceOnRequest) {
+  if (priceOnRequest) return 'Price on request';
+  if (value === null || value === undefined || value === '') return '—';
+  return `₹ ${numberToIndianWords(value)}`;
+}
+
 export function fmtDate(iso) {
   if (!iso) return '—';
   return new Date(iso).toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: 'numeric' });
