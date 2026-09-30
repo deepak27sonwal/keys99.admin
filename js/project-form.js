@@ -143,22 +143,6 @@ const FIELDS = {
     { key: 'possession_status', label: 'Possession Status', type: 'select', options: POSSESSION_STATUS_OPTIONS },
     { key: 'units_per_phase', label: 'Units per Phase', type: 'number' }
   ],
-  // These map straight onto residential_projects columns and were already being saved on
-  // every submit (see projectPayload()) but had no field here to set them from — they always
-  // saved as null/false. Surfaced in Residential Configurations, next to the per-BHK pricing
-  // these charges sit alongside.
-  pricing: [
-    { key: 'price_on_request', label: 'Price on Request (hide price range on the public listing)', type: 'checkbox', full: true },
-    { key: 'base_price', label: 'Base Price', type: 'number', unit: '₹' },
-    { key: 'floor_rise_charges', label: 'Floor Rise Charges', type: 'number', unit: '₹' },
-    { key: 'parking_charges', label: 'Parking Charges', type: 'number', unit: '₹' },
-    { key: 'clubhouse_charges', label: 'Clubhouse Charges', type: 'number', unit: '₹' },
-    { key: 'maintenance_charges', label: 'Maintenance Charges', type: 'number', unit: '₹' },
-    { key: 'other_charges', label: 'Other Charges', type: 'number', unit: '₹' },
-    { key: 'gst_applicable', label: 'GST Applicable', type: 'checkbox', full: true },
-    { key: 'price_disclaimer', label: 'Price Disclaimer', type: 'textarea', full: true },
-    { key: 'registration_stamp_duty_disclaimer', label: 'Registration / Stamp Duty Disclaimer', type: 'textarea', full: true }
-  ],
   specs: [
     { key: 'flooring', label: 'Flooring', type: 'textarea', full: true },
     { key: 'doors', label: 'Doors', type: 'textarea', full: true },
@@ -631,7 +615,7 @@ function addRepeatItem(key, arg) {
   else if (key === 'prosCons') item = DEFAULTS.prosCons(arg);
   else {
     const factoryName = key.endsWith('s') ? key.slice(0, -1) : key;
-    const map = { configurations: 'configuration', towers: 'tower', nearby: 'nearby', documents: 'document', litigation: 'litigation', updates: 'update', faqs: 'faq', phases: 'phase', 'media.videos': 'video' };
+    const map = { configurations: 'configuration', towers: 'tower', nearby: 'nearby', documents: 'document', litigation: 'litigation', updates: 'update', faqs: 'faq', phases: 'phase' };
     item = DEFAULTS[map[key] || factoryName] ? DEFAULTS[map[key] || factoryName]() : { _k: uid() };
   }
   arr.push(item);
@@ -719,7 +703,7 @@ function renderBody(i) {
     case 2: return renderFieldsGrid(FIELDS.location, state.project, 'project');
     case 3: return renderSizeScale();
     case 4: return renderFieldsGrid(FIELDS.status, state.project, 'project') + `<h4 style="margin:20px 0 10px">Project Phases</h4>` + renderPhases();
-    case 5: return `<h4 style="margin:0 0 10px">Pricing &amp; Charges</h4>` + renderFieldsGrid(FIELDS.pricing, state.project, 'project') + `<h4 style="margin:20px 0 10px">BHK Configurations</h4>` + renderConfigurations();
+    case 5: return renderConfigurations();
     case 6: return renderSpecs();
     case 7: return renderTowers();
     case 8: return renderAmenities();
@@ -828,12 +812,10 @@ const CONFIG_FIELDS = [
   { key: 'super_built_up_area', label: 'Super Built-up Area', type: 'number', unit: c => areaUnitLabel(c?.area_unit) },
   { key: 'starting_price', label: 'Starting Price', type: 'number', unit: '₹', req: true, showWords: true },
   { key: 'maximum_price', label: 'Maximum Price', type: 'number', unit: '₹', showWords: true },
-  { key: 'price_on_request', label: 'Price on Request for this configuration', type: 'checkbox', full: true },
   { key: 'price_type', label: 'Price Type', type: 'select', options: enumOpts(['total_price', 'price_per_sq_ft', 'price_per_sq_m']) },
   { key: 'availability', label: 'Availability', type: 'select', options: enumOpts(['available', 'sold_out', 'on_request']) },
   { key: 'number_of_units', label: 'Number of Units', type: 'number', placeholder: 'e.g. 24' },
-  { key: 'parking_included', label: 'Parking', type: 'select', options: enumOpts(['included', 'additional', 'not_available']) },
-  { key: 'description', label: 'Description', type: 'textarea', full: true }
+  { key: 'parking_included', label: 'Parking', type: 'select', options: enumOpts(['included', 'additional', 'not_available']) }
 ];
 const CONFIG_FIELDS_BY_KEY = Object.fromEntries(CONFIG_FIELDS.map(s => [s.key, s]));
 function renderConfigurations() {
