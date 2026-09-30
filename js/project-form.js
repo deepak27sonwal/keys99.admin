@@ -140,7 +140,8 @@ const FIELDS = {
   ],
   status: [
     { key: 'status', label: 'Project Status', req: true, type: 'select', options: enumOpts(['upcoming', 'new_launch', 'under_construction', 'ready_to_move', 'completed', 'resale']) },
-    { key: 'possession_status', label: 'Possession Status', type: 'select', options: POSSESSION_STATUS_OPTIONS }
+    { key: 'possession_status', label: 'Possession Status', type: 'select', options: POSSESSION_STATUS_OPTIONS },
+    { key: 'units_per_phase', label: 'Units per Phase', type: 'number' }
   ],
   specs: [
     { key: 'flooring', label: 'Flooring', type: 'textarea' },
@@ -433,10 +434,11 @@ function renderStepBody() {
 
 /* ============ generic field rendering ============ */
 
-function renderField(spec, value, attr) {
+function renderField(spec, value, attr, item) {
   const req = spec.req ? '<span class="req">*</span>' : '';
   const hint = spec.hint ? `<span class="hint">${esc(spec.hint)}</span>` : '';
   const fullCls = spec.full ? ' full' : '';
+  const placeholder = typeof spec.placeholder === 'function' ? spec.placeholder(item) : spec.placeholder;
   if (spec.type === 'checkbox') {
     return `<div class="field${fullCls}"><label style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" ${attr} ${value ? 'checked' : ''} style="width:16px;height:16px;accent-color:var(--green)"> ${esc(spec.label)}</label>${hint}</div>`;
   }
@@ -446,18 +448,18 @@ function renderField(spec, value, attr) {
     input = `<select ${attr}><option value="">Select…</option>${opts.map(o => `<option value="${esc(o.value)}"${String(value ?? '') === String(o.value) ? ' selected' : ''}>${esc(o.label)}</option>`).join('')}</select>`;
     if (spec.quickAdd) input = `<div style="display:flex;gap:6px">${input}<button type="button" class="btn-outline" style="padding:8px 10px;white-space:nowrap" data-quickadd="${spec.quickAdd}">+ New</button></div>`;
   } else if (spec.type === 'textarea') {
-    input = `<textarea ${attr} placeholder="${esc(spec.placeholder || '')}">${esc(value ?? '')}</textarea>`;
+    input = `<textarea ${attr} placeholder="${esc(placeholder || '')}">${esc(value ?? '')}</textarea>`;
   } else if (spec.unit) {
-    input = `<div class="field-suffix"><input ${attr} type="${spec.type || 'text'}" value="${value == null ? '' : esc(String(value))}" placeholder="${esc(spec.placeholder || '')}"><span>${esc(spec.unit)}</span></div>`;
+    input = `<div class="field-suffix"><input ${attr} type="${spec.type || 'text'}" value="${value == null ? '' : esc(String(value))}" placeholder="${esc(placeholder || '')}"><span>${esc(spec.unit)}</span></div>`;
   } else {
-    input = `<input ${attr} type="${spec.type || 'text'}" value="${value == null ? '' : esc(String(value))}" placeholder="${esc(spec.placeholder || '')}">`;
+    input = `<input ${attr} type="${spec.type || 'text'}" value="${value == null ? '' : esc(String(value))}" placeholder="${esc(placeholder || '')}">`;
   }
   const label = spec.label ? `<label>${esc(spec.label)} ${req}</label>` : '';
   return `<div class="field${fullCls}">${label}${input}${hint}</div>`;
 }
 
 function renderFieldsGrid(specs, values, bindPrefix) {
-  return `<div class="form-grid">${specs.map(s => renderField(s, values[s.key], `data-bind="${bindPrefix}.${s.key}"`)).join('')}</div>`;
+  return `<div class="form-grid">${specs.map(s => renderField(s, values[s.key], `data-bind="${bindPrefix}.${s.key}"`, values)).join('')}</div>`;
 }
 
 // A number field with its unit select attached directly to its right edge, as one compact
@@ -520,6 +522,7 @@ function onFieldChange(e) {
   if (!el) return;
   applyBind(el);
   if (el.dataset.bind === 'project.city_id') { state.project.locality_id = ''; renderStepBody(); }
+  else if (/^nearby\.\d+\.category$/.test(el.dataset.bind)) renderStepBody();
 }
 function applyBind(el) {
   touched = true;
@@ -691,7 +694,7 @@ function renderRepeatStep(key, fields, opts) {
   const list = items.map((item, i) => {
     // customRender fields (e.g. configurations' bhk_type chip picker) are validated like any
     // other field but drawn by extraHtml instead of the generic input/select/textarea markup.
-    const fieldsHtml = fields.filter(s => !s.customRender).map(s => renderField(s, item[s.key], `data-bind="${key}.${i}.${s.key}"`)).join('');
+    const fieldsHtml = fields.filter(s => !s.customRender).map(s => renderField(s, item[s.key], `data-bind="${key}.${i}.${s.key}"`, item)).join('');
     const extra = opts.extraHtml ? opts.extraHtml(item, i) : '';
     const title = (opts.titleOf && opts.titleOf(item, i)) || `${opts.singular} ${i + 1}`;
     return repeatCard(title, i, `<div class="form-grid">${fieldsHtml}${extra}</div>`, key);
@@ -817,10 +820,21 @@ function renderAmenities() {
   return `<div class="form-grid">${sections}</div>`;
 }
 
+// Per-category examples so the Type/Name placeholders guide the admin toward what's
+// actually expected for the selected nearby-location category, instead of a generic
+// "Metro Station" example showing up for a hospital or mall entry.
+const NEARBY_CATEGORY_EXAMPLES = {
+  transport: { type: 'Metro Station', name: 'Baner Metro Station' },
+  education: { type: 'School', name: 'Delhi Public School' },
+  healthcare: { type: 'Hospital', name: 'Ruby Hall Clinic' },
+  shopping_retail: { type: 'Mall', name: 'Phoenix Marketcity' },
+  business_employment: { type: 'IT Park', name: 'Hinjewadi IT Park' },
+  lifestyle_entertainment: { type: 'Multiplex', name: 'PVR Cinemas' }
+};
 const NEARBY_FIELDS = [
   { key: 'category', label: 'Category', req: true, type: 'select', options: NEARBY_CATEGORIES },
-  { key: 'location_type', label: 'Type', placeholder: 'e.g. Metro Station' },
-  { key: 'name', label: 'Name', req: true, placeholder: 'e.g. Baner Metro Station' },
+  { key: 'location_type', label: 'Type', placeholder: n => `e.g. ${(NEARBY_CATEGORY_EXAMPLES[n?.category]?.type) || 'Metro Station'}` },
+  { key: 'name', label: 'Name', req: true, placeholder: n => `e.g. ${(NEARBY_CATEGORY_EXAMPLES[n?.category]?.name) || 'Baner Metro Station'}` },
   { key: 'distance', label: 'Distance', type: 'number' },
   { key: 'distance_unit', label: 'Distance Unit', type: 'select', options: enumOpts(['m', 'km']) },
   { key: 'description', label: 'Description', type: 'textarea', full: true }
@@ -924,7 +938,7 @@ function renderLitigation() {
 }
 
 // Must match the DB's residential_media_category_check constraint exactly.
-const GALLERY_CATEGORIES = enumOpts(['exterior', 'interior', 'amenities', 'landscape', 'other']);
+const GALLERY_CATEGORIES = enumOpts(['exterior', 'interior', 'hall', 'bedroom', 'kitchen', 'bathroom', 'dining_hall', 'puja_room', 'balcony', 'clubhouse', 'amenities', 'landscape', 'parking', 'other']);
 
 function renderMedia() {
   if (!projectId) {
