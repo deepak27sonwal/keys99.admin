@@ -472,9 +472,7 @@ function renderFieldWithUnit(valueSpec, unitSpec, values, bindPrefix) {
 }
 
 // Size & Scale's own layout: area fields pair with their unit right next to them instead of
-// as a separate grid cell, and the grid stays 2-up even on mobile (size-scale-grid overrides
-// the usual mobile single-column collapse) since these are short number fields, not the long
-// text inputs the rest of the wizard has to make room for.
+// as a separate grid cell.
 function renderSizeScale() {
   const f = Object.fromEntries(FIELDS.size.map(s => [s.key, s]));
   const p = state.project;
