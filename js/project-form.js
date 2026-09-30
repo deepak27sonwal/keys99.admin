@@ -182,7 +182,7 @@ const NEARBY_CATEGORIES = enumOpts(['transport', 'education', 'healthcare', 'sho
 /* ============ default row factories ============ */
 
 const DEFAULTS = {
-  configuration: () => ({ _k: uid(), bhk_type: '1 BHK', area_unit: 'sq_ft', carpet_area: '', built_up_area: '', super_built_up_area: '', number_of_units: '', starting_price: '', maximum_price: '', price_type: 'total_price', price_on_request: false, availability: 'available', parking_included: 'not_available', parking_type: [], description: '' }),
+  configuration: () => ({ _k: uid(), bhk_type: '1 BHK', area_unit: 'sq_ft', carpet_area: '', built_up_area: '', super_built_up_area: '', starting_price: '', maximum_price: '', price_type: 'total_price', price_on_request: false, availability: 'available', parking_included: 'not_available', parking_type: [], description: '' }),
   tower: () => ({ _k: uid(), tower_name: '', tower_number: '', number_of_floors: '', number_of_units: '', configurations: [], tower_status: 'under_construction', construction_stage: '', construction_start_date: '', expected_completion_date: '', possession_status: '', construction_details: '' }),
   amenity: (category, name) => ({ _k: uid(), category, amenity_name: name, amenity_type: name, description: '', is_available: true }),
   nearby: () => ({ _k: uid(), category: 'transport', location_type: '', name: '', distance: '', distance_unit: 'km', description: '' }),
@@ -450,7 +450,8 @@ function renderField(spec, value, attr, item) {
   } else if (spec.type === 'textarea') {
     input = `<textarea ${attr} placeholder="${esc(placeholder || '')}">${esc(value ?? '')}</textarea>`;
   } else if (spec.unit) {
-    input = `<div class="field-suffix"><input ${attr} type="${spec.type || 'text'}" value="${value == null ? '' : esc(String(value))}" placeholder="${esc(placeholder || '')}"><span>${esc(spec.unit)}</span></div>`;
+    const unitLabel = typeof spec.unit === 'function' ? spec.unit(item) : spec.unit;
+    input = `<div class="field-suffix"><input ${attr} type="${spec.type || 'text'}" value="${value == null ? '' : esc(String(value))}" placeholder="${esc(placeholder || '')}"><span>${esc(unitLabel)}</span></div>`;
   } else {
     input = `<input ${attr} type="${spec.type || 'text'}" value="${value == null ? '' : esc(String(value))}" placeholder="${esc(placeholder || '')}">`;
   }
@@ -531,6 +532,9 @@ function onFieldChange(e) {
   applyBind(el);
   if (el.dataset.bind === 'project.city_id') { state.project.locality_id = ''; renderStepBody(); }
   else if (/^nearby\.\d+\.category$/.test(el.dataset.bind)) renderStepBody();
+  // Built-up/Super Built-up Area show the selected unit (sq ft / sq m) as their suffix —
+  // re-render so switching Area Unit updates those labels, not just Carpet Area's own select.
+  else if (/^configurations\.\d+\.area_unit$/.test(el.dataset.bind)) renderStepBody();
 }
 function applyBind(el) {
   touched = true;
@@ -747,17 +751,19 @@ function bhkTypeChipsHtml(value, idx) {
 
 const CONFIG_FIELDS = [
   { key: 'bhk_type', label: 'BHK', req: true, customRender: true },
-  { key: 'area_unit', label: 'Area Unit', type: 'select', options: AREA_UNIT_OPTIONS },
-  { key: 'number_of_units', label: 'Number of Units', type: 'number' },
-  { key: 'carpet_area', label: 'Carpet Area', type: 'number', unit: 'area' },
-  { key: 'built_up_area', label: 'Built-up Area', type: 'number', unit: 'area' },
-  { key: 'super_built_up_area', label: 'Super Built-up Area', type: 'number', unit: 'area' },
+  // area_unit is rendered attached to Carpet Area's right edge (see extraHtmlBefore below),
+  // not as its own field — customRender keeps it out of the generic field grid.
+  { key: 'area_unit', label: 'Area Unit', type: 'select', options: AREA_UNIT_OPTIONS, customRender: true },
+  { key: 'carpet_area', label: 'Carpet Area', type: 'number', customRender: true },
+  { key: 'built_up_area', label: 'Built-up Area', type: 'number', unit: c => areaUnitLabel(c?.area_unit) },
+  { key: 'super_built_up_area', label: 'Super Built-up Area', type: 'number', unit: c => areaUnitLabel(c?.area_unit) },
   { key: 'starting_price', label: 'Starting Price', type: 'number', unit: '₹', req: true, showWords: true },
   { key: 'maximum_price', label: 'Maximum Price', type: 'number', unit: '₹', showWords: true },
   { key: 'price_type', label: 'Price Type', type: 'select', options: enumOpts(['total_price', 'price_per_sq_ft', 'price_per_sq_m']) },
   { key: 'availability', label: 'Availability', type: 'select', options: enumOpts(['available', 'sold_out', 'on_request']) },
   { key: 'parking_included', label: 'Parking', type: 'select', options: enumOpts(['included', 'additional', 'not_available']) }
 ];
+const CONFIG_FIELDS_BY_KEY = Object.fromEntries(CONFIG_FIELDS.map(s => [s.key, s]));
 function renderConfigurations() {
   return renderRepeatStep('configurations', CONFIG_FIELDS, {
     singular: 'BHK Configuration', emptyText: 'No configurations added yet.', addLabel: 'Add BHK Configuration',
@@ -767,7 +773,8 @@ function renderConfigurations() {
     titleOf: (c, i) => c.bhk_type
       ? `${c.bhk_type}${c.carpet_area ? ` · ${c.carpet_area} ${areaUnitLabel(c.area_unit)}` : ''}`
       : `BHK Configuration ${i + 1}`,
-    extraHtmlBefore: (c, i) => bhkTypeChipsHtml(c.bhk_type, i),
+    extraHtmlBefore: (c, i) => bhkTypeChipsHtml(c.bhk_type, i)
+      + renderFieldWithUnit(CONFIG_FIELDS_BY_KEY.carpet_area, CONFIG_FIELDS_BY_KEY.area_unit, c, `configurations.${i}`),
     extraHtml: (c, i) => {
       const parkTypes = ['covered', 'open', 'mechanical', 'ev', 'other'];
       const parkChips = parkTypes.map(t => `<span class="chip${(c.parking_type || []).includes(t) ? ' active' : ''}" data-toggle-parktype="${i}" data-val="${t}" style="cursor:pointer">${esc(t)}</span>`).join('');
