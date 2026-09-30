@@ -144,14 +144,14 @@ const FIELDS = {
     { key: 'units_per_phase', label: 'Units per Phase', type: 'number' }
   ],
   specs: [
-    { key: 'flooring', label: 'Flooring', type: 'textarea' },
-    { key: 'doors', label: 'Doors', type: 'textarea' },
-    { key: 'windows', label: 'Windows', type: 'textarea' },
-    { key: 'kitchen', label: 'Kitchen', type: 'textarea' },
-    { key: 'bathroom', label: 'Bathroom', type: 'textarea' },
-    { key: 'electrical', label: 'Electrical', type: 'textarea' },
-    { key: 'walls_paint', label: 'Walls / Paint', type: 'textarea' },
-    { key: 'balcony', label: 'Balcony', type: 'textarea' },
+    { key: 'flooring', label: 'Flooring', type: 'textarea', full: true },
+    { key: 'doors', label: 'Doors', type: 'textarea', full: true },
+    { key: 'windows', label: 'Windows', type: 'textarea', full: true },
+    { key: 'kitchen', label: 'Kitchen', type: 'textarea', full: true },
+    { key: 'bathroom', label: 'Bathroom', type: 'textarea', full: true },
+    { key: 'electrical', label: 'Electrical', type: 'textarea', full: true },
+    { key: 'walls_paint', label: 'Walls / Paint', type: 'textarea', full: true },
+    { key: 'balcony', label: 'Balcony', type: 'textarea', full: true },
     { key: 'other_specifications', label: 'Other Specifications', type: 'textarea', full: true }
   ],
   contact: [
@@ -163,6 +163,20 @@ const FIELDS = {
     { key: 'seo_description', label: 'SEO Description', type: 'textarea', full: true },
     { key: 'canonical_url', label: 'Canonical URL', full: true }
   ]
+};
+
+// Common, real-estate-listing-standard phrasing for each Apartment Specifications field —
+// shown as toggleable preset chips above the free-text textarea so most projects can be
+// filled without typing, while the textarea still accepts anything custom.
+const SPEC_PRESETS = {
+  flooring: ['Vitrified Tiles', 'Italian Marble', 'Wooden Flooring', 'Granite', 'Anti-Skid Tiles (Bathroom/Balcony)', 'Ceramic Tiles'],
+  doors: ['Flush Doors', 'Laminated Doors', 'Teak Wood Frame', 'Engineered Wood Doors', 'Fire-Rated Main Door', 'Digital Door Lock Provision'],
+  windows: ['UPVC Windows', 'Powder-Coated Aluminium Windows', 'Sliding Windows', 'Glass Windows with Mosquito Mesh', 'Bay Windows'],
+  kitchen: ['Granite Platform', 'Stainless Steel Sink', 'Modular Kitchen Ready', 'Provision for Water Purifier', 'Exhaust Fan Provision', 'Dado Tiling up to Lintel'],
+  bathroom: ['Anti-Skid Ceramic Tiles', 'Premium CP Sanitary Fittings', 'Hot & Cold Water Provision', 'Exhaust Fan Provision', 'Concealed Plumbing', 'Glass Partition / Shower Cubicle'],
+  electrical: ['Concealed Copper Wiring', 'Modular Switches', 'MCB Distribution Box', 'TV & AC Points in Every Room', 'Adequate Power Backup Points', 'Video Door Phone Provision'],
+  walls_paint: ['Premium Emulsion Paint (Interior)', 'Weatherproof Exterior Paint', 'Textured Accent Wall Finish', 'Putty Finish Walls', 'Oil Bound Distemper'],
+  balcony: ['MS/Glass Railing', 'Weatherproof Vitrified Tiles', 'Utility / Wash Area', 'Sit-out Balcony', 'Planter Box Provision']
 };
 
 const AMENITY_CATEGORIES = [
@@ -651,7 +665,7 @@ function renderBody(i) {
     case 3: return renderSizeScale();
     case 4: return renderFieldsGrid(FIELDS.status, state.project, 'project') + `<h4 style="margin:20px 0 10px">Project Phases</h4>` + renderPhases();
     case 5: return renderConfigurations();
-    case 6: return renderFieldsGrid(FIELDS.specs, state.project, 'project');
+    case 6: return renderSpecs();
     case 7: return renderTowers();
     case 8: return renderAmenities();
     case 9: return renderNearby();
@@ -827,6 +841,34 @@ function renderPhases() {
     titleOf: p => p.phase_name, singular: 'Phase', emptyText: 'No phases added yet.', addLabel: 'Add Phase',
     extraHtml: (p, i) => bhkChipsHtml(p.configurations, `phases.${i}.configurations`, i)
   });
+}
+
+// Splits a spec field's comma-joined string back into its selected preset/custom tokens.
+function specTokens(value) {
+  return String(value || '').split(',').map(t => t.trim()).filter(Boolean);
+}
+
+function toggleSpecChip(field, value) {
+  const tokens = specTokens(state.project[field]);
+  const idx = tokens.indexOf(value);
+  if (idx >= 0) tokens.splice(idx, 1); else tokens.push(value);
+  state.project[field] = tokens.join(', ');
+}
+
+function renderSpecs() {
+  const fields = FIELDS.specs.map(s => {
+    const preset = SPEC_PRESETS[s.key];
+    if (!preset) return renderField(s, state.project[s.key], `data-bind="project.${s.key}"`);
+    const selected = specTokens(state.project[s.key]);
+    const chips = preset.map(v => `<span class="chip${selected.includes(v) ? ' active' : ''}" data-toggle-spec-chip="${s.key}" data-val="${esc(v)}" style="cursor:pointer">${esc(v)}</span>`).join('');
+    return `<div class="field full">
+      <label>${esc(s.label)}</label>
+      <span class="hint">Tap to select one or more, or type your own below.</span>
+      <div class="chip-row">${chips}</div>
+      <textarea data-bind="project.${s.key}" placeholder="Additional notes…">${esc(state.project[s.key] ?? '')}</textarea>
+    </div>`;
+  }).join('');
+  return `<div class="form-grid">${fields}</div>`;
 }
 
 function renderAmenities() {
@@ -1178,6 +1220,13 @@ function handleSpecialBindings() {
       const idx = arr.indexOf(val);
       if (idx >= 0) arr.splice(idx, 1); else arr.push(val);
       setPath(state, path, arr);
+      touched = true;
+      renderStepBody();
+    };
+  });
+  content.querySelectorAll('[data-toggle-spec-chip]').forEach(el => {
+    el.onclick = () => {
+      toggleSpecChip(el.dataset.toggleSpecChip, el.dataset.val);
       touched = true;
       renderStepBody();
     };
