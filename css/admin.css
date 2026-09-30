@@ -464,3 +464,12 @@ tr:last-child td{border-bottom:0}
   .footer-actions{display:grid;grid-template-columns:1fr 1fr;gap:10px}
   .footer-step-label{text-align:center}
 }
+@media(max-width:520px){
+  /* A value field (e.g. Total Land Area) paired with its unit dropdown (acre/sq ft/sq m)
+     was squeezing the unit select down to an unreadable sliver at phone widths, since it sat
+     side-by-side inside an already-narrow half of a 2-column .form-grid. Single-column the
+     grid and stack each value/unit pair so the unit is fully visible and tappable. */
+  .form-grid{grid-template-columns:1fr}
+  .form-grid .field-unit-group{flex-direction:column;align-items:stretch;gap:8px}
+  .form-grid .field-unit-group .cs-wrap{flex-basis:auto}
+}
