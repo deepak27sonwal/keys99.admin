@@ -1,5 +1,5 @@
 import { sb } from './supabase-client.js';
-import { toast } from './utils.js';
+import { toast, fmtPrice } from './utils.js';
 import { enhanceSelects } from './custom-select.js';
 
 /* ============ small utils ============ */
@@ -1006,7 +1006,7 @@ function renderReview() {
     <dl>${rows.map(([k, v]) => `<div><dt>${esc(k)}:</dt> <dd>${esc(v || '—')}</dd></div>`).join('')}</dl>
   </div>`;
   const range = priceRangeFromConfigs();
-  const priceText = range.min == null ? 'Not set' : (range.min === range.max ? `₹${range.min.toLocaleString('en-IN')}` : `₹${range.min.toLocaleString('en-IN')} – ₹${range.max.toLocaleString('en-IN')}`);
+  const priceText = range.min == null ? 'Not set' : (range.min === range.max ? fmtPrice(range.min) : `${fmtPrice(range.min)} – ${fmtPrice(range.max)}`);
   const html = `<div class="review-grid">
     ${section('1. Basic Information', [['Project', p.project_name], ['Developer', dev], ['Type', p.project_type], ['Highlights', `${p.highlights.length} added`]], 1)}
     ${section('2. Project Location', [['Address', p.address], ['City / Locality', `${loc}, ${city}`], ['Pincode', p.pincode]], 2)}
