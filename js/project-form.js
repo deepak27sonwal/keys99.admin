@@ -689,7 +689,9 @@ function repeatCard(title, idx, bodyHtml, key) {
 function renderRepeatStep(key, fields, opts) {
   const items = getPath(state, key) || [];
   const list = items.map((item, i) => {
-    const fieldsHtml = fields.map(s => renderField(s, item[s.key], `data-bind="${key}.${i}.${s.key}"`)).join('');
+    // customRender fields (e.g. configurations' bhk_type chip picker) are validated like any
+    // other field but drawn by extraHtml instead of the generic input/select/textarea markup.
+    const fieldsHtml = fields.filter(s => !s.customRender).map(s => renderField(s, item[s.key], `data-bind="${key}.${i}.${s.key}"`)).join('');
     const extra = opts.extraHtml ? opts.extraHtml(item, i) : '';
     const title = (opts.titleOf && opts.titleOf(item, i)) || `${opts.singular} ${i + 1}`;
     return repeatCard(title, i, `<div class="form-grid">${fieldsHtml}${extra}</div>`, key);
@@ -698,8 +700,28 @@ function renderRepeatStep(key, fields, opts) {
     <button type="button" class="add-repeat" data-add-item="${key}">+ ${esc(opts.addLabel)}</button>`;
 }
 
+function areaUnitLabel(u) {
+  return { sq_ft: 'sq ft', sq_m: 'sq m' }[u] || u || '';
+}
+
+// Same preset-chip + custom-chip picker as bhkChipsHtml, but single-select: a configuration
+// has exactly one bhk_type, not a list, so clicking a chip replaces the value instead of
+// toggling membership.
+function bhkTypeChipsHtml(value, idx) {
+  const val = value || '';
+  const presetChips = BHK_PRESET.map(v => `<span class="chip${val === v ? ' active' : ''}" data-set-bhktype="${idx}" data-val="${esc(v)}" style="cursor:pointer">${esc(v)}</span>`).join('');
+  const customChip = val && !BHK_PRESET.includes(val) ? `<span class="chip active">${esc(val)}</span>` : '';
+  const inputId = `pf-cfg-bhk-${idx}`;
+  return `<div class="field full">
+    <label>BHK <span class="req">*</span></label>
+    <div class="chip-row">${presetChips}${customChip}
+    <input type="text" id="${inputId}" placeholder="Custom BHK…" style="border:1px solid #d5dfde;border-radius:20px;padding:7px 12px;font-size:12px;width:140px">
+    <span class="chip chip-add" data-set-bhktype-custom="${idx}" data-input="${inputId}">+ Set</span></div>
+  </div>`;
+}
+
 const CONFIG_FIELDS = [
-  { key: 'bhk_type', label: 'BHK', req: true },
+  { key: 'bhk_type', label: 'BHK', req: true, customRender: true },
   { key: 'area_unit', label: 'Area Unit', type: 'select', options: AREA_UNIT_OPTIONS },
   { key: 'number_of_units', label: 'Number of Units', type: 'number' },
   { key: 'carpet_area', label: 'Carpet Area', type: 'number', unit: 'area' },
@@ -714,10 +736,16 @@ const CONFIG_FIELDS = [
 function renderConfigurations() {
   return renderRepeatStep('configurations', CONFIG_FIELDS, {
     singular: 'BHK Configuration', emptyText: 'No configurations added yet.', addLabel: 'Add BHK Configuration',
+    // Same BHK type can repeat across cards with a different carpet/built-up area (e.g. two
+    // "2 BHK" variants at 850 and 950 sq ft) — each is its own record, so the title has to
+    // show the area alongside the BHK type or the cards are indistinguishable at a glance.
+    titleOf: (c, i) => c.bhk_type
+      ? `${c.bhk_type}${c.carpet_area ? ` · ${c.carpet_area} ${areaUnitLabel(c.area_unit)}` : ''}`
+      : `BHK Configuration ${i + 1}`,
     extraHtml: (c, i) => {
       const parkTypes = ['covered', 'open', 'mechanical', 'ev', 'other'];
       const parkChips = parkTypes.map(t => `<span class="chip${(c.parking_type || []).includes(t) ? ' active' : ''}" data-toggle-parktype="${i}" data-val="${t}" style="cursor:pointer">${esc(t)}</span>`).join('');
-      return `<div class="field full"><label>Parking Type</label><div class="chip-row">${parkChips}</div></div>`;
+      return `${bhkTypeChipsHtml(c.bhk_type, i)}<div class="field full"><label>Parking Type</label><div class="chip-row">${parkChips}</div></div>`;
     }
   });
 }
@@ -1072,6 +1100,25 @@ function handleSpecialBindings() {
       const idx = arr.indexOf(val);
       if (idx >= 0) arr.splice(idx, 1); else arr.push(val);
       state.configurations[i].parking_type = arr;
+      touched = true;
+      renderStepBody();
+    };
+  });
+  content.querySelectorAll('[data-set-bhktype]').forEach(el => {
+    el.onclick = () => {
+      const i = Number(el.dataset.setBhktype);
+      state.configurations[i].bhk_type = el.dataset.val;
+      touched = true;
+      renderStepBody();
+    };
+  });
+  content.querySelectorAll('[data-set-bhktype-custom]').forEach(el => {
+    el.onclick = () => {
+      const i = Number(el.dataset.setBhktypeCustom);
+      const input = document.getElementById(el.dataset.input);
+      const val = (input?.value || '').trim();
+      if (!val) return;
+      state.configurations[i].bhk_type = val;
       touched = true;
       renderStepBody();
     };
