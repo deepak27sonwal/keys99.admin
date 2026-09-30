@@ -1110,5 +1110,8 @@ if (await guard()) {
   initGlobalSearch();
   initNotifPanel();
   loadSidebarCounts();
-  navigate('dashboard', { replace: true });
+  // Reopen whatever page the URL points to (e.g. after a refresh) instead of always
+  // bouncing back to the dashboard — mirrors how the popstate handler above already
+  // resolves a page from location.hash for back/forward navigation.
+  navigate(location.hash.replace(/^#\//, '') || 'dashboard', { replace: true });
 }
