@@ -1531,10 +1531,41 @@ async function submitForVerification() {
       project_id: projectId, from_status: 'draft', to_status: 'pending_verification', action: 'submitted', changed_by: currentUser.id
     });
     toast('Submitted for verification');
-    setTimeout(() => closeForm(), 600);
+    showSubmitSuccess();
   } finally {
     $('#pf-next').disabled = false;
   }
+}
+
+// Shown in place of the wizard right after a successful submit, instead of closing
+// straight back to the project list — resets the form so another project can be added,
+// while still leaving "Back to Projects" for the original exit behavior.
+function showSubmitSuccess() {
+  content.removeEventListener('input', onFieldInput);
+  content.removeEventListener('change', onFieldChange);
+  content.removeEventListener('click', onFieldClick);
+  content.innerHTML = `<div class="wrap">
+    <div class="form-success">
+      <div class="form-success-icon">🎉</div>
+      <h3>Congratulations!</h3>
+      <p>Your project has been submitted for verification.</p>
+      <div style="display:flex;gap:10px;margin-top:18px">
+        <button type="button" class="btn-outline" id="pf-success-close">Back to Projects</button>
+        <button type="button" class="btn-primary" id="pf-success-add">Add Another Project</button>
+      </div>
+    </div>
+  </div>`;
+  $('#pf-success-close').addEventListener('click', () => closeForm());
+  $('#pf-success-add').addEventListener('click', () => {
+    projectId = null;
+    isEdit = false;
+    stepIndex = 1;
+    touched = false;
+    uploads = {};
+    state = freshState();
+    renderShell();
+    pushWizardState();
+  });
 }
 
 // Used after a successful submit — exits immediately (no confirm) and unwinds every

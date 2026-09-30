@@ -391,6 +391,15 @@ tr:last-child td{border-bottom:0}
   .modal-body,.modal-head,.modal-footer{padding-left:16px;padding-right:16px}
 }
 
+/* ---------- Success state (shown after a form resets post-submit) ---------- */
+.form-success{display:flex;flex-direction:column;align-items:center;text-align:center;padding:32px 12px;gap:6px}
+.form-success-icon{font-size:40px;line-height:1;margin-bottom:6px}
+.form-success h3{margin:0;font-size:17px;color:var(--green-dark)}
+.form-success p{margin:0;font-size:13px;color:var(--muted)}
+
+.form-success-banner{display:flex;align-items:center;gap:8px;background:var(--green-tint);color:var(--green-dark);font-size:12.5px;font-weight:600;padding:10px 14px;border-radius:9px;margin-bottom:16px;animation:toast-in .2s ease}
+.form-success-banner .form-success-icon{font-size:16px;margin:0}
+
 .form-footer{display:flex;align-items:center;justify-content:space-between;padding:16px 26px;border-top:1px solid var(--line)}
 .footer-step-label{font-size:12px;color:var(--muted);font-weight:600}
 .footer-actions{display:flex;gap:10px}

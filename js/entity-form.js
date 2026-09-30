@@ -91,10 +91,37 @@ export async function openEntityForm({ title, subtitle, table, fields, existingI
     saveBtn.disabled = false;
     if (error) { toast(error.message, true); return; }
 
-    toast(existingId ? 'Saved' : 'Added');
-    closeModal(overlay);
     onSaved && onSaved();
+
+    if (existingId) {
+      toast('Saved');
+      closeModal(overlay);
+      return;
+    }
+
+    // New record added — reset the fields back to blank and show a congratulations
+    // banner above the form, instead of closing the modal, so another can be added right away.
+    toast('Added');
+    resetFormWithSuccess(box, fields, title);
   });
+}
+
+function resetFormWithSuccess(box, fields, title) {
+  const grid = box.querySelector('.form-grid');
+  const values = {};
+  for (const f of fields) if (f.default !== undefined) values[f.key] = f.default;
+  grid.innerHTML = fields.map(f => renderField(f, values[f.key])).join('');
+  enhanceSelects(box);
+
+  let banner = box.querySelector('.form-success-banner');
+  if (!banner) {
+    banner = document.createElement('div');
+    banner.className = 'form-success-banner';
+    grid.parentElement.insertBefore(banner, grid);
+  }
+  banner.innerHTML = `<span class="form-success-icon">🎉</span> Congratulations! ${escapeHtml(title)} added successfully.`;
+  clearTimeout(banner._hideTimer);
+  banner._hideTimer = setTimeout(() => banner.remove(), 4000);
 }
 
 export async function confirmDeleteEntity(table, id, label, onDeleted) {
