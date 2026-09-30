@@ -449,7 +449,12 @@ tr:last-child td{border-bottom:0}
 
 @media(max-width:1180px){
   .form-shell{grid-template-columns:1fr}
-  .stepper{position:static;display:flex;flex-wrap:nowrap;overflow-x:auto;gap:4px;max-height:none;padding:8px}
+  /* Without min-width:0, a grid item won't shrink below its content's natural width — with
+     the step pills set to nowrap, that's the sum of every pill's width, so the stepper grid
+     track (and the whole page with it) stretched out to fit them instead of scrolling
+     internally. That widened the stepper past the panel below it and forced the whole page
+     to scroll sideways to reach it, instead of the pill row scrolling on its own in place. */
+  .stepper{position:static;display:flex;flex-wrap:nowrap;overflow-x:auto;gap:4px;max-height:none;padding:8px;min-width:0}
   .stepper .step{flex:none;white-space:nowrap}
 }
 @media(max-width:860px){
