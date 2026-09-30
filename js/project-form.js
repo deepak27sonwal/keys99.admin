@@ -1533,7 +1533,8 @@ async function submitForVerification() {
     toast('Submitted for verification');
     showSubmitSuccess();
   } finally {
-    $('#pf-next').disabled = false;
+    const nextBtn = $('#pf-next');
+    if (nextBtn) nextBtn.disabled = false;
   }
 }
 
