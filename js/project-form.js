@@ -197,7 +197,7 @@ const NEARBY_CATEGORIES = enumOpts(['transport', 'education', 'healthcare', 'sho
 
 const DEFAULTS = {
   configuration: () => ({ _k: uid(), bhk_type: '1 BHK', area_unit: 'sq_ft', carpet_area: '', built_up_area: '', super_built_up_area: '', starting_price: '', maximum_price: '', price_type: 'total_price', price_on_request: false, availability: 'available', parking_included: 'not_available', parking_type: [], description: '' }),
-  tower: () => ({ _k: uid(), tower_name: '', tower_number: '', number_of_floors: '', number_of_units: '', configurations: [], tower_status: 'under_construction', construction_stage: '', construction_start_date: '', expected_completion_date: '', possession_status: '', construction_details: '' }),
+  tower: () => ({ _k: uid(), tower_name: '', number_of_floors: '', number_of_units: '', configurations: [], tower_status: 'under_construction', construction_stage: '', construction_start_date: '', expected_completion_date: '', possession_status: '', construction_details: '' }),
   amenity: (category, name) => ({ _k: uid(), category, amenity_name: name, amenity_type: name, description: '', is_available: true }),
   nearby: () => ({ _k: uid(), category: 'transport', location_type: '', name: '', distance: '', distance_unit: 'km', description: '' }),
   prosCons: (item_type) => ({ _k: uid(), item_type, content: '' }),
@@ -799,20 +799,19 @@ function renderConfigurations() {
 
 const TOWER_FIELDS = [
   { key: 'tower_name', label: 'Tower Name', req: true, placeholder: 'e.g. Tower A' },
-  { key: 'tower_number', label: 'Tower Number' },
   { key: 'number_of_floors', label: 'Number of Floors', type: 'number' },
   { key: 'number_of_units', label: 'Number of Units', type: 'number' },
   { key: 'tower_status', label: 'Tower Status', type: 'select', options: enumOpts(['upcoming', 'under_construction', 'ready_to_move', 'completed', 'other']) },
   { key: 'construction_stage', label: 'Construction Stage', type: 'select', options: CONSTRUCTION_STAGE_OPTIONS },
   { key: 'possession_status', label: 'Possession Status', type: 'select', options: POSSESSION_STATUS_OPTIONS },
-  { key: 'construction_start_date', label: 'Construction Start Date', type: 'date' },
-  { key: 'expected_completion_date', label: 'Expected Completion Date', type: 'date' },
+  { key: 'construction_start_date', label: 'RERA Possession Date', type: 'date' },
+  { key: 'expected_completion_date', label: 'Builder Possession Date', type: 'date' },
   { key: 'construction_details', label: 'Construction Details', type: 'textarea', full: true }
 ];
 function renderTowers() {
   return renderRepeatStep('towers', TOWER_FIELDS, {
     titleOf: t => t.tower_name, singular: 'Tower', emptyText: 'No towers added yet.', addLabel: 'Add Tower / Building',
-    extraHtml: (t, i) => chipRowHtml('Configurations in this tower', '', t.configurations, `towers.${i}.configurations`, `pf-tower-cfg-${i}`)
+    extraHtml: (t, i) => bhkChipsHtml(t.configurations, `towers.${i}.configurations`, i)
   });
 }
 
@@ -1451,7 +1450,7 @@ async function persistStep(i) {
       if (err) throw new Error(err);
     } else if (i === 7) {
       const err = await replaceChildRows('residential_towers', state.towers.map((t, idx) => ({
-        tower_name: t.tower_name, tower_number: t.tower_number || null, number_of_floors: num(t.number_of_floors),
+        tower_name: t.tower_name, number_of_floors: num(t.number_of_floors),
         number_of_units: num(t.number_of_units), configurations: t.configurations || [], tower_status: t.tower_status,
         construction_stage: t.construction_stage || null, construction_start_date: t.construction_start_date || null,
         expected_completion_date: t.expected_completion_date || null, possession_status: t.possession_status || null,
