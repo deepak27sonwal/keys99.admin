@@ -684,6 +684,19 @@ function priceRangeFromConfigs() {
   return { min: Math.min(...starts), max: maxes.length ? Math.max(...maxes) : Math.min(...starts) };
 }
 
+// A Maximum Price typed lower than that same card's Starting Price (e.g. a missing digit —
+// 7,50,000 instead of 7,50,00,000) doesn't just look wrong on the card: the project-level
+// price range derived from every configuration's lowest start / highest max (see
+// priceRangeFromConfigs() and projectPayload()) ends up inverted (min > max), which the DB
+// rejects with a bare "violates check constraint residential_projects_price_range_chk" on
+// save. Called from both the Next button and Save as Draft, since either can trigger a save.
+function validateConfigPriceRange() {
+  const badIdx = state.configurations.findIndex(c =>
+    c.maximum_price !== '' && c.maximum_price !== null && c.maximum_price !== undefined &&
+    Number(c.maximum_price) < Number(c.starting_price));
+  return badIdx >= 0 ? `Maximum Price must be greater than or equal to Starting Price (BHK Configuration #${badIdx + 1})` : null;
+}
+
 function renderSeo() {
   if (!state.project.slug) state.project.slug = slugify([state.project.project_name, lookups.localities.find(l => l.id === state.project.locality_id)?.name, lookups.cities.find(c => c.id === state.project.city_id)?.name].filter(Boolean).join('-'));
   return `<div class="form-grid">${FIELDS.seo.map(s => renderField(s, state.project[s.key], `data-bind="project.${s.key}"`)).join('')}
@@ -1058,6 +1071,10 @@ async function goNext() {
     const [arrayKey, fields] = repeatSpec;
     const missing = validateRepeatStep(getPath(state, arrayKey) || [], fields);
     if (missing.length) { toast(`Please fill: ${missing.join(', ')}`, true); return; }
+  }
+  if (stepIndex === 5) {
+    const priceError = validateConfigPriceRange();
+    if (priceError) { toast(priceError, true); return; }
   }
   if (stepIndex === TOTAL_STEPS) {
     if (!$('#pf-confirm')?.checked) { toast('Please confirm the information is accurate before submitting.', true); return; }
@@ -1469,6 +1486,8 @@ function mediaRows() {
 
 async function saveCurrentAndDraft() {
   handleSpecialBindings();
+  const priceError = validateConfigPriceRange();
+  if (priceError) { toast(priceError, true); return; }
   $('#pf-save-draft').disabled = true;
   try {
     // persistStep() already calls saveProjectCore() internally for any step from
@@ -1489,6 +1508,8 @@ async function saveCurrentAndDraft() {
 }
 
 async function submitForVerification() {
+  const priceError = validateConfigPriceRange();
+  if (priceError) { toast(priceError, true); return; }
   $('#pf-next').disabled = true;
   try {
     for (let i = FIRST_SAVE_AFTER_STEP; i <= 15; i++) {
