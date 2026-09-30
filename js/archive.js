@@ -55,9 +55,45 @@ export async function archivePage(content, navigate, isSuperAdmin) {
       { title: 'Delete permanently?', confirmLabel: 'Delete permanently', danger: true }
     );
     if (!ok) return;
+    await deleteProjectStorageFiles(id);
     const { error } = await sb.from('residential_projects').delete().eq('id', id);
     if (error) { toast(error.message, true); return; }
     toast(`"${name}" permanently deleted`);
     archivePage(content, navigate);
   }
+}
+
+// Deleting the residential_projects row cascades to every child DB row (media, documents,
+// litigation, construction updates, etc.), but a DB cascade has no effect on the actual files
+// those rows pointed at in Supabase Storage — those live in a separate system and stay
+// orphaned forever unless removed explicitly, and removing them has to happen *before* the
+// cascade deletes the rows that record their paths. Best-effort throughout: a failed storage
+// delete here (a stale path, a network blip) should never block the person from actually
+// deleting the project.
+async function deleteProjectStorageFiles(projectId) {
+  const [media, documents, litigation, updates] = await Promise.all([
+    sb.from('residential_media').select('media_path').eq('project_id', projectId),
+    sb.from('residential_documents').select('file_path').eq('project_id', projectId),
+    sb.from('residential_litigation').select('supporting_document_path').eq('project_id', projectId),
+    sb.from('residential_construction_updates').select('id').eq('project_id', projectId)
+  ]);
+
+  const updateIds = (updates.data || []).map(u => u.id);
+  const updateMedia = updateIds.length
+    ? await sb.from('residential_construction_update_media').select('media_path').in('update_id', updateIds)
+    : { data: [] };
+
+  const mediaPaths = [
+    ...(media.data || []).map(r => r.media_path),
+    ...(updateMedia.data || []).map(r => r.media_path)
+  ].filter(Boolean);
+  const documentPaths = [
+    ...(documents.data || []).map(r => r.file_path),
+    ...(litigation.data || []).map(r => r.supporting_document_path)
+  ].filter(Boolean);
+
+  await Promise.all([
+    mediaPaths.length ? sb.storage.from('residential-media').remove(mediaPaths).catch(() => {}) : null,
+    documentPaths.length ? sb.storage.from('residential-documents').remove(documentPaths).catch(() => {}) : null
+  ]);
 }
