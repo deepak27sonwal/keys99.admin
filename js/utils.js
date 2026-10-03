@@ -137,7 +137,8 @@ const ICONS = {
   pause: '<rect x="6" y="4" width="4" height="16" rx="1"/><rect x="14" y="4" width="4" height="16" rx="1"/>',
   archive: '<rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v10a2 2 0 0 0 2 2h10a2 2 0 0 0 2-2V8"/><path d="M10 13h4"/>',
   refresh: '<path d="M21 12a9 9 0 1 1-3-6.7"/><path d="M21 3v6h-6"/>',
-  history: '<path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/><path d="M12 7v5l3.5 2"/>'
+  history: '<path d="M3 12a9 9 0 1 0 3-6.7"/><path d="M3 4v5h5"/><path d="M12 7v5l3.5 2"/>',
+  plus: '<circle cx="12" cy="12" r="9"/><path d="M12 8v8M8 12h8"/>'
 };
 
 export function icon(name, size = 16) {
@@ -156,7 +157,12 @@ export function rowActions(kind, id, name, canDelete = true) {
     </div>`;
   }
   if (ENTITY_KINDS.includes(kind)) {
+    // A developer has no projects of its own to list here — creating one means handing off
+    // to the Add Project wizard with this developer already picked, not an inline add like
+    // Edit/Delete.
+    const addProject = kind === 'developer' ? `<button class="icon-btn" data-add-project-for="${id}" title="Add Project">${icon('plus', 13)}</button>` : '';
     return `<div class="row-actions">
+      ${addProject}
       <button class="icon-btn" data-edit-entity="${kind}:${id}">${icon('edit', 13)}</button>
       <button class="icon-btn danger" data-delete-entity="${kind}:${id}">${icon('trash', 13)}</button>
     </div>`;

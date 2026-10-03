@@ -249,7 +249,10 @@ function freshState() {
 
 let wizardOpen = false;
 
-export async function openProjectForm(rootEl, user, existingId, exitCb) {
+// prefill: optional values to seed a brand-new project with (e.g. { developer_id } when
+// opened from the Developers page's "Add Project" action) — ignored when editing an
+// existing project, which already has its own saved values.
+export async function openProjectForm(rootEl, user, existingId, exitCb, prefill) {
   content = rootEl;
   currentUser = user;
   onExit = exitCb;
@@ -270,6 +273,7 @@ export async function openProjectForm(rootEl, user, existingId, exitCb) {
     if (!state) { content.innerHTML = `<div class="empty">Project not found.</div>`; return; }
   } else {
     state = freshState();
+    if (prefill) Object.assign(state.project, prefill);
   }
 
   renderShell();

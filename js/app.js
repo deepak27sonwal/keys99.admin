@@ -427,6 +427,9 @@ async function developersPage() {
     tablePanel('All Developers', toolbar, ['Name', 'RERA ID', 'Email', 'Phone', 'Verified', 'Actions'], rows);
 
   $('#add-developer')?.addEventListener('click', () => openDeveloperForm(null));
+  content.querySelectorAll('[data-add-project-for]').forEach(btn => {
+    btn.addEventListener('click', () => openProjectForm(content, currentUser, null, () => navigate('developers'), { developer_id: btn.dataset.addProjectFor }));
+  });
   bindStubs(content, {
     onEditEntity: (kind, id) => kind === 'developer' && openDeveloperForm(id),
     onDeleteEntity: (kind, id) => kind === 'developer' && confirmDeleteEntity('developers', id, 'this developer', developersPage)
