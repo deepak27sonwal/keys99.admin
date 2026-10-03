@@ -32,7 +32,7 @@ function uid() { return Math.random().toString(36).slice(2, 9); }
 
 let content, currentUser, onExit;
 let state, projectId, stepIndex, isEdit;
-let lookups = { developers: [], cities: [], localities: [], agents: [] };
+let lookups = { developers: [], cities: [], localities: [], agents: [], projects: [] };
 let touched = false;
 let historyPushCount = 0;
 let intentionalExit = false;
@@ -110,8 +110,16 @@ const PROJECT_AREA_UNIT_OPTIONS = enumOpts(['sq_ft', 'sq_m', 'acre']);
 
 const FIELDS = {
   basic: [
-    { key: 'project_name', label: 'Project Name', req: true, placeholder: 'e.g. Emerald Heights' },
     { key: 'developer_id', label: 'Developer / Builder', req: true, type: 'select', options: () => lookups.developers.map(d => ({ value: d.id, label: d.name })), quickAdd: 'developer' },
+    // Options depend on the selected developer (same dependent-select pattern as
+    // city_id → locality_id below): pick one of that developer's existing projects to open
+    // it for editing, or use "+ New" to type a brand-new project name. allowCustomValue
+    // keeps a freshly typed name visible/selected even though it has no matching <option>
+    // yet (it only becomes a real project row once this wizard is saved).
+    { key: 'project_name', label: 'Project Name', req: true, type: 'select', allowCustomValue: true,
+      options: () => lookups.projects.filter(p => p.developer_id === state.project.developer_id).map(p => ({ value: p.project_name, label: p.project_name })),
+      hint: 'Pick an existing project of this developer to edit it, or use "+ New" to add one.',
+      quickAdd: 'project_name' },
     { key: 'project_type', label: 'Project Type', req: true, type: 'select', options: enumOpts(['apartment', 'villa', 'row_house', 'townhouse', 'residential_plot', 'independent_house', 'mixed_residential', 'other']) },
     { key: 'launch_date', label: 'Project Launch Date', type: 'date' },
     { key: 'rera_number', label: 'RERA Number', placeholder: 'e.g. P52100012345' },
@@ -316,16 +324,18 @@ export function handleWizardPopState(e) {
 }
 
 async function loadLookups() {
-  const [dev, city, loc, agt] = await Promise.all([
+  const [dev, city, loc, agt, proj] = await Promise.all([
     sb.from('developers').select('id,name').order('name'),
     sb.from('cities').select('id,name').order('name'),
     sb.from('localities').select('id,name,city_id').order('name'),
-    sb.from('agents').select('id,full_name').order('full_name')
+    sb.from('agents').select('id,full_name').order('full_name'),
+    sb.from('residential_projects').select('id,project_name,developer_id').is('deleted_at', null).order('project_name')
   ]);
   lookups.developers = dev.data || [];
   lookups.cities = city.data || [];
   lookups.localities = loc.data || [];
   lookups.agents = agt.data || [];
+  lookups.projects = proj.data || [];
 }
 
 async function loadProject(id) {
@@ -465,7 +475,12 @@ function renderField(spec, value, attr, item) {
   }
   let input;
   if (spec.type === 'select') {
-    const opts = typeof spec.options === 'function' ? spec.options() : spec.options;
+    let opts = typeof spec.options === 'function' ? spec.options() : spec.options;
+    // A value set via "+ New" (free text) has no matching <option> yet — show it selected
+    // anyway instead of silently falling back to the blank placeholder.
+    if (spec.allowCustomValue && value && !opts.some(o => String(o.value) === String(value))) {
+      opts = [{ value, label: value }, ...opts];
+    }
     input = `<select ${attr}><option value="">Select…</option>${opts.map(o => `<option value="${esc(o.value)}"${String(value ?? '') === String(o.value) ? ' selected' : ''}>${esc(o.label)}</option>`).join('')}</select>`;
     if (spec.quickAdd) input = `<div class="field-quickadd">${input}<button type="button" class="btn-outline" style="padding:8px 10px;white-space:nowrap" data-quickadd="${spec.quickAdd}">+ New</button></div>`;
   } else if (spec.type === 'textarea') {
@@ -550,12 +565,33 @@ function onFieldInput(e) {
 function onFieldChange(e) {
   const el = e.target.closest('[data-bind]');
   if (!el) return;
-  applyBind(el);
-  if (el.dataset.bind === 'project.city_id') { state.project.locality_id = ''; renderStepBody(); }
-  else if (/^nearby\.\d+\.category$/.test(el.dataset.bind)) renderStepBody();
+  if (el.dataset.bind === 'project.developer_id') {
+    applyBind(el);
+    state.project.project_name = '';
+    renderStepBody();
+  } else if (el.dataset.bind === 'project.project_name') {
+    const prevName = state.project.project_name;
+    applyBind(el);
+    // Picking one of this developer's existing projects (rather than a freshly typed name)
+    // switches the whole wizard over to editing that project instead of continuing to build
+    // a separate one under the same name.
+    const match = lookups.projects.find(p => p.developer_id === state.project.developer_id && p.project_name === el.value);
+    if (match && match.id !== projectId) {
+      if (touched && !confirm(`Open "${match.project_name}" for editing? Unsaved changes on this step will be lost.`)) {
+        state.project.project_name = prevName;
+        renderStepBody();
+        return;
+      }
+      openProjectForm(content, currentUser, match.id, onExit);
+      return;
+    }
+  }
+  else if (el.dataset.bind === 'project.city_id') { applyBind(el); state.project.locality_id = ''; renderStepBody(); }
+  else if (/^nearby\.\d+\.category$/.test(el.dataset.bind)) { applyBind(el); renderStepBody(); }
   // Built-up/Super Built-up Area show the selected unit (sq ft / sq m) as their suffix —
   // re-render so switching Area Unit updates those labels, not just Carpet Area's own select.
-  else if (/^configurations\.\d+\.area_unit$/.test(el.dataset.bind)) renderStepBody();
+  else if (/^configurations\.\d+\.area_unit$/.test(el.dataset.bind)) { applyBind(el); renderStepBody(); }
+  else applyBind(el);
 }
 function applyBind(el) {
   touched = true;
@@ -671,6 +707,12 @@ async function openQuickAdd(kind) {
     if (error) { toast(error.message, true); return; }
     lookups.developers.push(data);
     state.project.developer_id = data.id;
+    renderStepBody();
+  } else if (kind === 'project_name') {
+    if (!state.project.developer_id) { toast('Select a developer first', true); return; }
+    const name = prompt('New project name:');
+    if (!name) return;
+    state.project.project_name = name;
     renderStepBody();
   } else if (kind === 'city') {
     const name = prompt('New city name:');
