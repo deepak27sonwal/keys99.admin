@@ -35,11 +35,29 @@ function syncTrigger(wrap, select) {
   wrap.querySelectorAll('.cs-option').forEach(o => o.classList.toggle('selected', o.dataset.csValue === select.value));
 }
 
+// Options panels get their own search box once there are enough options that scanning them
+// is slower than typing a few letters (e.g. Developers, Projects) — short enum-style lists
+// (project type, status, …) stay exactly as they were.
+const SEARCH_THRESHOLD = 8;
+
+function filterPanel(panel, query) {
+  const q = query.trim().toLowerCase();
+  let anyVisible = false;
+  panel.querySelectorAll('.cs-option').forEach(o => {
+    const match = !q || o.textContent.toLowerCase().includes(q);
+    o.hidden = !match;
+    if (match) anyVisible = true;
+  });
+  const empty = panel.querySelector('.cs-no-match');
+  if (empty) empty.hidden = anyVisible;
+}
+
 function openWrapPanel(wrap) {
   if (openPanel && openPanel.wrap === wrap) { closeOpenPanel(); return; }
   closeOpenPanel();
   const trigger = wrap.querySelector('.cs-trigger');
   const panel = wrap.querySelector('.cs-panel');
+  const search = panel.querySelector('.cs-search');
   panel.hidden = false;
   trigger.classList.add('open');
   const rect = trigger.getBoundingClientRect();
@@ -48,8 +66,30 @@ function openWrapPanel(wrap) {
   // end of a row — anchor it to the trigger's right edge instead when there isn't room.
   panel.classList.toggle('cs-panel-right', window.innerWidth - rect.left < 340);
   openPanel = { wrap, trigger, panel };
-  const active = panel.querySelector('.cs-option.selected') || panel.querySelector('.cs-option');
-  if (active) active.scrollIntoView({ block: 'nearest' });
+  if (search) {
+    search.value = '';
+    filterPanel(panel, '');
+    search.focus();
+  } else {
+    const active = panel.querySelector('.cs-option.selected') || panel.querySelector('.cs-option');
+    if (active) active.scrollIntoView({ block: 'nearest' });
+  }
+}
+
+function buildPanelOptions(panel, select) {
+  panel.querySelectorAll('.cs-option, .cs-no-match').forEach(el => el.remove());
+  [...select.options].forEach(opt => {
+    const item = document.createElement('div');
+    item.className = 'cs-option' + (opt.disabled ? ' disabled' : '');
+    item.dataset.csValue = opt.value;
+    item.textContent = opt.textContent;
+    panel.appendChild(item);
+  });
+  const noMatch = document.createElement('div');
+  noMatch.className = 'cs-no-match';
+  noMatch.hidden = true;
+  noMatch.textContent = 'No matches';
+  panel.appendChild(noMatch);
 }
 
 // root: the container to scan (re-run safely after every re-render — already-enhanced
@@ -72,13 +112,18 @@ export function enhanceSelects(root) {
     const panel = document.createElement('div');
     panel.className = 'cs-panel';
     panel.hidden = true;
-    [...select.options].forEach(opt => {
-      const item = document.createElement('div');
-      item.className = 'cs-option' + (opt.disabled ? ' disabled' : '');
-      item.dataset.csValue = opt.value;
-      item.textContent = opt.textContent;
-      panel.appendChild(item);
-    });
+    if (select.options.length > SEARCH_THRESHOLD) {
+      const search = document.createElement('input');
+      search.type = 'text';
+      search.className = 'cs-search';
+      search.placeholder = 'Search…';
+      search.autocomplete = 'off';
+      panel.appendChild(search);
+      search.addEventListener('click', (e) => e.stopPropagation());
+      search.addEventListener('keydown', (e) => e.stopPropagation());
+      search.addEventListener('input', () => filterPanel(panel, search.value));
+    }
+    buildPanelOptions(panel, select);
     wrap.appendChild(panel);
 
     syncTrigger(wrap, select);
@@ -100,4 +145,16 @@ export function enhanceSelects(root) {
       select.dispatchEvent(new Event('change', { bubbles: true }));
     });
   });
+}
+
+// Rebuilds an already-enhanced select's custom panel from its current <option> list — for
+// selects whose options are replaced at runtime (e.g. a "Project" dropdown repopulated after
+// a "Developer" dropdown changes), instead of only ever reading their options once.
+export function refreshSelect(select) {
+  const wrap = select.closest('.cs-wrap');
+  if (!wrap) return;
+  const panel = wrap.querySelector('.cs-panel');
+  buildPanelOptions(panel, select);
+  syncTrigger(wrap, select);
+  wrap.querySelector('.cs-trigger').disabled = select.disabled;
 }

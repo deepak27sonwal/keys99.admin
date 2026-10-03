@@ -1,6 +1,7 @@
 import { sb } from './supabase-client.js';
 import { openProjectForm } from './project-form.js';
-import { pageHead, emptyRow, icon, pill, fmtPrice, rowActions, bindStubs, confirmArchiveProject } from './utils.js';
+import { pageHead, emptyRow, icon, pill, fmtPrice, rowActions, bindStubs, confirmArchiveProject, escapeHtml } from './utils.js';
+import { enhanceSelects, refreshSelect } from './custom-select.js';
 
 // This page's markup (the panel/toolbar/table shell, plus a <template> for one row) lives
 // in residential-projects.html, and its layout-only rules in css/residential-projects.css —
@@ -104,6 +105,7 @@ export async function residentialProjectsPage(content, currentUser, navigate, mo
 
   const openWizard = (projectId) => openProjectForm(content, currentUser, projectId, () => navigate('residential'));
   content.querySelector('#add-project')?.addEventListener('click', () => openWizard(null));
+  content.querySelector('#open-by-developer')?.addEventListener('click', () => openDeveloperProjectPicker(openWizard));
   bindStubs(content, {
     onEditProject: openWizard,
     onDeleteProject: (id, name) => confirmArchiveProject(id, name, currentUser.id, () => residentialProjectsPage(content, currentUser, navigate, moderationFilter))
@@ -111,4 +113,85 @@ export async function residentialProjectsPage(content, currentUser, navigate, mo
 
   if (openAdd) openWizard(null);
   else if (openEditId) openWizard(openEditId);
+}
+
+// Lets an admin jump straight to editing a project by first picking its Developer, instead
+// of scrolling/searching the full catalog — both dropdowns are searchable (via
+// custom-select.js, auto-enabled once a list has more than a handful of options). The
+// Project dropdown stays empty/disabled until a Developer is chosen, then lists only that
+// developer's projects.
+async function openDeveloperProjectPicker(openWizard) {
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay';
+  overlay.innerHTML = `
+    <div class="modal-box" style="max-width:420px">
+      <div class="modal-head">
+        <div><h2>Open Project by Developer</h2></div>
+        <button type="button" class="modal-close" data-cancel>✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-grid">
+          <div class="field full">
+            <label>Developer</label>
+            <select id="dp-developer"><option value="">Select a developer…</option></select>
+          </div>
+          <div class="field full">
+            <label>Project Name</label>
+            <select id="dp-project" disabled><option value="">Select a developer first…</option></select>
+          </div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button type="button" class="btn-outline" data-cancel>Cancel</button>
+        <button type="button" class="btn-primary" id="dp-open" disabled>Open</button>
+      </div>
+    </div>`;
+  document.body.appendChild(overlay);
+
+  const close = () => { overlay.remove(); document.removeEventListener('keydown', escHandler); };
+  const escHandler = (e) => { if (e.key === 'Escape') close(); };
+  document.addEventListener('keydown', escHandler);
+  overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
+  overlay.querySelectorAll('[data-cancel]').forEach(b => b.addEventListener('click', close));
+
+  const devSelect = overlay.querySelector('#dp-developer');
+  const projectSelect = overlay.querySelector('#dp-project');
+  const openBtn = overlay.querySelector('#dp-open');
+
+  const { data: developers } = await sb.from('developers').select('id,name').order('name');
+  devSelect.innerHTML = '<option value="">Select a developer…</option>' +
+    (developers || []).map(d => `<option value="${escapeHtml(d.id)}">${escapeHtml(d.name)}</option>`).join('');
+  enhanceSelects(overlay);
+
+  devSelect.addEventListener('change', async () => {
+    const developerId = devSelect.value;
+    projectSelect.disabled = true;
+    openBtn.disabled = true;
+    if (!developerId) {
+      projectSelect.innerHTML = '<option value="">Select a developer first…</option>';
+      refreshSelect(projectSelect);
+      return;
+    }
+    projectSelect.innerHTML = '<option value="">Loading…</option>';
+    refreshSelect(projectSelect);
+    const { data: projects } = await sb.from('residential_projects')
+      .select('id,project_name').eq('developer_id', developerId).is('deleted_at', null).order('project_name');
+    if (!projects || !projects.length) {
+      projectSelect.innerHTML = '<option value="">No projects for this developer</option>';
+    } else {
+      projectSelect.innerHTML = '<option value="">Select a project…</option>' +
+        projects.map(p => `<option value="${escapeHtml(p.id)}">${escapeHtml(p.project_name)}</option>`).join('');
+      projectSelect.disabled = false;
+    }
+    refreshSelect(projectSelect);
+  });
+
+  projectSelect.addEventListener('change', () => { openBtn.disabled = !projectSelect.value; });
+
+  openBtn.addEventListener('click', () => {
+    const projectId = projectSelect.value;
+    if (!projectId) return;
+    close();
+    openWizard(projectId);
+  });
 }
