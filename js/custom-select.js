@@ -112,7 +112,7 @@ export function enhanceSelects(root) {
     const panel = document.createElement('div');
     panel.className = 'cs-panel';
     panel.hidden = true;
-    if (select.options.length > SEARCH_THRESHOLD) {
+    if (select.options.length > SEARCH_THRESHOLD || select.hasAttribute('data-force-search')) {
       const search = document.createElement('input');
       search.type = 'text';
       search.className = 'cs-search';

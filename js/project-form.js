@@ -116,7 +116,7 @@ const FIELDS = {
     // it for editing, or use "+ New" to type a brand-new project name. allowCustomValue
     // keeps a freshly typed name visible/selected even though it has no matching <option>
     // yet (it only becomes a real project row once this wizard is saved).
-    { key: 'project_name', label: 'Project Name', req: true, type: 'select', allowCustomValue: true,
+    { key: 'project_name', label: 'Project Name', req: true, type: 'select', allowCustomValue: true, forceSearch: true,
       options: () => lookups.projects.filter(p => p.developer_id === state.project.developer_id).map(p => ({ value: p.project_name, label: p.project_name })),
       hint: 'Pick an existing project of this developer to edit it, or use "+ New" to add one.',
       quickAdd: 'project_name' },
@@ -139,7 +139,6 @@ const FIELDS = {
     { key: 'total_towers_buildings', label: 'Total Towers / Buildings', type: 'number' },
     { key: 'total_floors', label: 'Total Floors', type: 'text', placeholder: 'e.g. 18 or G+12' },
     { key: 'total_residential_units', label: 'Total Residential Units', type: 'number' },
-    { key: 'units_per_floor', label: 'Units per Floor', type: 'number' },
     { key: 'number_of_phases', label: 'Number of Phases', type: 'number' },
     { key: 'open_green_area_value', label: 'Open / Green Area', type: 'number' },
     { key: 'open_green_area_unit', label: 'Open / Green Area Unit', type: 'select', options: enumOpts(['acre', 'sq_ft', 'sq_m', 'percent']) },
@@ -148,7 +147,6 @@ const FIELDS = {
   ],
   status: [
     { key: 'status', label: 'Project Status', req: true, type: 'select', options: enumOpts(['upcoming', 'new_launch', 'under_construction', 'ready_to_move', 'completed', 'resale']) },
-    { key: 'possession_status', label: 'Possession Status', type: 'select', options: POSSESSION_STATUS_OPTIONS },
     { key: 'units_per_phase', label: 'Units per Phase', type: 'number' }
   ],
   specs: [
@@ -233,8 +231,8 @@ function freshState() {
     project: {
       project_name: '', developer_id: '', project_type: 'apartment', launch_date: '', rera_number: '', overview: '', highlights: [],
       city_id: '', locality_id: '', address: '', pincode: '', latitude: '', longitude: '',
-      total_land_area: '', land_area_unit: 'acre', total_towers_buildings: '', total_floors: '', total_residential_units: '', units_per_floor: '', number_of_phases: '', units_per_phase: '', open_green_area_value: '', open_green_area_unit: 'acre', built_up_project_area: '', built_up_project_area_unit: 'sq_ft',
-      status: 'upcoming', possession_status: '',
+      total_land_area: '', land_area_unit: 'acre', total_towers_buildings: '', total_floors: '', total_residential_units: '', number_of_phases: '', units_per_phase: '', open_green_area_value: '', open_green_area_unit: 'acre', built_up_project_area: '', built_up_project_area_unit: 'sq_ft',
+      status: 'upcoming',
       starting_price: '', maximum_price: '', price_on_request: false, base_price: '', floor_rise_charges: '', parking_charges: '', clubhouse_charges: '', maintenance_charges: '', other_charges: '', gst_applicable: false, price_disclaimer: '', registration_stamp_duty_disclaimer: '',
       flooring: '', doors: '', windows: '', kitchen: '', bathroom: '', electrical: '', walls_paint: '', balcony: '', other_specifications: '',
       agent_id: '',
@@ -485,7 +483,7 @@ function renderField(spec, value, attr, item) {
     if (spec.allowCustomValue && value && !opts.some(o => String(o.value) === String(value))) {
       opts = [{ value, label: value }, ...opts];
     }
-    input = `<select ${attr}><option value="">Select…</option>${opts.map(o => `<option value="${esc(o.value)}"${String(value ?? '') === String(o.value) ? ' selected' : ''}>${esc(o.label)}</option>`).join('')}</select>`;
+    input = `<select ${attr}${spec.forceSearch ? ' data-force-search' : ''}><option value="">Select…</option>${opts.map(o => `<option value="${esc(o.value)}"${String(value ?? '') === String(o.value) ? ' selected' : ''}>${esc(o.label)}</option>`).join('')}</select>`;
     if (spec.quickAdd) input = `<div class="field-quickadd">${input}<button type="button" class="btn-outline" style="padding:8px 10px;white-space:nowrap" data-quickadd="${spec.quickAdd}">+ New</button></div>`;
   } else if (spec.type === 'textarea') {
     input = `<textarea ${attr} placeholder="${esc(placeholder || '')}">${esc(value ?? '')}</textarea>`;
@@ -533,7 +531,6 @@ function renderSizeScale() {
     ${plain('total_towers_buildings')}
     ${plain('total_floors')}
     ${plain('total_residential_units')}
-    ${plain('units_per_floor')}
     ${plain('number_of_phases')}
   </div>`;
 }
@@ -1173,7 +1170,7 @@ function renderReview() {
     ${section('1. Basic Information', [['Project', p.project_name], ['Developer', dev], ['Type', p.project_type], ['Highlights', `${p.highlights.length} added`]], 1)}
     ${section('2. Project Location', [['Address', p.address], ['City / Locality', `${loc}, ${city}`], ['Pincode', p.pincode]], 2)}
     ${section('3. Size & Scale', [['Land Area', p.total_land_area ? `${p.total_land_area} ${p.land_area_unit}` : '—'], ['Towers', p.total_towers_buildings], ['Total Units', p.total_residential_units]], 3)}
-    ${section('4. Status & Construction', [['Status', p.status], ['Possession Status', p.possession_status], ['Phases', state.phases.length || '—']], 4)}
+    ${section('4. Status & Construction', [['Status', p.status], ['Phases', state.phases.length || '—']], 4)}
     ${section('5. Configurations', [['Variants', `${state.configurations.length} added`], ['Price Range', priceText]], 5)}
     ${section('6. Apartment Specifications', [['Flooring', p.flooring], ['Kitchen', p.kitchen]], 6)}
     ${section('7. Tower / Building Details', [['Towers added', `${state.towers.length}`]], 7)}
@@ -1482,11 +1479,11 @@ function projectPayload() {
     latitude: num(p.latitude), longitude: num(p.longitude),
     total_land_area: num(p.total_land_area), land_area_unit: str(p.land_area_unit),
     total_towers_buildings: num(p.total_towers_buildings), total_floors: str(p.total_floors),
-    total_residential_units: num(p.total_residential_units), units_per_floor: num(p.units_per_floor),
+    total_residential_units: num(p.total_residential_units),
     number_of_phases: num(p.number_of_phases), units_per_phase: num(p.units_per_phase),
     open_green_area_value: num(p.open_green_area_value), open_green_area_unit: str(p.open_green_area_unit),
     built_up_project_area: num(p.built_up_project_area), built_up_project_area_unit: str(p.built_up_project_area_unit),
-    status: p.status, possession_status: str(p.possession_status),
+    status: p.status,
     starting_price: priceRangeFromConfigs().min, maximum_price: priceRangeFromConfigs().max, price_on_request: !!p.price_on_request,
     base_price: num(p.base_price), floor_rise_charges: num(p.floor_rise_charges), parking_charges: num(p.parking_charges),
     clubhouse_charges: num(p.clubhouse_charges), maintenance_charges: num(p.maintenance_charges), other_charges: num(p.other_charges),
