@@ -951,7 +951,10 @@ const PAGES = {
 // handled by project-form.js's own listener while the project form is open.
 async function navigate(page, opts = {}) {
   if (!PAGES[page]) page = 'dashboard';
-  document.querySelectorAll('.sb-item[data-page]').forEach(b => b.classList.toggle('active', b.dataset.page === page));
+  // "Add Project" is a shortcut button that happens to share data-page="residential" with
+  // the real Residential Projects nav tab — excluded here so only the actual nav tab lights
+  // up (otherwise both show the active/hover highlight at once).
+  document.querySelectorAll('.sb-item[data-page]:not([data-add])').forEach(b => b.classList.toggle('active', b.dataset.page === page));
   closeSidebar();
   window.scrollTo(0, 0);
   if (!opts.fromPopstate) {
