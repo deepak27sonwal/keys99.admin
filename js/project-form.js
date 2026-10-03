@@ -97,7 +97,7 @@ const FIRST_SAVE_AFTER_STEP = 4;
 /* ============ shared enum option lists (avoid re-declaring the same DB check-constraint values per step) ============ */
 
 // Must match the DB's residential_towers_construction_stage_check / residential_construction_updates_construction_stage_check constraints (still used by Towers and Construction Updates steps).
-const CONSTRUCTION_STAGE_OPTIONS = enumOpts(['pre_launch', 'excavation', 'foundation', 'structure', 'brickwork', 'finishing', 'final_completion', 'nearing_possession', 'ready_to_move', 'other']);
+const CONSTRUCTION_STAGE_OPTIONS = enumOpts(['pre_launch', 'excavation', 'foundation', 'structure', 'brickwork', 'finishing', 'final_completion', 'ready_to_move', 'other']);
 // Must match the DB's residential_projects_possession_status_check constraint exactly.
 const POSSESSION_STATUS_OPTIONS = enumOpts(['new_launch', 'under_construction', 'nearing_possession', 'possession_started', 'ready_to_move', 'completed']);
 const AREA_UNIT_OPTIONS = enumOpts(['sq_ft', 'sq_m']);
