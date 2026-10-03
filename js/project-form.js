@@ -146,7 +146,7 @@ const FIELDS = {
     { key: 'built_up_project_area_unit', label: 'Built-up Area Unit', type: 'select', options: PROJECT_AREA_UNIT_OPTIONS }
   ],
   status: [
-    { key: 'status', label: 'Project Status', req: true, type: 'select', options: enumOpts(['upcoming', 'new_launch', 'under_construction', 'ready_to_move', 'completed', 'resale']) }
+    { key: 'status', label: 'Project Status', req: true, type: 'select', options: enumOpts(['upcoming', 'new_launch', 'under_construction', 'nearing_possession', 'ready_to_move', 'completed', 'resale']) }
   ],
   specs: [
     { key: 'flooring', label: 'Flooring', type: 'textarea', full: true },
