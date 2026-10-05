@@ -32,7 +32,12 @@ function uid() { return Math.random().toString(36).slice(2, 9); }
 
 let content, currentUser, onExit;
 let state, projectId, stepIndex, isEdit;
-let lookups = { developers: [], cities: [], localities: [], agents: [], projects: [] };
+// The project's moderation_status as it was when the wizard opened for an edit (null for a
+// brand-new project) — lets submitForVerification() tell an edit of an already-published
+// listing apart from a first-time submission, so saving changes to a live listing doesn't
+// knock it back into the moderation queue (see submitForVerification()).
+let originalModerationStatus = null;
+let lookups = { developers: [], cities: [], localities: [], agents: [], profiles: [], projects: [] };
 let touched = false;
 let historyPushCount = 0;
 let intentionalExit = false;
@@ -86,7 +91,7 @@ const STEP_SUB = [
   'Legal/litigation disclosure for the project.',
   'Dated construction progress updates with optional photos.',
   'Frequently asked questions shown on the public listing.',
-  'Agent assigned to handle enquiries for this project.',
+  'Agent and relationship manager assigned to this project.',
   'Search engine metadata for the public project page.',
   'Review every section before saving as draft or submitting for verification.'
 ];
@@ -122,7 +127,6 @@ const FIELDS = {
       quickAdd: 'project_name' },
     { key: 'project_type', label: 'Project Type', req: true, type: 'select', options: enumOpts(['apartment', 'villa', 'row_house', 'townhouse', 'residential_plot', 'independent_house', 'mixed_residential', 'other']) },
     { key: 'launch_date', label: 'Project Launch Date', type: 'date' },
-    { key: 'rera_number', label: 'RERA Number', placeholder: 'e.g. P52100012345' },
     { key: 'overview', label: 'Project Overview', req: true, type: 'textarea', full: true, placeholder: 'Detailed project description for the public project page…' }
   ],
   location: [
@@ -160,7 +164,8 @@ const FIELDS = {
     { key: 'other_specifications', label: 'Other Specifications', type: 'textarea', full: true }
   ],
   contact: [
-    { key: 'agent_id', label: 'Assigned Agent', type: 'select', options: () => lookups.agents.map(a => ({ value: a.id, label: a.full_name })), full: true, quickAdd: 'agent', hint: 'Leads for this project will be routed to this agent' }
+    { key: 'agent_id', label: 'Assigned Agent', type: 'select', options: () => lookups.agents.map(a => ({ value: a.id, label: a.full_name })), full: true, quickAdd: 'agent', hint: 'Leads for this project will be routed to this agent' },
+    { key: 'relationship_manager_id', label: 'Relationship Manager', type: 'select', options: () => lookups.profiles.map(u => ({ value: u.id, label: u.full_name || 'Unnamed' })), full: true, hint: 'Internal team member responsible for this project relationship' }
   ],
   seo: [
     { key: 'slug', label: 'URL Slug', req: true, full: true },
@@ -229,13 +234,13 @@ const PHASE_FIELDS = [
 function freshState() {
   return {
     project: {
-      project_name: '', developer_id: '', project_type: 'apartment', launch_date: '', rera_number: '', overview: '', highlights: [],
+      project_name: '', developer_id: '', project_type: 'apartment', launch_date: '', rera_numbers: [], overview: '', highlights: [],
       city_id: '', locality_id: '', address: '', pincode: '', latitude: '', longitude: '',
       total_land_area: '', land_area_unit: 'acre', total_towers_buildings: '', total_floors: '', total_residential_units: '', number_of_phases: '', open_green_area_value: '', open_green_area_unit: 'acre', built_up_project_area: '', built_up_project_area_unit: 'sq_ft',
       status: 'upcoming',
       starting_price: '', maximum_price: '', price_on_request: false, base_price: '', floor_rise_charges: '', parking_charges: '', clubhouse_charges: '', maintenance_charges: '', other_charges: '', gst_applicable: false, price_disclaimer: '', registration_stamp_duty_disclaimer: '',
       flooring: '', doors: '', windows: '', kitchen: '', bathroom: '', electrical: '', walls_paint: '', balcony: '', other_specifications: '',
-      agent_id: '',
+      agent_id: '', relationship_manager_id: '',
       slug: '', seo_title: '', seo_description: '', canonical_url: ''
     },
     configurations: [], towers: [], amenities: [], nearby: [], prosCons: [], documents: [], litigation: [], updates: [], faqs: [], phases: [],
@@ -262,6 +267,7 @@ export async function openProjectForm(rootEl, user, existingId, exitCb, prefill)
   intentionalExit = false;
   wizardOpen = true;
   uploads = {};
+  originalModerationStatus = null;
 
   content.innerHTML = `<div class="empty">Loading project form…</div>`;
   await loadLookups();
@@ -326,17 +332,19 @@ export function handleWizardPopState(e) {
 }
 
 async function loadLookups() {
-  const [dev, city, loc, agt, proj] = await Promise.all([
+  const [dev, city, loc, agt, prof, proj] = await Promise.all([
     sb.from('developers').select('id,name').order('name'),
     sb.from('cities').select('id,name').order('name'),
     sb.from('localities').select('id,name,city_id').order('name'),
     sb.from('agents').select('id,full_name').order('full_name'),
+    sb.from('profiles').select('id,full_name').eq('is_active', true).order('full_name'),
     sb.from('residential_projects').select('id,project_name,developer_id').is('deleted_at', null).order('project_name')
   ]);
   lookups.developers = dev.data || [];
   lookups.cities = city.data || [];
   lookups.localities = loc.data || [];
   lookups.agents = agt.data || [];
+  lookups.profiles = prof.data || [];
   lookups.projects = proj.data || [];
 }
 
@@ -346,6 +354,8 @@ async function loadProject(id) {
   if (error || !p) { console.error(error); return null; }
   Object.keys(s.project).forEach(k => { if (k in p && p[k] !== null) s.project[k] = p[k]; });
   s.project.highlights = p.highlights || [];
+  s.project.rera_numbers = p.rera_numbers || [];
+  originalModerationStatus = p.moderation_status || null;
 
   const [phases, cfg, tow, ame, near, pc, docs, lit, upd, faqs] = await Promise.all([
     sb.from('residential_project_phases').select('*').eq('project_id', id).order('display_order'),
@@ -392,7 +402,7 @@ function renderShell() {
         <div><h1>${isEdit ? 'Edit' : 'Add'} Residential Project</h1><p id="pf-step-label">Step ${stepIndex} of ${TOTAL_STEPS} · ${STEP_NAMES[stepIndex - 1]}</p></div>
       </div>
       <div class="form-head-right">
-        <button class="btn-ghost" id="pf-save-draft">Save as Draft</button>
+        <button class="btn-ghost" id="pf-save-draft">${isEdit ? 'Update' : 'Save as Draft'}</button>
       </div>
     </div>
     <div class="progress-track"><div class="progress-fill" id="pf-progress" style="width:${pct}%"></div></div>
@@ -455,7 +465,9 @@ function renderStepBody() {
   $('#pf-panel-body').innerHTML = renderBody(stepIndex);
   $('#pf-footer-label').textContent = `${pct}% complete`;
   $('#pf-back').disabled = stepIndex === 1;
-  $('#pf-next').textContent = stepIndex === TOTAL_STEPS ? 'Submit for Verification →' : `Next: ${STEP_NAMES[stepIndex] || ''} →`;
+  $('#pf-next').textContent = stepIndex === TOTAL_STEPS
+    ? (originalModerationStatus === 'published' ? 'Update Project' : 'Submit for Verification →')
+    : `Next: ${STEP_NAMES[stepIndex] || ''} →`;
   $('#pf-close').title = stepIndex > 1 ? 'Back' : 'Close';
   handleSpecialBindings();
   // No scrollTo here on purpose — renderStepBody() is also called for in-place updates on
@@ -477,7 +489,7 @@ function renderField(spec, value, attr, item) {
   }
   let input;
   if (spec.type === 'select') {
-    let opts = typeof spec.options === 'function' ? spec.options() : spec.options;
+    let opts = typeof spec.options === 'function' ? spec.options(item) : spec.options;
     // A value set via "+ New" (free text) has no matching <option> yet — show it selected
     // anyway instead of silently falling back to the blank placeholder.
     if (spec.allowCustomValue && value && !opts.some(o => String(o.value) === String(value))) {
@@ -775,6 +787,7 @@ function renderBasic() {
   const specs = FIELDS.basic.filter(s => s.key !== 'overview');
   const overview = FIELDS.basic.find(s => s.key === 'overview');
   return `<div class="form-grid">${specs.map(s => renderField(s, state.project[s.key], `data-bind="project.${s.key}"`)).join('')}
+    ${chipRowHtml('RERA Number(s)', 'Add one or more RERA registration numbers — e.g. one per phase or tower.', state.project.rera_numbers, 'project.rera_numbers', 'pf-rera-input')}
     ${renderField(overview, state.project.overview, `data-bind="project.overview"`)}
     ${chipRowHtml('Project Highlights', 'Short, factual highlights — separate from Pros & Cons', state.project.highlights, 'project.highlights', 'pf-highlight-input')}
     <div class="field full"><div class="hint">Project Status, RERA Possession Date and Target Possession Date are set together in "Status &amp; Construction" — kept in one place so they can't fall out of sync.</div></div>
@@ -992,9 +1005,22 @@ const NEARBY_CATEGORY_EXAMPLES = {
   business_employment: { type: 'IT Park', name: 'Hinjewadi IT Park' },
   lifestyle_entertainment: { type: 'Multiplex', name: 'PVR Cinemas' }
 };
+// Preset "Type" options per nearby-location category — transport gets the full list asked
+// for; the other categories get a sensible starter list too so the dropdown behaves the same
+// way everywhere, but allowCustomValue (below) means none of this is a hard enum — typing
+// something not on the list is still fine and saved as-is.
+const NEARBY_TYPE_PRESETS = {
+  transport: ['Metro Station', 'Railway Station', 'Bus Stop', 'Airport', 'Highway / Expressway Access'],
+  education: ['School', 'College', 'University', 'Coaching Institute'],
+  healthcare: ['Hospital', 'Clinic', 'Diagnostic Center', 'Pharmacy'],
+  shopping_retail: ['Mall', 'Supermarket', 'Market / Bazaar', 'Showroom'],
+  business_employment: ['IT Park', 'Business Park', 'Corporate Office', 'SEZ'],
+  lifestyle_entertainment: ['Multiplex / Cinema', 'Restaurant / Cafe', 'Club / Lounge', 'Park / Garden']
+};
 const NEARBY_FIELDS = [
   { key: 'category', label: 'Category', req: true, type: 'select', options: NEARBY_CATEGORIES },
-  { key: 'location_type', label: 'Type', placeholder: n => `e.g. ${(NEARBY_CATEGORY_EXAMPLES[n?.category]?.type) || 'Metro Station'}` },
+  { key: 'location_type', label: 'Type', type: 'select', allowCustomValue: true,
+    options: n => (NEARBY_TYPE_PRESETS[n?.category] || []).map(v => ({ value: v, label: v })) },
   { key: 'name', label: 'Name', req: true, placeholder: n => `e.g. ${(NEARBY_CATEGORY_EXAMPLES[n?.category]?.name) || 'Baner Metro Station'}` },
   { key: 'distance', label: 'Distance', type: 'number' },
   { key: 'distance_unit', label: 'Distance Unit', type: 'select', options: enumOpts(['m', 'km']) },
@@ -1160,6 +1186,7 @@ function renderReview() {
   const city = lookups.cities.find(c => c.id === p.city_id)?.name || '—';
   const loc = lookups.localities.find(l => l.id === p.locality_id)?.name || '—';
   const agent = lookups.agents.find(a => a.id === p.agent_id)?.full_name || '—';
+  const relManager = lookups.profiles.find(u => u.id === p.relationship_manager_id)?.full_name || '—';
   const section = (title, rows, stepNum) => `<div class="review-card">
     <div class="review-card-head"><b>${esc(title)}</b><button type="button" data-goto="${stepNum}">Edit</button></div>
     <dl>${rows.map(([k, v]) => `<div><dt>${esc(k)}:</dt> <dd>${esc(v || '—')}</dd></div>`).join('')}</dl>
@@ -1167,7 +1194,7 @@ function renderReview() {
   const range = priceRangeFromConfigs();
   const priceText = range.min == null ? 'Not set' : (range.min === range.max ? fmtPriceWords(range.min) : `${fmtPriceWords(range.min)} – ${fmtPriceWords(range.max)}`);
   const html = `<div class="review-grid">
-    ${section('1. Basic Information', [['Project', p.project_name], ['Developer', dev], ['Type', p.project_type], ['Highlights', `${p.highlights.length} added`]], 1)}
+    ${section('1. Basic Information', [['Project', p.project_name], ['Developer', dev], ['Type', p.project_type], ['RERA Number(s)', p.rera_numbers.length ? p.rera_numbers.join(', ') : '—'], ['Highlights', `${p.highlights.length} added`]], 1)}
     ${section('2. Project Location', [['Address', p.address], ['City / Locality', `${loc}, ${city}`], ['Pincode', p.pincode]], 2)}
     ${section('3. Size & Scale', [['Land Area', p.total_land_area ? `${p.total_land_area} ${p.land_area_unit}` : '—'], ['Towers', p.total_towers_buildings], ['Total Units', p.total_residential_units]], 3)}
     ${section('4. Status & Construction', [['Status', p.status], ['Phases', state.phases.length || '—']], 4)}
@@ -1182,10 +1209,10 @@ function renderReview() {
     ${section('13. Litigation & Legal', [['Entries', `${state.litigation.length}`]], 13)}
     ${section('14. Construction Updates', [['Updates', `${state.updates.length}`]], 14)}
     ${section('15. Project FAQ', [['FAQs added', `${state.faqs.length}`]], 15)}
-    ${section('16. Contact / Enquiry', [['Assigned Agent', agent]], 16)}
+    ${section('16. Contact / Enquiry', [['Assigned Agent', agent], ['Relationship Manager', relManager]], 16)}
     ${section('17. SEO', [['Slug', p.slug], ['SEO Title', p.seo_title]], 17)}
   </div>
-  <div class="confirm-row"><input type="checkbox" id="pf-confirm"><label for="pf-confirm">I confirm this information is accurate and ready for verification. <span class="req">*</span></label></div>`;
+  <div class="confirm-row"><input type="checkbox" id="pf-confirm"><label for="pf-confirm">I confirm this information is accurate${originalModerationStatus === 'published' ? '' : ' and ready for verification'}. <span class="req">*</span></label></div>`;
   return html;
 }
 
@@ -1474,7 +1501,7 @@ function projectPayload() {
   const str = v => (v === '' ? null : v);
   return {
     project_name: p.project_name, developer_id: p.developer_id, project_type: p.project_type,
-    launch_date: str(p.launch_date), rera_number: str(p.rera_number), overview: p.overview, highlights: p.highlights || [],
+    launch_date: str(p.launch_date), rera_numbers: p.rera_numbers || [], rera_number: str((p.rera_numbers || [])[0] || null), overview: p.overview, highlights: p.highlights || [],
     city_id: p.city_id, locality_id: p.locality_id, address: p.address, pincode: p.pincode,
     latitude: num(p.latitude), longitude: num(p.longitude),
     total_land_area: num(p.total_land_area), land_area_unit: str(p.land_area_unit),
@@ -1490,7 +1517,7 @@ function projectPayload() {
     gst_applicable: !!p.gst_applicable, price_disclaimer: str(p.price_disclaimer), registration_stamp_duty_disclaimer: str(p.registration_stamp_duty_disclaimer),
     flooring: str(p.flooring), doors: str(p.doors), windows: str(p.windows), kitchen: str(p.kitchen), bathroom: str(p.bathroom),
     electrical: str(p.electrical), walls_paint: str(p.walls_paint), balcony: str(p.balcony), other_specifications: str(p.other_specifications),
-    agent_id: str(p.agent_id),
+    agent_id: str(p.agent_id), relationship_manager_id: str(p.relationship_manager_id),
     seo_title: str(p.seo_title), seo_description: str(p.seo_description), canonical_url: str(p.canonical_url),
     updated_by: currentUser.id
   };
@@ -1661,7 +1688,7 @@ async function saveCurrentAndDraft() {
     if (stepIndex < FIRST_SAVE_AFTER_STEP) {
       toast('Fill Basic Info, Location and Status & Construction to save — kept locally for now.');
     } else if (ok !== false) {
-      toast('Saved as draft');
+      toast(isEdit ? 'Updated' : 'Saved as draft');
       renderStepBody();
     }
   } finally {
@@ -1678,12 +1705,24 @@ async function submitForVerification() {
       const ok = await persistStep(i);
       if (!ok) return;
     }
+    // Editing an already-published listing just saves the changes in place — sending it
+    // back into the moderation queue on every edit would make routine corrections (a typo, a
+    // price update) disappear off the live site until someone re-approves them. Only a
+    // project that hasn't been published yet (draft / changes_required / rejected / a brand
+    // new one) actually needs this to move it into review.
+    if (originalModerationStatus === 'published') {
+      const { error } = await sb.from('residential_projects').update({ updated_by: currentUser.id }).eq('id', projectId);
+      if (error) { toast(error.message, true); return; }
+      toast('Project updated');
+      closeForm();
+      return;
+    }
     const { error } = await sb.from('residential_projects').update({
       moderation_status: 'pending_verification', submitted_at: new Date().toISOString(), updated_by: currentUser.id
     }).eq('id', projectId);
     if (error) { toast(error.message, true); return; }
     await sb.from('residential_project_moderation_history').insert({
-      project_id: projectId, from_status: 'draft', to_status: 'pending_verification', action: 'submitted', changed_by: currentUser.id
+      project_id: projectId, from_status: originalModerationStatus || 'draft', to_status: 'pending_verification', action: 'submitted', changed_by: currentUser.id
     });
     toast('Submitted for verification');
     showSubmitSuccess();
