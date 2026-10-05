@@ -43,6 +43,7 @@ The browser application uses only the Supabase publishable key. A service-role k
 - residential_project_pros_cons
 - residential_enquiries
 - residential_project_moderation_history
+- residential_project_blogs
 
 All current public tables have RLS enabled.
 

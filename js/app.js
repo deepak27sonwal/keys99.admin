@@ -11,6 +11,7 @@ import {
 import { archivePage } from './archive.js';
 import { reportsPage } from './reports.js';
 import { adminsPage } from './admins.js';
+import { blogPage } from './blog.js';
 
 const $ = s => document.querySelector(s);
 const content = $('#content');
@@ -944,6 +945,7 @@ const PAGES = {
   'report-agents': () => reportsPage(content, navigate, 'agents'),
   'report-moderation': () => reportsPage(content, navigate, 'moderation'),
   admins: () => adminsPage(content, navigate, isSuperAdmin),
+  blog: () => blogPage(content, currentUser),
   settings: settingsPage,
   profile: profilePage
 };
