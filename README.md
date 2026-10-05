@@ -25,6 +25,7 @@ The browser application uses only the Supabase publishable key. A service-role k
 - cities
 - localities
 - agents
+- relationship_managers
 
 ### Residential
 
