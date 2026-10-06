@@ -37,7 +37,7 @@ let state, projectId, stepIndex, isEdit;
 // listing apart from a first-time submission, so saving changes to a live listing doesn't
 // knock it back into the moderation queue (see submitForVerification()).
 let originalModerationStatus = null;
-let lookups = { developers: [], cities: [], localities: [], agents: [], relationshipManagers: [], projects: [] };
+let lookups = { developers: [], cities: [], localities: [], agents: [], relationshipManagers: [], projects: [], presets: null, settings: null };
 let touched = false;
 let historyPushCount = 0;
 let intentionalExit = false;
@@ -222,6 +222,18 @@ const DEFAULTS = {
 
 const BHK_PRESET = ['1 BHK', '1.5 BHK', '2 BHK', '2.5 BHK', '3 BHK', '3.5 BHK', '4 BHK', '4.5 BHK', '5 BHK'];
 
+// The preset chips/options below are editable from Settings → Lookup Lists (lookup_options
+// table). The hardcoded constants above stay as the fallback: a list falls back to them
+// whenever lookup_options couldn't be read or has no active rows for it, so the form never
+// ends up with an empty picker.
+function presetList(listKey, groupKey, fallback) {
+  const rows = lookups.presets?.[`${listKey}:${groupKey || ''}`];
+  return rows?.length ? rows : (fallback || []);
+}
+const bhkPresets = () => presetList('bhk', null, BHK_PRESET);
+const specPresets = key => SPEC_PRESETS[key] ? presetList('spec', key, SPEC_PRESETS[key]) : null;
+const amenityPresets = cat => presetList('amenity', cat.key, cat.preset);
+
 const PHASE_FIELDS = [
   { key: 'phase_name', label: 'Phase Name', req: true, placeholder: 'e.g. Phase 1' },
   { key: 'construction_start_date', label: 'Construction Start Date', type: 'date' },
@@ -277,6 +289,9 @@ export async function openProjectForm(rootEl, user, existingId, exitCb, prefill)
     if (!state) { content.innerHTML = `<div class="empty">Project not found.</div>`; return; }
   } else {
     state = freshState();
+    if (lookups.settings?.default_city_id && lookups.cities.some(c => c.id === lookups.settings.default_city_id)) {
+      state.project.city_id = lookups.settings.default_city_id;
+    }
     if (prefill) Object.assign(state.project, prefill);
   }
 
@@ -332,13 +347,15 @@ export function handleWizardPopState(e) {
 }
 
 async function loadLookups() {
-  const [dev, city, loc, agt, rm, proj] = await Promise.all([
+  const [dev, city, loc, agt, rm, proj, opts, settings] = await Promise.all([
     sb.from('developers').select('id,name').order('name'),
     sb.from('cities').select('id,name').order('name'),
     sb.from('localities').select('id,name,city_id').order('name'),
     sb.from('agents').select('id,full_name').order('full_name'),
     sb.from('relationship_managers').select('id,full_name,rm_code').eq('status', 'active').order('full_name'),
-    sb.from('residential_projects').select('id,project_name,developer_id').is('deleted_at', null).order('project_name')
+    sb.from('residential_projects').select('id,project_name,developer_id').is('deleted_at', null).order('project_name'),
+    sb.from('lookup_options').select('list_key,group_key,label').eq('is_active', true).order('sort_order').order('label'),
+    sb.from('app_settings').select('default_city_id').eq('id', 1).maybeSingle()
   ]);
   lookups.developers = dev.data || [];
   lookups.cities = city.data || [];
@@ -346,6 +363,9 @@ async function loadLookups() {
   lookups.agents = agt.data || [];
   lookups.relationshipManagers = rm.data || [];
   lookups.projects = proj.data || [];
+  lookups.presets = {};
+  for (const o of opts.data || []) (lookups.presets[`${o.list_key}:${o.group_key || ''}`] ||= []).push(o.label);
+  lookups.settings = settings.data || null;
 }
 
 async function loadProject(id) {
@@ -864,8 +884,9 @@ function areaUnitLabel(u) {
 // toggling membership.
 function bhkTypeChipsHtml(value, idx) {
   const val = value || '';
-  const presetChips = BHK_PRESET.map(v => `<span class="chip${val === v ? ' active' : ''}" data-set-bhktype="${idx}" data-val="${esc(v)}" style="cursor:pointer">${esc(v)}</span>`).join('');
-  const customChip = val && !BHK_PRESET.includes(val) ? `<span class="chip active">${esc(val)}</span>` : '';
+  const presets = bhkPresets();
+  const presetChips = presets.map(v => `<span class="chip${val === v ? ' active' : ''}" data-set-bhktype="${idx}" data-val="${esc(v)}" style="cursor:pointer">${esc(v)}</span>`).join('');
+  const customChip = val && !presets.includes(val) ? `<span class="chip active">${esc(val)}</span>` : '';
   const inputId = `pf-cfg-bhk-${idx}`;
   return `<div class="field full">
     <label>BHK <span class="req">*</span></label>
@@ -930,11 +951,12 @@ function renderTowers() {
 
 function bhkChipsHtml(values, bindPath, idx) {
   const vals = values || [];
-  const presetChips = BHK_PRESET.map(v => {
+  const presets = bhkPresets();
+  const presetChips = presets.map(v => {
     const on = vals.includes(v);
     return `<span class="chip${on ? ' active' : ''}" data-toggle-bhk="${bindPath}" data-val="${esc(v)}" style="cursor:pointer">${esc(v)}</span>`;
   }).join('');
-  const customVals = vals.filter(v => !BHK_PRESET.includes(v));
+  const customVals = vals.filter(v => !presets.includes(v));
   const customChips = customVals.map(v => {
     const i = vals.indexOf(v);
     return `<span class="chip active">${esc(v)}<span style="cursor:pointer;margin-left:6px" data-remove-chip="${bindPath}" data-idx="${i}">✕</span></span>`;
@@ -969,7 +991,7 @@ function toggleSpecChip(field, value) {
 
 function renderSpecs() {
   const fields = FIELDS.specs.map(s => {
-    const preset = SPEC_PRESETS[s.key];
+    const preset = specPresets(s.key);
     if (!preset) return renderField(s, state.project[s.key], `data-bind="project.${s.key}"`);
     const selected = specTokens(state.project[s.key]);
     const chips = preset.map(v => `<span class="chip${selected.includes(v) ? ' active' : ''}" data-toggle-spec-chip="${s.key}" data-val="${esc(v)}" style="cursor:pointer">${esc(v)}</span>`).join('');
@@ -986,11 +1008,12 @@ function renderSpecs() {
 function renderAmenities() {
   const sections = AMENITY_CATEGORIES.map(cat => {
     const existing = state.amenities.filter(a => a.category === cat.key);
-    const presetChips = cat.preset.map(name => {
+    const preset = amenityPresets(cat);
+    const presetChips = preset.map(name => {
       const on = existing.some(a => a.amenity_name === name);
       return `<span class="chip${on ? ' active' : ''}" data-toggle-amenity="${cat.key}" data-name="${esc(name)}" style="cursor:pointer">${esc(name)}</span>`;
     }).join('');
-    const customExtra = existing.filter(a => !cat.preset.includes(a.amenity_name));
+    const customExtra = existing.filter(a => !preset.includes(a.amenity_name));
     const customChips = customExtra.map(a => {
       const idx = state.amenities.indexOf(a);
       return `<span class="chip active">${esc(a.amenity_name)}<span style="cursor:pointer;margin-left:6px" data-remove-item="amenities" data-idx="${idx}">✕</span></span>`;
@@ -1027,10 +1050,20 @@ const NEARBY_TYPE_PRESETS = {
   business_employment: ['IT Park', 'Business Park', 'Corporate Office', 'SEZ'],
   lifestyle_entertainment: ['Multiplex / Cinema', 'Restaurant / Cafe', 'Club / Lounge', 'Park / Garden']
 };
+
+// The editable preset lists, as Settings → Lookup Lists shows them. The group keys are fixed
+// here (they're the DB's category/field values); only the items inside each group live in
+// lookup_options.
+export const LOOKUP_LISTS = [
+  { key: 'bhk', label: 'BHK Types', groups: null },
+  { key: 'spec', label: 'Specifications', groups: FIELDS.specs.filter(s => SPEC_PRESETS[s.key]).map(s => ({ key: s.key, label: s.label })) },
+  { key: 'amenity', label: 'Amenities', groups: AMENITY_CATEGORIES.map(c => ({ key: c.key, label: c.label })) },
+  { key: 'nearby_type', label: 'Nearby Location Types', groups: enumOpts(Object.keys(NEARBY_TYPE_PRESETS)).map(o => ({ key: o.value, label: o.label })) }
+];
 const NEARBY_FIELDS = [
   { key: 'category', label: 'Category', req: true, type: 'select', options: NEARBY_CATEGORIES },
   { key: 'location_type', label: 'Type', type: 'select', allowCustomValue: true,
-    options: n => (NEARBY_TYPE_PRESETS[n?.category] || []).map(v => ({ value: v, label: v })) },
+    options: n => presetList('nearby_type', n?.category, NEARBY_TYPE_PRESETS[n?.category]).map(v => ({ value: v, label: v })) },
   { key: 'name', label: 'Name', req: true, placeholder: n => `e.g. ${(NEARBY_CATEGORY_EXAMPLES[n?.category]?.name) || 'Baner Metro Station'}` },
   { key: 'distance', label: 'Distance', type: 'number' },
   { key: 'distance_unit', label: 'Distance Unit', type: 'select', options: enumOpts(['m', 'km']) },

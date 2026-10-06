@@ -26,6 +26,8 @@ The browser application uses only the Supabase publishable key. A service-role k
 - localities
 - agents
 - relationship_managers
+- app_settings (single row: enquiry contact defaults, default city)
+- lookup_options (editable preset lists for the project form: BHK types, specifications, amenities, nearby location types)
 
 ### Residential
 

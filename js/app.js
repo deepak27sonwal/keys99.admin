@@ -12,6 +12,7 @@ import { archivePage } from './archive.js';
 import { reportsPage } from './reports.js';
 import { adminsPage } from './admins.js';
 import { blogPage } from './blog.js';
+import { settingsPage } from './settings.js';
 
 const $ = s => document.querySelector(s);
 const content = $('#content');
@@ -961,13 +962,6 @@ async function moderationPage() {
 
 /* ---------------- Settings & Profile ---------------- */
 
-async function settingsPage() {
-  content.innerHTML = pageHead('Settings', 'Admin account and application settings') + `
-    <div class="panel"><div class="panel-head"><h2>System</h2></div>
-      <div class="notice">Authentication and authorization are controlled by Supabase Auth and the <code>user_roles</code> table. No service-role key is stored in this frontend — access is enforced entirely by database row-level security.</div>
-    </div>`;
-}
-
 async function profilePage() {
   const rolesText = currentRoles.length ? currentRoles.join(', ') : '—';
   content.innerHTML = pageHead('Profile', 'Your account details') + `
@@ -1000,7 +994,7 @@ const PAGES = {
   'report-moderation': () => reportsPage(content, navigate, 'moderation'),
   admins: () => adminsPage(content, navigate, isSuperAdmin),
   blog: () => blogPage(content, currentUser),
-  settings: settingsPage,
+  settings: () => settingsPage(content, currentUser, isSuperAdmin),
   profile: profilePage
 };
 
