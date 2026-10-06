@@ -1,12 +1,13 @@
 import { openProjectForm, isWizardOpen, handleWizardPopState } from './project-form.js';
 import { sb } from './supabase-client.js';
-import { residentialProjectsPage } from './residential-projects.js';
+import { residentialProjectsPage, commercialProjectsPage } from './residential-projects.js';
+import { PROJECT_KINDS, KIND_KEYS, projectKind, queryAllKinds, localityEmbed, kindPill } from './project-kinds.js';
 import { openEntityForm, confirmDeleteEntity } from './entity-form.js';
 import { enhanceSelects } from './custom-select.js';
 import {
   escapeHtml, pill, fmtPrice, fmtDate, timeAgo, count, initials,
   pageHead, tablePanel, emptyRow, icon, rowActions, bindStubs, toast, customConfirm,
-  confirmArchiveProject
+  confirmArchiveProject, chooseProjectKind
 } from './utils.js';
 import { archivePage } from './archive.js';
 import { reportsPage } from './reports.js';
@@ -23,12 +24,21 @@ let isSuperAdmin = false;
 
 // Wraps the shared bindStubs() with this app's edit-project wiring — used by every page
 // rendered here that can show project rows (Dashboard's "Recent Projects" table, etc.);
-// the Residential Projects list itself lives in residential-projects.js and does its own.
+// the project lists themselves live in residential-projects.js and do their own. Each row
+// carries its kind, so edits open the right wizard and archives hit the right table.
 function bindPageStubs() {
   bindStubs(content, {
-    onEditProject: (id) => openProjectForm(content, currentUser, id, () => navigate('residential')),
-    onDeleteProject: (id, name) => confirmArchiveProject(id, name, currentUser.id, () => dashboardPage())
+    onEditProject: (id, kind) => openProjectForm(content, currentUser, id, () => navigate(projectKind(kind).routeBase), undefined, kind),
+    onDeleteProject: (id, name, kind) => confirmArchiveProject(id, name, currentUser.id, () => dashboardPage(), kind)
   });
+}
+
+// "Add Project" entry points shared by both kinds ask which kind first.
+async function addProjectFlow(prefill, exitPage) {
+  const kind = await chooseProjectKind();
+  if (!kind) return;
+  if (prefill) openProjectForm(content, currentUser, null, () => navigate(exitPage || kind), prefill, kind);
+  else navigate(kind, { openAdd: true });
 }
 
 /* ---------------- auth guard ---------------- */
@@ -61,12 +71,18 @@ async function guard() {
 /* ---------------- sidebar counts ---------------- */
 
 async function loadSidebarCounts() {
-  const [residential, enquiriesOpen, moderationPending] = await Promise.all([
-    count('residential_projects', q => q.is('deleted_at', null).eq('moderation_status', 'published')),
-    count('residential_enquiries', q => q.in('status', ['new', 'contacted', 'follow_up'])),
-    count('residential_projects', q => q.is('deleted_at', null).in('moderation_status', ['pending_verification', 'under_review', 'changes_required', 'resubmitted']))
+  const T = k => PROJECT_KINDS[k].tables;
+  const sum = arr => arr.reduce((a, b) => a + b, 0);
+  const [residential, commercial, enquiriesByKind, moderationByKind] = await Promise.all([
+    count(T('residential').project, q => q.is('deleted_at', null).eq('moderation_status', 'published')),
+    count(T('commercial').project, q => q.is('deleted_at', null).eq('moderation_status', 'published')),
+    Promise.all(KIND_KEYS.map(k => count(T(k).enquiries, q => q.in('status', ['new', 'contacted', 'follow_up'])))),
+    Promise.all(KIND_KEYS.map(k => count(T(k).project, q => q.is('deleted_at', null).in('moderation_status', ['pending_verification', 'under_review', 'changes_required', 'resubmitted']))))
   ]);
+  const enquiriesOpen = sum(enquiriesByKind);
+  const moderationPending = sum(moderationByKind);
   $('#count-residential').textContent = residential;
+  $('#count-commercial').textContent = commercial;
   $('#count-enquiries').textContent = enquiriesOpen;
   $('#count-moderation').textContent = moderationPending;
   $('#notif-dot').hidden = moderationPending === 0;
@@ -184,9 +200,11 @@ async function loadOverviewChart(period) {
   // not every project regardless of draft/archived state. A flat line is correct, not a bug:
   // it means no project was newly published within that window, which for "Today" on a
   // catalog that hasn't changed today is the honest answer.
-  const residentialSeries = await Promise.all(buckets.map(b => count('residential_projects', q =>
+  const series = table => Promise.all(buckets.map(b => count(table, q =>
     q.is('deleted_at', null).eq('moderation_status', 'published').lte('published_at', b.end.toISOString()))));
-  const commercialSeries = buckets.map(() => 0); // commercial table doesn't exist yet
+  const [residentialSeries, commercialSeries] = await Promise.all([
+    series(PROJECT_KINDS.residential.tables.project), series(PROJECT_KINDS.commercial.tables.project)
+  ]);
   return buildOverviewChart(residentialSeries, commercialSeries, buckets.map(b => b.label));
 }
 
@@ -221,29 +239,39 @@ async function dashboardPage() {
 
   const MOD_STATUSES = ['published', 'under_review', 'pending_verification', 'changes_required', 'draft'];
 
+  // Every project/enquiry figure below covers both kinds — a count per kind's table, summed.
+  const sumKinds = (tableKey, modifier) => Promise.all(KIND_KEYS.map(k => count(PROJECT_KINDS[k].tables[tableKey], modifier))).then(ns => ns.reduce((a, b) => a + b, 0));
+  const newestFirst = (rows, col, n) => rows.sort((a, b) => new Date(b[col]) - new Date(a[col])).slice(0, n);
+
   const [
-    residentialTotal, developersTotal, agentsTotal, agentsVerified,
+    residentialTotal, commercialTotal, developersTotal, agentsTotal, agentsVerified,
     enquiriesTotal, enquiriesNew, citiesTotal, localitiesTotal,
-    pendingModeration, [published, underReview, pendingVerification, changesRequired, draft],
+    pendingModeration, [published, underReview, pendingVerification, changesRequired, draft], residentialDrafts,
     recentProjects, recentEnquiries, recentHistory
   ] = await Promise.all([
-    count('residential_projects', q => q.is('deleted_at', null)),
+    count(PROJECT_KINDS.residential.tables.project, q => q.is('deleted_at', null)),
+    count(PROJECT_KINDS.commercial.tables.project, q => q.is('deleted_at', null)),
     count('developers'),
     count('agents'),
     count('agents', q => q.eq('verified', true)),
-    count('residential_enquiries'),
-    count('residential_enquiries', q => q.eq('status', 'new')),
+    sumKinds('enquiries'),
+    sumKinds('enquiries', q => q.eq('status', 'new')),
     count('cities'),
     count('localities'),
-    count('residential_projects', q => q.is('deleted_at', null).in('moderation_status', ['pending_verification', 'under_review', 'changes_required', 'resubmitted'])),
-    Promise.all(MOD_STATUSES.map(s => count('residential_projects', q => q.is('deleted_at', null).eq('moderation_status', s)))),
-    sb.from('residential_projects').select('id,project_code,project_name,project_type,status,moderation_status,starting_price,price_on_request,cities(name),localities!residential_projects_locality_id_fkey(name)').is('deleted_at', null).order('updated_at', { ascending: false }).limit(4),
-    sb.from('residential_enquiries').select('id,contact_person,phone,enquiry_type,status,created_at,residential_projects(project_name)').order('created_at', { ascending: false }).limit(4),
-    sb.from('residential_project_moderation_history').select('id,to_status,action,changed_at,residential_projects(project_name)').order('changed_at', { ascending: false }).limit(5)
+    sumKinds('project', q => q.is('deleted_at', null).in('moderation_status', ['pending_verification', 'under_review', 'changes_required', 'resubmitted'])),
+    Promise.all(MOD_STATUSES.map(s => sumKinds('project', q => q.is('deleted_at', null).eq('moderation_status', s)))),
+    count(PROJECT_KINDS.residential.tables.project, q => q.is('deleted_at', null).eq('moderation_status', 'draft')),
+    queryAllKinds(K => sb.from(K.tables.project).select(`id,project_code,project_name,project_type,status,moderation_status,starting_price,price_on_request,updated_at,cities(name),${localityEmbed(K.key)}`).is('deleted_at', null).order('updated_at', { ascending: false }).limit(4)),
+    queryAllKinds(K => sb.from(K.tables.enquiries).select(`id,contact_person,phone,enquiry_type,status,created_at,project:${K.tables.project}(project_name)`).order('created_at', { ascending: false }).limit(4)),
+    queryAllKinds(K => sb.from(K.tables.history).select(`id,to_status,action,changed_at,project:${K.tables.project}(project_name)`).order('changed_at', { ascending: false }).limit(5))
   ]);
+  recentProjects.data = newestFirst(recentProjects.data, 'updated_at', 4);
+  recentEnquiries.data = newestFirst(recentEnquiries.data, 'created_at', 4);
+  recentHistory.data = newestFirst(recentHistory.data, 'changed_at', 5);
 
   const chartHtml = await loadOverviewChart('Last 6 Months');
-  const totalProjects = residentialTotal; // commercial not counted yet
+  const totalProjects = residentialTotal + commercialTotal;
+  const pct = n => (totalProjects ? ' · ' + Math.round(n / totalProjects * 100) + '%' : '');
   const now2 = new Date();
 
   content.innerHTML = `
@@ -254,12 +282,12 @@ async function dashboardPage() {
 
     <div class="kpi-row">
       <div class="kpi kpi-link" data-nav="residential"><span class="kpi-icon green">${icon('home', 17)}</span><div class="value">${residentialTotal}</div><div class="label">Residential Projects</div><div class="trend"><span>All time</span></div></div>
-      <div class="kpi kpi-link" data-nav="commercial"><span class="kpi-icon blue">${icon('building', 17)}</span><div class="value">—</div><div class="label">Commercial Projects</div><div class="trend flat"><span>Coming soon</span></div></div>
+      <div class="kpi kpi-link" data-nav="commercial"><span class="kpi-icon blue">${icon('building', 17)}</span><div class="value">${commercialTotal}</div><div class="label">Commercial Projects</div><div class="trend"><span>All time</span></div></div>
       <div class="kpi kpi-link" data-nav="developers"><span class="kpi-icon teal">${icon('developer', 17)}</span><div class="value">${developersTotal}</div><div class="label">Developers</div><div class="trend"><span>All time</span></div></div>
       <div class="kpi kpi-link" data-nav="agents"><span class="kpi-icon purple">${icon('agent', 17)}</span><div class="value">${agentsTotal}</div><div class="label">Agents</div><div class="trend">${agentsVerified} <span>verified</span></div></div>
       <div class="kpi kpi-link" data-nav="moderation"><span class="kpi-icon warn">${icon('clock', 17)}</span><div class="value">${pendingModeration}</div><div class="label">Pending Moderation</div><div class="trend flat">Needs <span>review</span></div></div>
       <div class="kpi kpi-link" data-nav="enquiries"><span class="kpi-icon gold">${icon('mail', 17)}</span><div class="value">${enquiriesTotal}</div><div class="label">Enquiries</div><div class="trend">${enquiriesNew} <span>new</span></div></div>
-      <div class="kpi kpi-link" data-nav="residential" data-filter="draft"><span class="kpi-icon muted">${icon('edit', 17)}</span><div class="value">${draft}</div><div class="label">Draft Projects</div><div class="trend flat"><span>Continue editing</span></div></div>
+      <div class="kpi kpi-link" data-nav="${residentialDrafts || draft === 0 ? 'residential' : 'commercial'}" data-filter="draft"><span class="kpi-icon muted">${icon('edit', 17)}</span><div class="value">${draft}</div><div class="label">Draft Projects</div><div class="trend flat"><span>Continue editing</span></div></div>
       <div class="kpi kpi-link" data-nav="cities"><span class="kpi-icon pink">${icon('pin', 17)}</span><div class="value">${citiesTotal}</div><div class="label">Cities</div><div class="trend"><span>Coverage areas</span></div></div>
       <div class="kpi kpi-link" data-nav="cities"><span class="kpi-icon cyan">${icon('layers', 17)}</span><div class="value">${localitiesTotal}</div><div class="label">Localities</div><div class="trend"><span>All cities</span></div></div>
     </div>
@@ -287,8 +315,8 @@ async function dashboardPage() {
           <div class="panel donut-panel">
             <div class="panel-head"><h2>Project Mix</h2></div>
             ${donut(
-              [{ label: 'Residential', value: residentialTotal, color: 'var(--green)', text: `${residentialTotal}${totalProjects ? ' · ' + Math.round(residentialTotal / totalProjects * 100) + '%' : ''}` },
-               { label: 'Commercial', value: 0, color: 'var(--gold)', text: 'Coming soon' }],
+              [{ label: 'Residential', value: residentialTotal, color: 'var(--green)', text: `${residentialTotal}${pct(residentialTotal)}` },
+               { label: 'Commercial', value: commercialTotal, color: 'var(--gold)', text: `${commercialTotal}${pct(commercialTotal)}` }],
               totalProjects, 'TOTAL', 'sm'
             )}
           </div>
@@ -301,7 +329,7 @@ async function dashboardPage() {
                { label: 'Pending', value: pendingVerification, color: 'var(--gold)' },
                { label: 'Changes Req.', value: changesRequired, color: 'var(--rose)' },
                { label: 'Draft', value: draft, color: 'var(--muted)' }],
-              residentialTotal, 'PROJECTS', 'sm'
+              totalProjects, 'PROJECTS', 'sm'
             )}
           </div>
         </div>
@@ -313,19 +341,19 @@ async function dashboardPage() {
         </div>
 
         <div class="panel dash-tab-panel active" data-tab-panel="projects">
-          <div class="panel-head"><h2>Recent Residential Projects</h2><button class="panel-link" data-nav="residential">View All →</button></div>
+          <div class="panel-head"><h2>Recent Projects</h2><button class="panel-link" data-nav="residential">View All →</button></div>
           <div class="table-wrap"><table>
             <thead><tr><th>Project</th><th>Type</th><th>Location</th><th>Starting Price</th><th>Status</th><th>Moderation</th><th>Actions</th></tr></thead>
             <tbody>${(recentProjects.data || []).length ? recentProjects.data.map(p => `
               <tr>
-                <td><div class="proj-cell"><span class="proj-thumb">${icon('home', 16)}</span><div><div class="proj-name">${escapeHtml(p.project_name)}</div><div class="proj-code">${escapeHtml(p.project_code)}</div></div></div></td>
-                <td>${escapeHtml(p.project_type || '—')}</td>
+                <td><div class="proj-cell"><span class="proj-thumb">${icon(p._kind === 'commercial' ? 'building' : 'home', 16)}</span><div><div class="proj-name">${escapeHtml(p.project_name)}</div><div class="proj-code">${escapeHtml(p.project_code)}</div></div></div></td>
+                <td>${kindPill(p._kind)} ${escapeHtml((p.project_type || '—').replace(/_/g, ' '))}</td>
                 <td>${escapeHtml(p.localities?.name || '—')}${p.cities?.name ? ', ' + escapeHtml(p.cities.name) : ''}</td>
                 <td>${fmtPrice(p.starting_price, p.price_on_request)}</td>
                 <td>${escapeHtml((p.status || '—').replace(/_/g, ' '))}</td>
                 <td>${pill(p.moderation_status)}</td>
-                <td>${rowActions('project', p.id, p.project_name, isSuperAdmin)}</td>
-              </tr>`).join('') : emptyRow(7, 'No residential projects yet.')}
+                <td>${rowActions('project', p.id, p.project_name, isSuperAdmin, p._kind)}</td>
+              </tr>`).join('') : emptyRow(7, 'No projects yet.')}
             </tbody>
           </table></div>
         </div>
@@ -337,7 +365,7 @@ async function dashboardPage() {
             <tbody>${(recentEnquiries.data || []).length ? recentEnquiries.data.map(e => `
               <tr>
                 <td>${escapeHtml(e.contact_person)}</td><td>${escapeHtml(e.phone)}</td>
-                <td>${escapeHtml(e.residential_projects?.project_name || '—')}</td>
+                <td>${escapeHtml(e.project?.project_name || '—')}</td>
                 <td>${escapeHtml((e.enquiry_type || '—').replace(/_/g, ' '))}</td>
                 <td>${fmtDate(e.created_at)}</td><td>${pill(e.status)}</td>
                 <td><button class="icon-btn" data-stub="view">${icon('eye', 13)}</button></td>
@@ -382,28 +410,18 @@ function buildActivity(historyRows, enquiryRows) {
   const items = [];
   (historyRows || []).forEach(h => items.push({
     time: h.changed_at,
-    text: `<b>${escapeHtml(h.residential_projects?.project_name || 'A project')}</b> moved to ${escapeHtml((h.to_status || '').replace(/_/g, ' '))}`,
+    text: `<b>${escapeHtml(h.project?.project_name || 'A project')}</b> moved to ${escapeHtml((h.to_status || '').replace(/_/g, ' '))}`,
     color: h.to_status === 'changes_required' ? 'var(--danger)' : h.to_status === 'under_review' ? 'var(--warn)' : 'var(--green)'
   }));
   (enquiryRows || []).forEach(e => items.push({
     time: e.created_at,
-    text: `<b>${escapeHtml(e.contact_person)}</b> submitted enquiry for <b>${escapeHtml(e.residential_projects?.project_name || 'a project')}</b>`,
+    text: `<b>${escapeHtml(e.contact_person)}</b> submitted enquiry for <b>${escapeHtml(e.project?.project_name || 'a project')}</b>`,
     color: 'var(--green)'
   }));
   items.sort((a, b) => new Date(b.time) - new Date(a.time));
   const top = items.slice(0, 5);
   if (!top.length) return `<div class="empty">No activity yet.</div>`;
   return top.map(i => `<div class="activity-item"><span class="activity-dot" style="background:${i.color}"></span><div><div class="activity-text">${i.text}</div><div class="activity-time">${timeAgo(i.time)}</div></div></div>`).join('');
-}
-
-/* ---------------- Commercial Projects (schema not built yet) ---------------- */
-
-async function commercialPage() {
-  content.innerHTML = pageHead('Commercial Projects', 'Office, retail and mixed-use commercial listings') + `
-    <div class="panel">
-      <div class="panel-head"><h2>Coming Soon</h2></div>
-      <div class="notice">Commercial project listings aren't built yet — there's no <code>commercial_projects</code> table in the database. This section will be added later, mirroring the residential project structure (configurations, media, amenities, moderation workflow, etc.).</div>
-    </div>`;
 }
 
 /* ---------------- Developers ---------------- */
@@ -430,7 +448,7 @@ async function developersPage() {
 
   $('#add-developer')?.addEventListener('click', () => openDeveloperForm(null));
   content.querySelectorAll('[data-add-project-for]').forEach(btn => {
-    btn.addEventListener('click', () => openProjectForm(content, currentUser, null, () => navigate('developers'), { developer_id: btn.dataset.addProjectFor }));
+    btn.addEventListener('click', () => addProjectFlow({ developer_id: btn.dataset.addProjectFor }, 'developers'));
   });
   bindStubs(content, {
     onEditEntity: (kind, id) => kind === 'developer' && openDeveloperForm(id),
@@ -462,7 +480,7 @@ function openDeveloperForm(id) {
 /* ---------------- Cities & Localities ---------------- */
 
 async function citiesPage() {
-  content.innerHTML = pageHead('Cities & Localities', 'Coverage areas for residential listings') + `<div class="empty">Loading…</div>`;
+  content.innerHTML = pageHead('Cities & Localities', 'Coverage areas for project listings') + `<div class="empty">Loading…</div>`;
   const { data, error } = await sb.from('cities').select('id,name,state,is_active,localities(id)').order('name', { ascending: true }).limit(200);
 
   const toolbar = `<div class="toolbar"><button class="btn-primary" id="add-city">+ Add City</button></div>`;
@@ -477,7 +495,7 @@ async function citiesPage() {
         <td>${rowActions('city', c.id)}</td>
       </tr>`).join('') : emptyRow(5, 'No cities added yet.'));
 
-  content.innerHTML = pageHead('Cities & Localities', 'Coverage areas for residential listings') +
+  content.innerHTML = pageHead('Cities & Localities', 'Coverage areas for project listings') +
     tablePanel('All Cities', toolbar, ['City', 'State', 'Localities', 'Status', 'Actions'], rows);
 
   $('#add-city')?.addEventListener('click', () => openCityForm(null));
@@ -675,29 +693,31 @@ const ENQUIRY_STATUSES = ['new', 'contacted', 'follow_up', 'site_visit_scheduled
 const ENQUIRY_CLOSING_STATUSES = ['converted', 'closed', 'spam'];
 
 async function enquiriesPage(openId) {
-  content.innerHTML = pageHead('Enquiries', 'Residential project leads') + `<div class="empty">Loading…</div>`;
+  content.innerHTML = pageHead('Enquiries', 'Residential and commercial project leads') + `<div class="empty">Loading…</div>`;
   const [{ data, error }, { data: agentsList }] = await Promise.all([
-    sb.from('residential_enquiries')
-      .select('id,contact_person,phone,whatsapp,email,enquiry_type,message,preferred_contact_method,preferred_visit_date,assigned_agent_id,source,status,admin_notes,contacted_at,closed_at,created_at,residential_projects(project_name),agents(full_name)')
-      .order('created_at', { ascending: false }).limit(200),
+    queryAllKinds(K => sb.from(K.tables.enquiries)
+      .select(`id,contact_person,phone,whatsapp,email,enquiry_type,message,preferred_contact_method,preferred_visit_date,assigned_agent_id,source,status,admin_notes,contacted_at,closed_at,created_at,project:${K.tables.project}(project_name),agents(full_name)`)
+      .order('created_at', { ascending: false }).limit(200)),
     sb.from('agents').select('id,full_name').order('full_name', { ascending: true })
   ]);
+  data.sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
 
   const rows = error
-    ? emptyRow(7, error.message)
+    ? emptyRow(8, error.message)
     : (data.length ? data.map(e => `
       <tr>
         <td>${escapeHtml(e.contact_person)}</td>
         <td>${escapeHtml(e.phone)}</td>
-        <td>${escapeHtml(e.residential_projects?.project_name || '—')}</td>
+        <td>${escapeHtml(e.project?.project_name || '—')}</td>
+        <td>${kindPill(e._kind)}</td>
         <td>${escapeHtml(e.agents?.full_name || 'Unassigned')}</td>
         <td>${fmtDate(e.created_at)}</td>
         <td>${pill(e.status)}</td>
         <td><button type="button" class="icon-btn" data-view-enquiry="${e.id}">${icon('eye', 13)}</button></td>
-      </tr>`).join('') : emptyRow(7, 'No enquiries yet.'));
+      </tr>`).join('') : emptyRow(8, 'No enquiries yet.'));
 
-  content.innerHTML = pageHead('Enquiries', 'Residential project leads') +
-    tablePanel('All Enquiries', '', ['Name', 'Phone', 'Project', 'Assigned', 'Date', 'Status', 'Actions'], rows);
+  content.innerHTML = pageHead('Enquiries', 'Residential and commercial project leads') +
+    tablePanel('All Enquiries', '', ['Name', 'Phone', 'Project', 'Type', 'Assigned', 'Date', 'Status', 'Actions'], rows);
 
   const byId = Object.fromEntries((data || []).map(e => [e.id, e]));
   content.querySelectorAll('[data-view-enquiry]').forEach(btn => {
@@ -713,7 +733,7 @@ function viewEnquiry(e, agentsList, onSaved) {
   overlay.innerHTML = `
     <div class="modal-box" style="max-width:560px">
       <div class="modal-head">
-        <div><h2>${escapeHtml(e.contact_person)}</h2><p>${escapeHtml(e.residential_projects?.project_name || 'Project deleted')}</p></div>
+        <div><h2>${escapeHtml(e.contact_person)}</h2><p>${escapeHtml(e.project?.project_name || 'Project deleted')} · ${escapeHtml(projectKind(e._kind).label)}</p></div>
         <button type="button" class="modal-close" data-close>✕</button>
       </div>
       <div class="modal-body">
@@ -765,7 +785,7 @@ function viewEnquiry(e, agentsList, onSaved) {
 
     const saveBtn = overlay.querySelector('[data-save]');
     saveBtn.disabled = true;
-    const { error } = await sb.from('residential_enquiries').update(payload).eq('id', e.id);
+    const { error } = await sb.from(projectKind(e._kind).tables.enquiries).update(payload).eq('id', e.id);
     saveBtn.disabled = false;
     if (error) { toast(error.message, true); return; }
 
@@ -787,12 +807,13 @@ const MOD_TABS = [
 ];
 
 const MOD_ACTIONS = {
-  startReview: { label: 'Start Review', icon: 'refresh', toStatus: 'under_review', action: 'under_review' },
+  // `action` must be one of the moderation-history table's allowed action values.
+  startReview: { label: 'Start Review', icon: 'refresh', toStatus: 'under_review', action: 'started_review' },
   approve: { label: 'Approve & Publish', icon: 'check', toStatus: 'published', setApprovedAt: true, setPublishedAt: true, action: 'approved' },
-  requestChanges: { label: 'Request Changes', icon: 'edit', toStatus: 'changes_required', requireComment: true, action: 'changes_requested' },
+  requestChanges: { label: 'Request Changes', icon: 'edit', toStatus: 'changes_required', requireComment: true, action: 'requested_changes' },
   reject: { label: 'Reject', icon: 'close', toStatus: 'rejected', requireComment: true, action: 'rejected' },
   suspend: { label: 'Suspend', icon: 'pause', toStatus: 'suspended', requireComment: true, action: 'suspended' },
-  republish: { label: 'Republish', icon: 'check', toStatus: 'published', setPublishedAt: true, action: 'republished' },
+  republish: { label: 'Republish', icon: 'check', toStatus: 'published', setPublishedAt: true, action: 'published' },
   archive: { label: 'Archive', icon: 'archive', toStatus: 'archived', action: 'archived' },
   restore: { label: 'Restore to Draft', icon: 'refresh', toStatus: 'draft', action: 'restored' }
 };
@@ -872,7 +893,7 @@ async function viewModerationHistory(project) {
   overlay.addEventListener('click', (e) => { if (e.target === overlay) close(); });
   overlay.querySelectorAll('[data-close]').forEach(b => b.addEventListener('click', close));
 
-  const { data, error } = await sb.from('residential_project_moderation_history')
+  const { data, error } = await sb.from(projectKind(project._kind).tables.history)
     .select('id,from_status,to_status,action,comment,changed_at')
     .eq('project_id', project.id).order('changed_at', { ascending: false });
 
@@ -902,13 +923,15 @@ async function runModAction(project, actionKey, reload) {
   if (cfg.setApprovedAt) payload.approved_at = new Date().toISOString();
   if (cfg.setPublishedAt) payload.published_at = new Date().toISOString();
 
-  const { error } = await sb.from('residential_projects').update(payload).eq('id', project.id);
+  const T = projectKind(project._kind).tables;
+  const { error } = await sb.from(T.project).update(payload).eq('id', project.id);
   if (error) { toast(error.message, true); return; }
 
-  await sb.from('residential_project_moderation_history').insert({
+  const { error: histError } = await sb.from(T.history).insert({
     project_id: project.id, from_status: project.moderation_status, to_status: cfg.toStatus,
     action: cfg.action, comment, changed_by: currentUser.id
   });
+  if (histError) console.error('moderation history insert failed', histError);
 
   toast(cfg.label + ' — done');
   reload();
@@ -924,12 +947,15 @@ async function moderationPage() {
     content.innerHTML = pageHead('Moderation Queue', 'Review, approve and publish projects') + tabsHtml + `<div class="empty">Loading…</div>`;
 
     const tab = MOD_TABS.find(t => t.key === activeTab);
-    let q = sb.from('residential_projects').select('id,project_code,project_name,moderation_status,updated_at').is('deleted_at', null).order('updated_at', { ascending: false }).limit(200);
-    if (tab.statuses) q = q.in('moderation_status', tab.statuses);
-    const { data, error } = await q;
+    const { data, error } = await queryAllKinds(K => {
+      let q = sb.from(K.tables.project).select('id,project_code,project_name,moderation_status,updated_at').is('deleted_at', null).order('updated_at', { ascending: false }).limit(200);
+      if (tab.statuses) q = q.in('moderation_status', tab.statuses);
+      return q;
+    });
+    data.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
 
     const rows = error
-      ? emptyRow(4, error.message)
+      ? emptyRow(5, error.message)
       : (data.length ? data.map(p => {
         const actions = actionKeysForStatus(p.moderation_status).map(key =>
           `<button class="icon-btn" data-mod-action="${key}" data-id="${p.id}" title="${escapeHtml(MOD_ACTIONS[key].label)}">${icon(MOD_ACTIONS[key].icon, 13)}</button>`
@@ -937,18 +963,19 @@ async function moderationPage() {
         return `
       <tr>
         <td><div class="proj-name">${escapeHtml(p.project_name)}</div><div class="proj-code">${escapeHtml(p.project_code)}</div></td>
+        <td>${kindPill(p._kind)}</td>
         <td>${pill(p.moderation_status)}</td>
         <td>${fmtDate(p.updated_at)}</td>
         <td><div class="row-actions">
-          <button class="icon-btn" data-edit-project="${p.id}" title="Edit">${icon('edit', 13)}</button>
+          <button class="icon-btn" data-edit-project="${p.id}" data-project-kind="${p._kind}" title="Edit">${icon('edit', 13)}</button>
           <button class="icon-btn" data-mod-history="${p.id}" title="History">${icon('history', 13)}</button>
           ${actions}
         </div></td>
       </tr>`;
-      }).join('') : emptyRow(4, 'Nothing here.'));
+      }).join('') : emptyRow(5, 'Nothing here.'));
 
-    content.innerHTML = pageHead('Moderation Queue', 'Review, approve and publish projects') + tabsHtml +
-      tablePanel(tab.label, '', ['Project', 'Status', 'Updated', 'Actions'], rows);
+    content.innerHTML = pageHead('Moderation Queue', 'Review, approve and publish residential and commercial projects') + tabsHtml +
+      tablePanel(tab.label, '', ['Project', 'Type', 'Status', 'Updated', 'Actions'], rows);
 
     const byId = Object.fromEntries((data || []).map(p => [p.id, p]));
     content.querySelectorAll('[data-mod-tab]').forEach(btn => btn.addEventListener('click', () => { activeTab = btn.dataset.modTab; render(); }));
@@ -979,7 +1006,7 @@ async function profilePage() {
 const PAGES = {
   dashboard: dashboardPage,
   residential: (filter, openAdd, openEditId) => residentialProjectsPage(content, currentUser, navigate, filter, openAdd, isSuperAdmin, openEditId),
-  commercial: commercialPage,
+  commercial: (filter, openAdd, openEditId) => commercialProjectsPage(content, currentUser, navigate, filter, openAdd, isSuperAdmin, openEditId),
   developers: developersPage,
   cities: citiesPage,
   agents: agentsPage,
@@ -1030,9 +1057,10 @@ async function navigate(page, opts = {}) {
 // the wizard was open had nothing to recover it from and silently dropped back to Dashboard.
 function resolveHashRoute() {
   const raw = location.hash.replace(/^#\//, '');
-  const editMatch = raw.match(/^residential\/edit\/(.+)$/);
-  if (editMatch) return { page: 'residential', openEditId: decodeURIComponent(editMatch[1]) };
-  if (raw === 'residential/add') return { page: 'residential', openAdd: true };
+  const editMatch = raw.match(/^(residential|commercial)\/edit\/(.+)$/);
+  if (editMatch) return { page: editMatch[1], openEditId: decodeURIComponent(editMatch[2]) };
+  const addMatch = raw.match(/^(residential|commercial)\/add$/);
+  if (addMatch) return { page: addMatch[1], openAdd: true };
   return { page: raw || 'dashboard' };
 }
 
@@ -1049,7 +1077,10 @@ function closeSidebar() {
   $('#sidebar-backdrop').classList.remove('open');
 }
 
-document.querySelectorAll('.sb-item[data-page]').forEach(b => b.addEventListener('click', () => navigate(b.dataset.page, { openAdd: b.dataset.add === '1' })));
+document.querySelectorAll('.sb-item[data-page]').forEach(b => b.addEventListener('click', () => {
+  if (b.dataset.add === '1') addProjectFlow();
+  else navigate(b.dataset.page);
+}));
 $('#logout-btn').addEventListener('click', async () => { await sb.auth.signOut(); location.replace('./login.html'); });
 $('#menu-btn').addEventListener('click', () => {
   $('#sidebar').classList.toggle('open');
@@ -1090,18 +1121,19 @@ async function runGlobalSearch(q) {
   results.innerHTML = `<div class="sr-empty">Searching…</div>`;
 
   const like = `%${q}%`;
-  const [projects, developers, enquiries] = await Promise.all([
-    sb.from('residential_projects').select('id,project_name,project_code').is('deleted_at', null).or(`project_name.ilike.${like},project_code.ilike.${like}`).limit(5),
+  const [residentialProjects, commercialProjects, developers, enquiries] = await Promise.all([
+    sb.from(PROJECT_KINDS.residential.tables.project).select('id,project_name,project_code').is('deleted_at', null).or(`project_name.ilike.${like},project_code.ilike.${like}`).limit(5),
+    sb.from(PROJECT_KINDS.commercial.tables.project).select('id,project_name,project_code').is('deleted_at', null).or(`project_name.ilike.${like},project_code.ilike.${like}`).limit(5),
     sb.from('developers').select('id,name').ilike('name', like).limit(5),
-    sb.from('residential_enquiries').select('id,contact_person,phone').ilike('contact_person', like).limit(5)
+    queryAllKinds(K => sb.from(K.tables.enquiries).select('id,contact_person,phone').ilike('contact_person', like).limit(5))
   ]);
 
   const actions = [];
   const mkItem = (title, sub, action) => { actions.push(action); return { idx: actions.length - 1, title, sub }; };
 
-  const projectItems = (projects.data || []).map(p => mkItem(p.project_name, p.project_code, async () => {
+  const projectItems = kind => ((kind === 'commercial' ? commercialProjects : residentialProjects).data || []).map(p => mkItem(p.project_name, p.project_code, async () => {
     results.hidden = true; input.value = '';
-    openProjectForm(content, currentUser, p.id, () => navigate('residential'));
+    openProjectForm(content, currentUser, p.id, () => navigate(kind), undefined, kind);
   }));
   const developerItems = (developers.data || []).map(d => mkItem(d.name, 'Developer', async () => {
     results.hidden = true; input.value = '';
@@ -1113,7 +1145,8 @@ async function runGlobalSearch(q) {
     await navigate('enquiries', { openId: e.id });
   }));
 
-  const html = searchResultGroup('Residential Projects', 'home', projectItems)
+  const html = searchResultGroup('Residential Projects', 'home', projectItems('residential'))
+    + searchResultGroup('Commercial Projects', 'building', projectItems('commercial'))
     + searchResultGroup('Developers', 'developer', developerItems)
     + searchResultGroup('Enquiries', 'mail', enquiryItems);
 
@@ -1150,17 +1183,19 @@ async function loadNotifPanel() {
   const panel = $('#notif-panel');
   panel.innerHTML = `<div class="notif-panel-head">Notifications</div><div class="notif-empty">Loading…</div>`;
 
-  const [{ data: pending }, { data: newEnquiries }] = await Promise.all([
-    sb.from('residential_projects').select('id,project_name,moderation_status,updated_at')
+  const [{ data: pendingAll }, { data: newEnquiriesAll }] = await Promise.all([
+    queryAllKinds(K => sb.from(K.tables.project).select('id,project_name,moderation_status,updated_at')
       .is('deleted_at', null)
       .in('moderation_status', ['pending_verification', 'under_review', 'resubmitted', 'changes_required'])
-      .order('updated_at', { ascending: false }).limit(5),
-    sb.from('residential_enquiries').select('id,contact_person,phone,created_at').eq('status', 'new').order('created_at', { ascending: false }).limit(5)
+      .order('updated_at', { ascending: false }).limit(5)),
+    queryAllKinds(K => sb.from(K.tables.enquiries).select('id,contact_person,phone,created_at').eq('status', 'new').order('created_at', { ascending: false }).limit(5))
   ]);
+  const pending = pendingAll.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at)).slice(0, 5);
+  const newEnquiries = newEnquiriesAll.sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 5);
 
   const sections = [];
   if (pending?.length) sections.push(`<div class="notif-section"><div class="notif-section-label">Pending Moderation</div>${
-    pending.map(p => notifItem('moderation', null, 'var(--gold)', p.project_name, `${(p.moderation_status || '').replace(/_/g, ' ')} · ${timeAgo(p.updated_at)}`)).join('')
+    pending.map(p => notifItem('moderation', null, 'var(--gold)', p.project_name, `${projectKind(p._kind).label} · ${(p.moderation_status || '').replace(/_/g, ' ')} · ${timeAgo(p.updated_at)}`)).join('')
   }</div>`);
   if (newEnquiries?.length) sections.push(`<div class="notif-section"><div class="notif-section-label">New Enquiries</div>${
     newEnquiries.map(e => notifItem('enquiries', e.id, 'var(--blue)', e.contact_person, `${e.phone} · ${timeAgo(e.created_at)}`)).join('')

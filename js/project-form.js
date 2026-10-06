@@ -1,6 +1,7 @@
 import { sb } from './supabase-client.js';
 import { toast, fmtPriceWords } from './utils.js';
 import { enhanceSelects } from './custom-select.js';
+import { PROJECT_KINDS } from './project-kinds.js';
 
 /* ============ small utils ============ */
 
@@ -31,6 +32,9 @@ function uid() { return Math.random().toString(36).slice(2, 9); }
 /* ============ module state ============ */
 
 let content, currentUser, onExit;
+// The active project kind's config (KINDS.residential / KINDS.commercial, below) — set by
+// openProjectForm(); everything kind-specific (tables, buckets, fields, presets) reads it.
+let K;
 let state, projectId, stepIndex, isEdit;
 // The project's moderation_status as it was when the wizard opened for an edit (null for a
 // brand-new project) — lets submitForVerification() tell an edit of an already-published
@@ -60,6 +64,8 @@ const UPLOAD_LIMITS = {
     label: 'PDF, JPG, PNG or WEBP · up to 20MB'
   }
 };
+UPLOAD_LIMITS['commercial-media'] = UPLOAD_LIMITS['residential-media'];
+UPLOAD_LIMITS['commercial-documents'] = UPLOAD_LIMITS['residential-documents'];
 
 function fmtBytes(n) {
   if (!n && n !== 0) return '';
@@ -95,6 +101,8 @@ const STEP_SUB = [
   'Search engine metadata for the public project page.',
   'Review every section before saving as draft or submitting for verification.'
 ];
+// Both kinds share the same 18-step skeleton (only each step's content differs), so step
+// numbers mean the same thing everywhere below.
 const TOTAL_STEPS = STEP_NAMES.length;
 // index into which core-save happens on "Next" (after this step, the project row can be created)
 const FIRST_SAVE_AFTER_STEP = 4;
@@ -245,7 +253,14 @@ const PHASE_FIELDS = [
 
 function freshState() {
   return {
-    project: {
+    project: K.freshProject(),
+    configurations: [], towers: [], amenities: [], nearby: [], prosCons: [], documents: [], litigation: [], updates: [], faqs: [], phases: [],
+    media: { main: {}, masterPlan: {}, gallery: [], videos: [] }
+  };
+}
+
+function freshResidentialProject() {
+  return {
       project_name: '', developer_id: '', project_type: 'apartment', launch_date: '', rera_numbers: [], overview: '', highlights: [],
       city_id: '', locality_id: '', address: '', pincode: '', latitude: '', longitude: '',
       total_land_area: '', land_area_unit: 'acre', total_towers_buildings: '', total_floors: '', total_residential_units: '', number_of_phases: '', open_green_area_value: '', open_green_area_unit: 'acre', built_up_project_area: '', built_up_project_area_unit: 'sq_ft',
@@ -254,9 +269,6 @@ function freshState() {
       flooring: '', doors: '', windows: '', kitchen: '', bathroom: '', electrical: '', walls_paint: '', balcony: '', other_specifications: '',
       agent_id: '', relationship_manager_id: '',
       slug: '', seo_title: '', seo_description: '', canonical_url: ''
-    },
-    configurations: [], towers: [], amenities: [], nearby: [], prosCons: [], documents: [], litigation: [], updates: [], faqs: [], phases: [],
-    media: { main: {}, masterPlan: {}, gallery: [], videos: [] }
   };
 }
 
@@ -267,7 +279,8 @@ let wizardOpen = false;
 // prefill: optional values to seed a brand-new project with (e.g. { developer_id } when
 // opened from the Developers page's "Add Project" action) — ignored when editing an
 // existing project, which already has its own saved values.
-export async function openProjectForm(rootEl, user, existingId, exitCb, prefill) {
+export async function openProjectForm(rootEl, user, existingId, exitCb, prefill, kind = 'residential') {
+  K = KINDS[kind] || KINDS.residential;
   content = rootEl;
   currentUser = user;
   onExit = exitCb;
@@ -301,7 +314,7 @@ export async function openProjectForm(rootEl, user, existingId, exitCb, prefill)
   // tell the boot sequence a wizard was open at all, and it fell through to the Residential
   // Projects list (or further still, to Dashboard). See app.js's boot sequence, which parses
   // this same shape back out to reopen the wizard.
-  pushWizardState(existingId ? `#/residential/edit/${existingId}` : '#/residential/add');
+  pushWizardState(existingId ? `#/${K.routeBase}/edit/${existingId}` : `#/${K.routeBase}/add`);
 }
 
 // Every step change (Next, stepper/Edit jump) pushes one browser history entry, so the
@@ -353,7 +366,7 @@ async function loadLookups() {
     sb.from('localities').select('id,name,city_id').order('name'),
     sb.from('agents').select('id,full_name').order('full_name'),
     sb.from('relationship_managers').select('id,full_name,rm_code').eq('status', 'active').order('full_name'),
-    sb.from('residential_projects').select('id,project_name,developer_id').is('deleted_at', null).order('project_name'),
+    sb.from(K.tables.project).select('id,project_name,developer_id').is('deleted_at', null).order('project_name'),
     sb.from('lookup_options').select('list_key,group_key,label').eq('is_active', true).order('sort_order').order('label'),
     sb.from('app_settings').select('default_city_id').eq('id', 1).maybeSingle()
   ]);
@@ -370,7 +383,8 @@ async function loadLookups() {
 
 async function loadProject(id) {
   const s = freshState();
-  const { data: p, error } = await sb.from('residential_projects').select('*').eq('id', id).single();
+  const T = K.tables;
+  const { data: p, error } = await sb.from(T.project).select('*').eq('id', id).single();
   if (error || !p) { console.error(error); return null; }
   Object.keys(s.project).forEach(k => { if (k in p && p[k] !== null) s.project[k] = p[k]; });
   s.project.highlights = p.highlights || [];
@@ -378,16 +392,16 @@ async function loadProject(id) {
   originalModerationStatus = p.moderation_status || null;
 
   const [phases, cfg, tow, ame, near, pc, docs, lit, upd, faqs] = await Promise.all([
-    sb.from('residential_project_phases').select('*').eq('project_id', id).order('display_order'),
-    sb.from('residential_configurations').select('*').eq('project_id', id).order('display_order'),
-    sb.from('residential_towers').select('*').eq('project_id', id).order('display_order'),
-    sb.from('residential_amenities').select('*').eq('project_id', id).order('display_order'),
-    sb.from('residential_nearby_locations').select('*').eq('project_id', id).order('display_order'),
-    sb.from('residential_project_pros_cons').select('*').eq('project_id', id).order('display_order'),
-    sb.from('residential_documents').select('*').eq('project_id', id),
-    sb.from('residential_litigation').select('*').eq('project_id', id),
-    sb.from('residential_construction_updates').select('*,residential_construction_update_media(*)').eq('project_id', id).order('display_order'),
-    sb.from('residential_faqs').select('*').eq('project_id', id).order('display_order')
+    sb.from(T.phases).select('*').eq('project_id', id).order('display_order'),
+    sb.from(T.units).select('*').eq('project_id', id).order('display_order'),
+    sb.from(T.towers).select('*').eq('project_id', id).order('display_order'),
+    sb.from(T.amenities).select('*').eq('project_id', id).order('display_order'),
+    sb.from(T.nearby).select('*').eq('project_id', id).order('display_order'),
+    sb.from(T.prosCons).select('*').eq('project_id', id).order('display_order'),
+    sb.from(T.documents).select('*').eq('project_id', id),
+    sb.from(T.litigation).select('*').eq('project_id', id),
+    sb.from(T.updates).select(`*,${T.updateMedia}(*)`).eq('project_id', id).order('display_order'),
+    sb.from(T.faqs).select('*').eq('project_id', id).order('display_order')
   ]);
   s.phases = (phases.data || []).map(r => ({ ...r, _k: r.id, configurations: r.configurations || [] }));
   s.configurations = (cfg.data || []).map(r => ({ ...r, _k: r.id, parking_type: r.parking_type || [] }));
@@ -397,10 +411,10 @@ async function loadProject(id) {
   s.prosCons = (pc.data || []).map(r => ({ ...r, _k: r.id }));
   s.documents = (docs.data || []).map(r => ({ ...r, _k: r.id, file_name: (r.file_path || '').split('/').pop() }));
   s.litigation = (lit.data || []).map(r => ({ ...r, _k: r.id, supporting_document_name: (r.supporting_document_path || '').split('/').pop() }));
-  s.updates = (upd.data || []).map(r => ({ ...r, _k: r.id, media: (r.residential_construction_update_media || []).map(m => ({ ...m, _k: m.id })) }));
+  s.updates = (upd.data || []).map(r => ({ ...r, _k: r.id, media: (r[T.updateMedia] || []).map(m => ({ ...m, _k: m.id })) }));
   s.faqs = (faqs.data || []).map(r => ({ ...r, _k: r.id }));
 
-  const { data: media } = await sb.from('residential_media').select('*').eq('project_id', id);
+  const { data: media } = await sb.from(T.media).select('*').eq('project_id', id);
   s.media = { main: {}, masterPlan: {}, gallery: [], videos: [] };
   (media || []).forEach(m => {
     if (m.media_type === 'main_image') s.media.main = m;
@@ -419,7 +433,7 @@ function renderShell() {
     <div class="form-head">
       <div class="form-head-left">
         <button class="back-btn" id="pf-close" title="${stepIndex > 1 ? 'Back' : 'Close'}">←</button>
-        <div><h1>${isEdit ? 'Edit' : 'Add'} Residential Project</h1><p id="pf-step-label">Step ${stepIndex} of ${TOTAL_STEPS} · ${STEP_NAMES[stepIndex - 1]}</p></div>
+        <div><h1>${isEdit ? 'Edit' : 'Add'} ${K.label} Project</h1><p id="pf-step-label">Step ${stepIndex} of ${TOTAL_STEPS} · ${K.stepNames[stepIndex - 1]}</p></div>
       </div>
       <div class="form-head-right">
         <button class="btn-ghost" id="pf-save-draft">${isEdit ? 'Update' : 'Save as Draft'}</button>
@@ -456,7 +470,7 @@ function renderShell() {
 function $(sel) { return content.querySelector(sel); }
 
 function renderStepper() {
-  const html = STEP_NAMES.map((name, i) => {
+  const html = K.stepNames.map((name, i) => {
     const n = i + 1;
     const cls = n === stepIndex ? 'active' : (n < stepIndex ? 'done' : '');
     return `<button type="button" class="step ${cls}" data-goto="${n}"><span class="num"><span>${n}</span></span>${esc(name)}</button>`;
@@ -480,14 +494,14 @@ function renderStepBody() {
   renderStepper();
   const pct = Math.round((stepIndex / TOTAL_STEPS) * 100);
   $('#pf-progress').style.width = pct + '%';
-  $('#pf-step-label').textContent = `Step ${stepIndex} of ${TOTAL_STEPS} · ${STEP_NAMES[stepIndex - 1]}`;
-  $('#pf-panel-head').innerHTML = `<h2>${esc(STEP_NAMES[stepIndex - 1])}</h2><p>${esc(STEP_SUB[stepIndex - 1])}</p>`;
+  $('#pf-step-label').textContent = `Step ${stepIndex} of ${TOTAL_STEPS} · ${K.stepNames[stepIndex - 1]}`;
+  $('#pf-panel-head').innerHTML = `<h2>${esc(K.stepNames[stepIndex - 1])}</h2><p>${esc(K.stepSub[stepIndex - 1])}</p>`;
   $('#pf-panel-body').innerHTML = renderBody(stepIndex);
   $('#pf-footer-label').textContent = `${pct}% complete`;
   $('#pf-back').disabled = stepIndex === 1;
   $('#pf-next').textContent = stepIndex === TOTAL_STEPS
     ? (originalModerationStatus === 'published' ? 'Update Project' : 'Submit for Verification →')
-    : `Next: ${STEP_NAMES[stepIndex] || ''} →`;
+    : `Next: ${K.stepNames[stepIndex] || ''} →`;
   $('#pf-close').title = stepIndex > 1 ? 'Back' : 'Close';
   handleSpecialBindings();
   // No scrollTo here on purpose — renderStepBody() is also called for in-place updates on
@@ -553,17 +567,14 @@ function renderFieldWithUnit(valueSpec, unitSpec, values, bindPrefix) {
 // Size & Scale's own layout: area fields pair with their unit right next to them instead of
 // as a separate grid cell.
 function renderSizeScale() {
-  const f = Object.fromEntries(FIELDS.size.map(s => [s.key, s]));
+  const f = Object.fromEntries(K.fields.size.map(s => [s.key, s]));
   const p = state.project;
-  const plain = (key) => renderField(f[key], p[key], `data-bind="project.${key}"`);
+  const plain = (key) => renderField(f[key], p[key], `data-bind="project.${key}"`, p);
   return `<div class="form-grid size-scale-grid">
     ${renderFieldWithUnit(f.total_land_area, f.land_area_unit, p, 'project')}
     ${renderFieldWithUnit(f.open_green_area_value, f.open_green_area_unit, p, 'project')}
     ${renderFieldWithUnit(f.built_up_project_area, f.built_up_project_area_unit, p, 'project')}
-    ${plain('total_towers_buildings')}
-    ${plain('total_floors')}
-    ${plain('total_residential_units')}
-    ${plain('number_of_phases')}
+    ${K.sizePlainKeys.map(plain).join('')}
   </div>`;
 }
 
@@ -615,7 +626,7 @@ function onFieldChange(e) {
         renderStepBody();
         return;
       }
-      openProjectForm(content, currentUser, match.id, onExit);
+      openProjectForm(content, currentUser, match.id, onExit, undefined, K.key);
       return;
     }
   }
@@ -623,7 +634,7 @@ function onFieldChange(e) {
   else if (/^nearby\.\d+\.category$/.test(el.dataset.bind)) { applyBind(el); renderStepBody(); }
   // Built-up/Super Built-up Area show the selected unit (sq ft / sq m) as their suffix —
   // re-render so switching Area Unit updates those labels, not just Carpet Area's own select.
-  else if (/^configurations\.\d+\.area_unit$/.test(el.dataset.bind)) { applyBind(el); renderStepBody(); }
+  else if (/^configurations\.\d+\.area_unit$/.test(el.dataset.bind) || el.dataset.bind === 'project.area_unit') { applyBind(el); renderStepBody(); }
   else applyBind(el);
 }
 function applyBind(el) {
@@ -667,11 +678,11 @@ function removeUploadedFile(key) {
   let bucket, path;
   if (key.startsWith('media.')) {
     const row = getPath(state, key) || {};
-    bucket = 'residential-media';
+    bucket = K.buckets.media;
     path = row.media_path;
     row.media_path = null; row.media_url = null; row.file_name = null; row.file_size = null;
   } else {
-    bucket = 'residential-documents';
+    bucket = K.buckets.docs;
     path = getPath(state, key + '_path');
     setPath(state, key + '_path', null);
     setPath(state, key + '_url', null);
@@ -691,6 +702,7 @@ function addRepeatItem(key, arg) {
   else if (key === 'prosCons') item = DEFAULTS.prosCons(arg);
   else {
     const factoryName = key.endsWith('s') ? key.slice(0, -1) : key;
+    if (key === 'configurations') { arr.push(K.newUnit()); setPath(state, key, arr); renderStepBody(); return; }
     const map = { configurations: 'configuration', towers: 'tower', nearby: 'nearby', documents: 'document', litigation: 'litigation', updates: 'update', faqs: 'faq', phases: 'phase', 'media.videos': 'video' };
     item = DEFAULTS[map[key] || factoryName] ? DEFAULTS[map[key] || factoryName]() : { _k: uid() };
   }
@@ -706,9 +718,9 @@ function removeRepeatItem(key, idx) {
   // whatever file it holds, or every removed Document/Litigation entry and Construction
   // Update photo leaks in Storage the same way a bare "✕" on the upload slot used to.
   if (item) {
-    if (key === 'documents' && item.file_path) deleteStorageFile('residential-documents', item.file_path);
-    else if (key === 'litigation' && item.supporting_document_path) deleteStorageFile('residential-documents', item.supporting_document_path);
-    else if (key === 'updates' && item.media?.length) item.media.forEach(m => deleteStorageFile('residential-media', m.media_path));
+    if (key === 'documents' && item.file_path) deleteStorageFile(K.buckets.docs, item.file_path);
+    else if (key === 'litigation' && item.supporting_document_path) deleteStorageFile(K.buckets.docs, item.supporting_document_path);
+    else if (key === 'updates' && item.media?.length) item.media.forEach(m => deleteStorageFile(K.buckets.media, m.media_path));
   }
   arr.splice(idx, 1);
   renderStepBody();
@@ -792,10 +804,10 @@ async function openQuickAdd(kind) {
 function renderBody(i) {
   switch (i) {
     case 1: return renderBasic();
-    case 2: return renderFieldsGrid(FIELDS.location, state.project, 'project');
+    case 2: return renderFieldsGrid(K.fields.location, state.project, 'project');
     case 3: return renderSizeScale();
-    case 4: return renderFieldsGrid(FIELDS.status, state.project, 'project') + `<h4 style="margin:20px 0 10px">Project Phases</h4>` + renderPhases();
-    case 5: return renderConfigurations();
+    case 4: return renderFieldsGrid(K.fields.status, state.project, 'project') + `<h4 style="margin:20px 0 10px">Project Phases</h4>` + renderPhases();
+    case 5: return K.renderUnits();
     case 6: return renderSpecs();
     case 7: return renderTowers();
     case 8: return renderAmenities();
@@ -806,7 +818,7 @@ function renderBody(i) {
     case 13: return renderLitigation();
     case 14: return renderUpdates();
     case 15: return renderFaqs();
-    case 16: return renderFieldsGrid(FIELDS.contact, state.project, 'project');
+    case 16: return renderFieldsGrid(K.fields.contact, state.project, 'project');
     case 17: return renderSeo();
     case 18: return renderReview();
     default: return '';
@@ -814,8 +826,8 @@ function renderBody(i) {
 }
 
 function renderBasic() {
-  const specs = FIELDS.basic.filter(s => s.key !== 'overview');
-  const overview = FIELDS.basic.find(s => s.key === 'overview');
+  const specs = K.fields.basic.filter(s => s.key !== 'overview');
+  const overview = K.fields.basic.find(s => s.key === 'overview');
   return `<div class="form-grid">${specs.map(s => renderField(s, state.project[s.key], `data-bind="project.${s.key}"`)).join('')}
     ${chipRowHtml('RERA Number(s)', 'Add one or more RERA registration numbers — e.g. one per phase or tower.', state.project.rera_numbers, 'project.rera_numbers', 'pf-rera-input')}
     ${renderField(overview, state.project.overview, `data-bind="project.overview"`)}
@@ -828,8 +840,11 @@ function renderBasic() {
 // BHK configurations added in Step 5 rather than typed in separately (there's no dedicated
 // pricing step; see projectPayload()).
 function priceRangeFromConfigs() {
-  const starts = state.configurations.map(c => Number(c.starting_price)).filter(n => n > 0);
-  const maxes = state.configurations.map(c => Number(c.maximum_price || c.starting_price)).filter(n => n > 0);
+  // A commercial unit priced as monthly rent isn't a sale price — keep it out of the
+  // project's sale price range (its rent is shown separately via expected_rent).
+  const priced = state.configurations.filter(c => c.price_type !== 'monthly_rent');
+  const starts = priced.map(c => Number(c.starting_price)).filter(n => n > 0);
+  const maxes = priced.map(c => Number(c.maximum_price || c.starting_price)).filter(n => n > 0);
   if (!starts.length) return { min: null, max: null };
   return { min: Math.min(...starts), max: maxes.length ? Math.max(...maxes) : Math.min(...starts) };
 }
@@ -844,12 +859,12 @@ function validateConfigPriceRange() {
   const badIdx = state.configurations.findIndex(c =>
     c.maximum_price !== '' && c.maximum_price !== null && c.maximum_price !== undefined &&
     Number(c.maximum_price) < Number(c.starting_price));
-  return badIdx >= 0 ? `Maximum Price must be greater than or equal to Starting Price (BHK Configuration #${badIdx + 1})` : null;
+  return badIdx >= 0 ? `Maximum Price must be greater than or equal to Starting Price (${K.unitSingular} #${badIdx + 1})` : null;
 }
 
 function renderSeo() {
   if (!state.project.slug) state.project.slug = slugify([state.project.project_name, lookups.localities.find(l => l.id === state.project.locality_id)?.name, lookups.cities.find(c => c.id === state.project.city_id)?.name].filter(Boolean).join('-'));
-  return `<div class="form-grid">${FIELDS.seo.map(s => renderField(s, state.project[s.key], `data-bind="project.${s.key}"`)).join('')}
+  return `<div class="form-grid">${K.fields.seo.map(s => renderField(s, state.project[s.key], `data-bind="project.${s.key}"`)).join('')}
     <div class="field full"><div class="hint">🔒 Indexing is controlled automatically by publishing status — draft, pending, under-review and rejected projects are never indexable, regardless of this content.</div></div>
   </div>`;
 }
@@ -884,14 +899,14 @@ function areaUnitLabel(u) {
 // toggling membership.
 function bhkTypeChipsHtml(value, idx) {
   const val = value || '';
-  const presets = bhkPresets();
+  const presets = K.unitPresets();
   const presetChips = presets.map(v => `<span class="chip${val === v ? ' active' : ''}" data-set-bhktype="${idx}" data-val="${esc(v)}" style="cursor:pointer">${esc(v)}</span>`).join('');
   const customChip = val && !presets.includes(val) ? `<span class="chip active">${esc(val)}</span>` : '';
   const inputId = `pf-cfg-bhk-${idx}`;
   return `<div class="field full">
-    <label>BHK <span class="req">*</span></label>
+    <label>${esc(K.unitLabel)} <span class="req">*</span></label>
     <div class="chip-row">${presetChips}${customChip}
-    <input type="text" id="${inputId}" placeholder="Custom BHK…" style="border:1px solid #d5dfde;border-radius:20px;padding:7px 12px;font-size:12px;width:140px">
+    <input type="text" id="${inputId}" placeholder="${esc(K.unitCustomPlaceholder)}" style="border:1px solid #d5dfde;border-radius:20px;padding:7px 12px;font-size:12px;width:140px">
     <span class="chip chip-add" data-set-bhktype-custom="${idx}" data-input="${inputId}">+ Set</span></div>
   </div>`;
 }
@@ -951,7 +966,7 @@ function renderTowers() {
 
 function bhkChipsHtml(values, bindPath, idx) {
   const vals = values || [];
-  const presets = bhkPresets();
+  const presets = K.unitPresets();
   const presetChips = presets.map(v => {
     const on = vals.includes(v);
     return `<span class="chip${on ? ' active' : ''}" data-toggle-bhk="${bindPath}" data-val="${esc(v)}" style="cursor:pointer">${esc(v)}</span>`;
@@ -963,9 +978,9 @@ function bhkChipsHtml(values, bindPath, idx) {
   }).join('');
   const inputId = `pf-phase-bhk-${idx}`;
   return `<div class="field full">
-    <label>Configuration</label>
+    <label>${esc(K.chipLabel)}</label>
     <div class="chip-row">${presetChips}${customChips}
-    <input type="text" id="${inputId}" placeholder="Custom BHK…" style="border:1px solid #d5dfde;border-radius:20px;padding:7px 12px;font-size:12px;width:140px">
+    <input type="text" id="${inputId}" placeholder="${esc(K.unitCustomPlaceholder)}" style="border:1px solid #d5dfde;border-radius:20px;padding:7px 12px;font-size:12px;width:140px">
     <span class="chip chip-add" data-add-chip="${bindPath}" data-input="${inputId}">+ Add</span></div>
   </div>`;
 }
@@ -990,8 +1005,8 @@ function toggleSpecChip(field, value) {
 }
 
 function renderSpecs() {
-  const fields = FIELDS.specs.map(s => {
-    const preset = specPresets(s.key);
+  const fields = K.fields.specs.map(s => {
+    const preset = K.specPresets(s.key);
     if (!preset) return renderField(s, state.project[s.key], `data-bind="project.${s.key}"`);
     const selected = specTokens(state.project[s.key]);
     const chips = preset.map(v => `<span class="chip${selected.includes(v) ? ' active' : ''}" data-toggle-spec-chip="${s.key}" data-val="${esc(v)}" style="cursor:pointer">${esc(v)}</span>`).join('');
@@ -1006,9 +1021,9 @@ function renderSpecs() {
 }
 
 function renderAmenities() {
-  const sections = AMENITY_CATEGORIES.map(cat => {
+  const sections = K.amenityCategories.map(cat => {
     const existing = state.amenities.filter(a => a.category === cat.key);
-    const preset = amenityPresets(cat);
+    const preset = K.amenityPresets(cat);
     const presetChips = preset.map(name => {
       const on = existing.some(a => a.amenity_name === name);
       return `<span class="chip${on ? ' active' : ''}" data-toggle-amenity="${cat.key}" data-name="${esc(name)}" style="cursor:pointer">${esc(name)}</span>`;
@@ -1051,6 +1066,89 @@ const NEARBY_TYPE_PRESETS = {
   lifestyle_entertainment: ['Multiplex / Cinema', 'Restaurant / Cafe', 'Club / Lounge', 'Park / Garden']
 };
 
+/* ============ commercial-only content (same 18 steps, commercial fields/presets) ============ */
+
+// Must match the DB's commercial_projects_project_type_check constraint exactly.
+const COMMERCIAL_PROJECT_TYPES = enumOpts(['office', 'shop', 'showroom', 'warehouse', 'industrial', 'healthcare', 'education', 'hospitality', 'commercial_land', 'commercial_building']);
+const TRANSACTION_TYPE_OPTIONS = enumOpts(['sale', 'lease', 'sale_and_lease']);
+
+const COMMERCIAL_FIELDS = {
+  basic: [
+    FIELDS.basic.find(s => s.key === 'developer_id'),
+    FIELDS.basic.find(s => s.key === 'project_name'),
+    { key: 'project_type', label: 'Property Type', req: true, type: 'select', options: COMMERCIAL_PROJECT_TYPES },
+    { key: 'transaction_type', label: 'Available For', req: true, type: 'select', options: TRANSACTION_TYPE_OPTIONS },
+    FIELDS.basic.find(s => s.key === 'launch_date'),
+    FIELDS.basic.find(s => s.key === 'overview')
+  ],
+  location: FIELDS.location,
+  size: [
+    ...FIELDS.size.filter(s => s.key !== 'total_residential_units'),
+    { key: 'total_commercial_units', label: 'Total Commercial Units', type: 'number' },
+    { key: 'area_unit', label: 'Leasable / Saleable Area Unit', type: 'select', options: AREA_UNIT_OPTIONS },
+    { key: 'total_leasable_area', label: 'Total Leasable Area', type: 'number', unit: p => areaUnitLabel(p?.area_unit) },
+    { key: 'total_saleable_area', label: 'Total Saleable Area', type: 'number', unit: p => areaUnitLabel(p?.area_unit) },
+    { key: 'typical_floor_plate', label: 'Typical Floor Plate', type: 'number', unit: p => areaUnitLabel(p?.area_unit), hint: 'Usable area of one typical floor' }
+  ],
+  status: [
+    FIELDS.status[0],
+    { key: 'occupancy_certificate', label: 'Occupancy Certificate (OC)', type: 'select', options: enumOpts(['received', 'applied', 'not_applied']) }
+  ],
+  // Project-level commercial terms, shown above the unit cards on Step 5.
+  pricing: [
+    { key: 'price_on_request', label: 'Price on request (hide prices on the listing)', type: 'checkbox', full: true },
+    { key: 'maintenance_charges', label: 'Maintenance / CAM Charges', type: 'number', unit: '₹/sq ft/mo' },
+    { key: 'security_deposit_months', label: 'Security Deposit', type: 'number', unit: 'months' },
+    { key: 'lock_in_period_months', label: 'Lock-in Period', type: 'number', unit: 'months' },
+    { key: 'rent_escalation_percent', label: 'Rent Escalation', type: 'number', unit: '% / yr' },
+    { key: 'gst_applicable', label: 'GST applicable', type: 'checkbox' },
+    { key: 'price_disclaimer', label: 'Price Disclaimer', type: 'textarea', full: true }
+  ],
+  specs: [
+    { key: 'structure', label: 'Structure', type: 'textarea', full: true },
+    { key: 'flooring', label: 'Flooring', type: 'textarea', full: true },
+    { key: 'facade_glazing', label: 'Facade / Glazing', type: 'textarea', full: true },
+    { key: 'lifts_elevators', label: 'Lifts / Elevators', type: 'textarea', full: true },
+    { key: 'hvac', label: 'HVAC / Air Conditioning', type: 'textarea', full: true },
+    { key: 'power_load_backup', label: 'Power Load & Backup', type: 'textarea', full: true },
+    { key: 'fire_safety', label: 'Fire Safety', type: 'textarea', full: true },
+    { key: 'washrooms_pantry', label: 'Washrooms & Pantry', type: 'textarea', full: true },
+    { key: 'loading_docks', label: 'Loading Docks (warehouse / industrial)', type: 'textarea', full: true },
+    { key: 'floor_to_ceiling_height', label: 'Floor-to-Ceiling Height', placeholder: 'e.g. 3.6 m slab-to-slab', full: true },
+    { key: 'other_specifications', label: 'Other Specifications', type: 'textarea', full: true }
+  ],
+  contact: FIELDS.contact,
+  seo: FIELDS.seo
+};
+
+const COMMERCIAL_SPEC_PRESETS = {
+  structure: ['RCC Framed Structure', 'Earthquake Resistant (Zone Compliant)', 'Pre-Engineered Building (PEB)', 'Steel Structure'],
+  flooring: ['Vitrified Tiles', 'Granite', 'Italian Marble', 'Raised Access Flooring', 'Epoxy / Industrial Flooring', 'FM2 / Trimix Flooring'],
+  facade_glazing: ['Double Glazed Glass Facade', 'ACP Cladding', 'Structural Glazing', 'Stone Cladding'],
+  lifts_elevators: ['High-Speed Passenger Lifts', 'Service Lift', 'Goods Lift', 'Escalators', 'Destination Control System'],
+  hvac: ['Central Air Conditioning (VRF/VRV)', 'Chilled Water System', 'Provision for Split AC', 'Fresh Air Handling Units'],
+  power_load_backup: ['100% Power Backup', 'DG Backup for Common Areas', 'Dedicated Transformer', 'High Power Load Provision'],
+  fire_safety: ['Sprinkler System', 'Fire Alarm & Detection', 'Fire Hydrants', 'Pressurised Staircases', 'Fire NOC Obtained'],
+  washrooms_pantry: ['Private Washroom', 'Common Washrooms on Each Floor', 'Pantry Provision', 'Dry Pantry'],
+  loading_docks: ['Dock Levellers', 'Loading / Unloading Bays', 'Truck Turning Radius', 'Clear Height 9m+']
+};
+
+// Must match the DB's commercial_amenities_category_check constraint exactly.
+const COMMERCIAL_AMENITY_CATEGORIES = [
+  { key: 'business_facilities', label: 'Business Facilities', preset: ['Conference Rooms', 'Business Lounge', 'Reception / Concierge', 'Meeting Pods'] },
+  { key: 'food_beverage', label: 'Food & Beverage', preset: ['Food Court', 'Cafeteria', 'Restaurant', 'Vending Area'] },
+  { key: 'security_safety', label: 'Security & Safety', preset: ['24x7 Security', 'CCTV Surveillance', 'Access Control', 'Boom Barriers'] },
+  { key: 'parking_mobility', label: 'Parking & Mobility', preset: ['Multi-level Parking', 'Visitor Parking', 'EV Charging', 'Valet Parking'] },
+  { key: 'power_utilities', label: 'Power & Utilities', preset: ['Power Backup', 'Dedicated Transformer', 'Water Treatment Plant', 'STP'] },
+  { key: 'building_services', label: 'Building Services', preset: ['High-Speed Elevators', 'Central AC', 'Building Management System', 'Housekeeping'] },
+  { key: 'connectivity_it', label: 'Connectivity & IT', preset: ['High-Speed Fibre', 'Multiple ISP Ready', 'Server / Data Room', 'Wi-Fi in Common Areas'] },
+  { key: 'wellness_lifestyle', label: 'Wellness & Lifestyle', preset: ['Gymnasium', 'Creche', 'Landscaped Terrace', 'Breakout Zones'] },
+  { key: 'logistics', label: 'Logistics', preset: ['Loading Bays', 'Dock Levellers', 'Truck Parking', 'Wide Internal Roads'] },
+  { key: 'eco_friendly', label: 'Eco-Friendly Features', preset: ['LEED / IGBC Certified', 'Solar Panels', 'Rainwater Harvesting', 'EV Charging Points'] }
+];
+
+const COMMERCIAL_UNIT_PRESET = ['Office Space', 'Shop', 'Showroom', 'Warehouse', 'Industrial Shed', 'Clinic / Medical Space', 'Institute / Classroom', 'Hotel Room / Serviced Unit', 'Food Court / F&B Unit', 'Co-working Seat', 'Commercial Floor', 'Whole Building', 'Commercial Plot'];
+
 // The editable preset lists, as Settings → Lookup Lists shows them. The group keys are fixed
 // here (they're the DB's category/field values); only the items inside each group live in
 // lookup_options.
@@ -1058,7 +1156,10 @@ export const LOOKUP_LISTS = [
   { key: 'bhk', label: 'BHK Types', groups: null },
   { key: 'spec', label: 'Specifications', groups: FIELDS.specs.filter(s => SPEC_PRESETS[s.key]).map(s => ({ key: s.key, label: s.label })) },
   { key: 'amenity', label: 'Amenities', groups: AMENITY_CATEGORIES.map(c => ({ key: c.key, label: c.label })) },
-  { key: 'nearby_type', label: 'Nearby Location Types', groups: enumOpts(Object.keys(NEARBY_TYPE_PRESETS)).map(o => ({ key: o.value, label: o.label })) }
+  { key: 'nearby_type', label: 'Nearby Location Types', groups: enumOpts(Object.keys(NEARBY_TYPE_PRESETS)).map(o => ({ key: o.value, label: o.label })) },
+  { key: 'commercial_unit', label: 'Commercial Unit Types', groups: null },
+  { key: 'commercial_spec', label: 'Commercial Specifications', groups: COMMERCIAL_FIELDS.specs.filter(s => COMMERCIAL_SPEC_PRESETS[s.key]).map(s => ({ key: s.key, label: s.label })) },
+  { key: 'commercial_amenity', label: 'Commercial Amenities', groups: COMMERCIAL_AMENITY_CATEGORIES.map(c => ({ key: c.key, label: c.label })) }
 ];
 const NEARBY_FIELDS = [
   { key: 'category', label: 'Category', req: true, type: 'select', options: NEARBY_CATEGORIES },
@@ -1117,14 +1218,14 @@ function renderUpdates() {
       const media = (u.media || []).map(m => `<div class="upload-thumb"><span class="name">${esc(m.file_name || m.media_path?.split('/').pop() || 'photo')}${m.file_size ? ` · ${fmtBytes(m.file_size)}` : ''}</span></div>`).join('');
       const input = `<input type="file" accept="image/*" data-update-upload="${i}">`;
       const uploadHtml = !projectId ? `<div class="hint">Save the project first to attach photos.</div>`
-        : renderUploadSlot(`updates.${i}`, input) || `<label class="upload-box">📷 Add site photo${input}<span class="hint">${esc(UPLOAD_LIMITS['residential-media'].label)}</span></label>`;
+        : renderUploadSlot(`updates.${i}`, input) || `<label class="upload-box">📷 Add site photo${input}<span class="hint">${esc(UPLOAD_LIMITS[K.buckets.media].label)}</span></label>`;
       return `<div class="field full">${uploadHtml}${media}</div>`;
     }
   });
 }
 
 const DOC_FIELDS = [
-  { key: 'document_type', label: 'Document Type', req: true, type: 'select', options: enumOpts(['rera_certificate', 'project_brochure', 'price_sheet', 'floor_plan_pdf', 'approvals', 'noc', 'other']) },
+  { key: 'document_type', label: 'Document Type', req: true, type: 'select', options: () => K.docTypes },
   { key: 'title', label: 'Title', req: true },
   { key: 'visibility', label: 'Visibility', type: 'select', options: enumOpts(['public', 'restricted', 'internal']) },
   { key: 'description', label: 'Description', type: 'textarea', full: true }
@@ -1137,7 +1238,7 @@ function renderDocuments() {
       const uploadHtml = d.file_name
         ? `<div class="upload-thumb"><span class="name">${esc(d.file_name)}${d.file_size ? ` · ${fmtBytes(d.file_size)}` : ''}</span><button type="button" data-remove-upload="documents.${i}.file">✕</button></div>`
         : !projectId ? `<div class="hint">Save the project first (through Status &amp; Construction) to upload files.</div>`
-        : renderUploadSlot(`documents.${i}`, input) || `<label class="upload-box">📄 Click to upload file${input}<span class="hint">${esc(UPLOAD_LIMITS['residential-documents'].label)}</span></label>`;
+        : renderUploadSlot(`documents.${i}`, input) || `<label class="upload-box">📄 Click to upload file${input}<span class="hint">${esc(UPLOAD_LIMITS[K.buckets.docs].label)}</span></label>`;
       return `<div class="field full">${uploadHtml}</div>`;
     }
   });
@@ -1161,7 +1262,7 @@ function renderLitigation() {
       const uploadHtml = l.supporting_document_name
         ? `<div class="upload-thumb"><span class="name">${esc(l.supporting_document_name)}${l.supporting_document_size ? ` · ${fmtBytes(l.supporting_document_size)}` : ''}</span><button type="button" data-remove-upload="litigation.${i}.supporting_document">✕</button></div>`
         : !projectId ? `<div class="hint">Save the project first to attach a document.</div>`
-        : renderUploadSlot(`litigation.${i}`, input) || `<label class="upload-box">📄 Attach supporting document${input}<span class="hint">${esc(UPLOAD_LIMITS['residential-documents'].label)}</span></label>`;
+        : renderUploadSlot(`litigation.${i}`, input) || `<label class="upload-box">📄 Attach supporting document${input}<span class="hint">${esc(UPLOAD_LIMITS[K.buckets.docs].label)}</span></label>`;
       return `<div class="field full">${uploadHtml}</div>`;
     }
   });
@@ -1169,12 +1270,183 @@ function renderLitigation() {
 
 // Must match the DB's residential_media_category_check constraint exactly.
 const GALLERY_CATEGORIES = enumOpts(['exterior', 'interior', 'hall', 'bedroom', 'kitchen', 'bathroom', 'dining_hall', 'puja_room', 'balcony', 'clubhouse', 'amenities', 'landscape', 'parking', 'other']);
+// Must match the DB's commercial_media_category_check constraint exactly.
+const COMMERCIAL_GALLERY_CATEGORIES = enumOpts(['exterior', 'facade', 'lobby', 'reception', 'office_space', 'retail_floor', 'showroom', 'warehouse_interior', 'common_area', 'amenities', 'landscape', 'parking', 'other']);
+// Must match each kind's <kind>_documents_document_type_check constraint exactly.
+const RESIDENTIAL_DOC_TYPES = enumOpts(['rera_certificate', 'project_brochure', 'price_sheet', 'floor_plan_pdf', 'approvals', 'noc', 'other']);
+const COMMERCIAL_DOC_TYPES = enumOpts(['rera_certificate', 'project_brochure', 'price_sheet', 'floor_plan_pdf', 'approvals', 'noc', 'occupancy_certificate', 'fire_noc', 'environmental_clearance', 'lease_terms', 'other']);
+
+/* ============ commercial units (Step 5) ============ */
+
+const COMMERCIAL_UNIT_FIELDS = [
+  { key: 'unit_type', label: 'Unit Type', req: true, customRender: true },
+  { key: 'area_unit', label: 'Area Unit', type: 'select', options: AREA_UNIT_OPTIONS, customRender: true },
+  { key: 'carpet_area', label: 'Carpet Area', type: 'number', customRender: true },
+  { key: 'variant_name', label: 'Unit / Variant Name', placeholder: 'e.g. Ground floor retail' },
+  { key: 'floor_level', label: 'Floor / Level', placeholder: 'e.g. G+1 or 5th–8th' },
+  { key: 'transaction_type', label: 'Available For', type: 'select', options: TRANSACTION_TYPE_OPTIONS },
+  { key: 'built_up_area', label: 'Built-up Area', type: 'number', unit: c => areaUnitLabel(c?.area_unit) },
+  { key: 'super_built_up_area', label: 'Super Built-up Area', type: 'number', unit: c => areaUnitLabel(c?.area_unit) },
+  { key: 'starting_price', label: 'Starting Price (Sale)', type: 'number', unit: '₹', showWords: true },
+  { key: 'maximum_price', label: 'Maximum Price (Sale)', type: 'number', unit: '₹', showWords: true },
+  { key: 'price_type', label: 'Price Type', type: 'select', options: enumOpts(['total_price', 'price_per_sq_ft', 'price_per_sq_m', 'monthly_rent']) },
+  { key: 'expected_rent', label: 'Expected Rent', type: 'number', unit: '₹/month', showWords: true },
+  { key: 'availability', label: 'Availability', type: 'select', options: enumOpts(['available', 'sold_out', 'leased_out', 'on_request']) },
+  { key: 'number_of_units', label: 'Number of Units', type: 'number', placeholder: 'e.g. 12' },
+  { key: 'furnishing', label: 'Furnishing', type: 'select', options: enumOpts(['bare_shell', 'warm_shell', 'semi_furnished', 'fully_furnished', 'plug_and_play']) },
+  { key: 'washroom', label: 'Washroom', type: 'select', options: enumOpts(['private', 'common', 'none']) },
+  { key: 'parking_included', label: 'Parking', type: 'select', options: enumOpts(['included', 'additional', 'not_available']) },
+  { key: 'pantry', label: 'Pantry inside unit', type: 'checkbox' },
+  { key: 'description', label: 'Description', type: 'textarea', full: true }
+];
+
+function newCommercialUnit() {
+  return { _k: uid(), unit_type: 'Office Space', variant_name: '', floor_level: '', transaction_type: state.project.transaction_type || 'sale', area_unit: 'sq_ft', carpet_area: '', built_up_area: '', super_built_up_area: '', starting_price: '', maximum_price: '', price_type: 'total_price', expected_rent: '', price_on_request: false, availability: 'available', number_of_units: '', furnishing: '', washroom: '', pantry: false, parking_included: 'not_available', parking_type: [], description: '' };
+}
+
+function renderCommercialUnits() {
+  const terms = renderFieldsGrid(COMMERCIAL_FIELDS.pricing, state.project, 'project');
+  const units = renderRepeatStep('configurations', COMMERCIAL_UNIT_FIELDS, {
+    singular: 'Unit', emptyText: 'No units added yet.', addLabel: 'Add Unit',
+    titleOf: (c, i) => c.unit_type
+      ? `${c.unit_type}${c.variant_name ? ` · ${c.variant_name}` : ''}${c.carpet_area ? ` · ${c.carpet_area} ${areaUnitLabel(c.area_unit)}` : ''}`
+      : `Unit ${i + 1}`,
+    extraHtmlBefore: (c, i) => bhkTypeChipsHtml(c.unit_type, i)
+      + renderFieldWithUnit(CONFIG_FIELDS_BY_KEY.carpet_area, CONFIG_FIELDS_BY_KEY.area_unit, c, `configurations.${i}`),
+    extraHtml: (c, i) => {
+      const parkTypes = ['covered', 'open', 'mechanical', 'ev', 'other'];
+      const parkChips = parkTypes.map(t => `<span class="chip${(c.parking_type || []).includes(t) ? ' active' : ''}" data-toggle-parktype="${i}" data-val="${t}" style="cursor:pointer">${esc(t)}</span>`).join('');
+      return `<div class="field full"><label>Parking Type</label><div class="chip-row">${parkChips}</div></div>`;
+    }
+  });
+  return `<h4 style="margin:0 0 10px">Pricing &amp; Lease Terms</h4>${terms}<h4 style="margin:24px 0 10px">Units</h4>${units}`;
+}
+
+function residentialUnitRow(c, idx) {
+  return {
+    bhk_type: c.bhk_type, area_unit: c.area_unit,
+    carpet_area: num(c.carpet_area), built_up_area: num(c.built_up_area), super_built_up_area: num(c.super_built_up_area),
+    starting_price: num(c.starting_price), maximum_price: num(c.maximum_price), price_type: c.price_type,
+    price_on_request: !!c.price_on_request, availability: c.availability, number_of_units: num(c.number_of_units),
+    parking_included: c.parking_included, parking_type: c.parking_type?.length ? c.parking_type : null,
+    description: c.description || null, display_order: idx
+  };
+}
+
+function commercialUnitRow(c, idx) {
+  return {
+    unit_type: c.unit_type, variant_name: str(c.variant_name ?? ''), floor_level: str(c.floor_level ?? ''),
+    transaction_type: c.transaction_type || 'sale', area_unit: c.area_unit || 'sq_ft',
+    carpet_area: num(c.carpet_area), built_up_area: num(c.built_up_area), super_built_up_area: num(c.super_built_up_area),
+    starting_price: num(c.starting_price), maximum_price: num(c.maximum_price), price_type: c.price_type || 'total_price',
+    expected_rent: num(c.expected_rent), price_on_request: !!c.price_on_request, availability: c.availability || 'available',
+    number_of_units: num(c.number_of_units), furnishing: str(c.furnishing ?? ''), washroom: str(c.washroom ?? ''), pantry: !!c.pantry,
+    parking_included: c.parking_included || 'not_available', parking_type: c.parking_type?.length ? c.parking_type : null,
+    description: c.description || null, display_order: idx
+  };
+}
+
+function freshCommercialProject() {
+  return {
+    project_name: '', developer_id: '', project_type: 'office', transaction_type: 'sale', launch_date: '', rera_numbers: [], overview: '', highlights: [],
+    city_id: '', locality_id: '', address: '', pincode: '', latitude: '', longitude: '',
+    total_land_area: '', land_area_unit: 'acre', total_towers_buildings: '', total_floors: '', total_commercial_units: '', number_of_phases: '',
+    open_green_area_value: '', open_green_area_unit: 'acre', built_up_project_area: '', built_up_project_area_unit: 'sq_ft',
+    area_unit: 'sq_ft', total_leasable_area: '', total_saleable_area: '', typical_floor_plate: '',
+    status: 'upcoming', occupancy_certificate: '',
+    price_on_request: false, maintenance_charges: '', security_deposit_months: '', lock_in_period_months: '', rent_escalation_percent: '', gst_applicable: false, price_disclaimer: '',
+    structure: '', flooring: '', facade_glazing: '', lifts_elevators: '', hvac: '', power_load_backup: '', fire_safety: '',
+    floor_to_ceiling_height: '', washrooms_pantry: '', loading_docks: '', other_specifications: '',
+    agent_id: '', relationship_manager_id: '',
+    slug: '', seo_title: '', seo_description: '', canonical_url: ''
+  };
+}
+
+function commercialPayload(p) {
+  const range = priceRangeFromConfigs();
+  return {
+    project_name: p.project_name, developer_id: p.developer_id, project_type: p.project_type, transaction_type: p.transaction_type || 'sale',
+    launch_date: str(p.launch_date), rera_numbers: p.rera_numbers || [], rera_number: str((p.rera_numbers || [])[0] || null), overview: p.overview, highlights: p.highlights || [],
+    city_id: p.city_id, locality_id: p.locality_id, address: p.address, pincode: p.pincode,
+    latitude: num(p.latitude), longitude: num(p.longitude),
+    total_land_area: num(p.total_land_area), land_area_unit: str(p.land_area_unit),
+    total_towers_buildings: num(p.total_towers_buildings), total_floors: str(p.total_floors),
+    total_commercial_units: num(p.total_commercial_units), number_of_phases: num(p.number_of_phases),
+    open_green_area_value: num(p.open_green_area_value), open_green_area_unit: str(p.open_green_area_unit),
+    built_up_project_area: num(p.built_up_project_area), built_up_project_area_unit: str(p.built_up_project_area_unit),
+    area_unit: p.area_unit || 'sq_ft', total_leasable_area: num(p.total_leasable_area), total_saleable_area: num(p.total_saleable_area), typical_floor_plate: num(p.typical_floor_plate),
+    status: p.status, occupancy_certificate: str(p.occupancy_certificate),
+    starting_price: range.min, maximum_price: range.max, price_on_request: !!p.price_on_request, price_disclaimer: str(p.price_disclaimer),
+    maintenance_charges: num(p.maintenance_charges), security_deposit_months: num(p.security_deposit_months),
+    lock_in_period_months: num(p.lock_in_period_months), rent_escalation_percent: num(p.rent_escalation_percent), gst_applicable: !!p.gst_applicable,
+    structure: str(p.structure), flooring: str(p.flooring), facade_glazing: str(p.facade_glazing), lifts_elevators: str(p.lifts_elevators),
+    hvac: str(p.hvac), power_load_backup: str(p.power_load_backup), fire_safety: str(p.fire_safety), floor_to_ceiling_height: str(p.floor_to_ceiling_height),
+    washrooms_pantry: str(p.washrooms_pantry), loading_docks: str(p.loading_docks), other_specifications: str(p.other_specifications),
+    agent_id: str(p.agent_id), relationship_manager_id: str(p.relationship_manager_id),
+    seo_title: str(p.seo_title), seo_description: str(p.seo_description), canonical_url: str(p.canonical_url)
+  };
+}
+
+/* ============ kind configs ============ */
+
+const KINDS = {
+  residential: {
+    ...PROJECT_KINDS.residential,
+    stepNames: STEP_NAMES, stepSub: STEP_SUB, fields: FIELDS,
+    sizePlainKeys: ['total_towers_buildings', 'total_floors', 'total_residential_units', 'number_of_phases'],
+    unitKey: 'bhk_type', unitLabel: 'BHK', unitSingular: 'BHK Configuration', chipLabel: 'Configuration', unitCustomPlaceholder: 'Custom BHK…',
+    unitFields: CONFIG_FIELDS, unitPresets: bhkPresets, newUnit: () => DEFAULTS.configuration(), unitRow: residentialUnitRow, renderUnits: renderConfigurations,
+    specPresets, amenityPresets, amenityCategories: AMENITY_CATEGORIES,
+    galleryCategories: GALLERY_CATEGORIES, docTypes: RESIDENTIAL_DOC_TYPES,
+    freshProject: freshResidentialProject, payload: residentialPayload
+  },
+  commercial: {
+    ...PROJECT_KINDS.commercial,
+    stepNames: [
+      'Basic Information', 'Project Location', 'Size & Scale', 'Status & Construction',
+      'Commercial Units & Pricing', 'Building Specifications', 'Tower / Building Details',
+      'Amenities & Features', 'Nearby Locations', 'Project Media', 'Pros & Cons',
+      'Project Documents', 'Litigation & Legal', 'Construction Updates', 'Project FAQ',
+      'Contact / Enquiry', 'SEO', 'Review & Submit'
+    ],
+    stepSub: [
+      'Core identity of the property — type, whether it is for sale or lease, and its overview.',
+      'Where the project is located.',
+      'Land, buildings, floors, leasable/saleable area and unit count.',
+      'Construction progress, occupancy certificate and phase timelines.',
+      'Lease terms for the whole project, then one record per unit type / size on offer.',
+      'Structure, facade, HVAC, power, fire safety and other building specifications.',
+      'Add one record per tower/building/block in the project.',
+      'Group amenities by category — check the ones available, or add custom ones.',
+      'Points of interest around the project, grouped by category.',
+      'Main image, gallery, master plan, videos and reels.',
+      'Short, factual pros and cons for the public listing.',
+      'RERA, occupancy certificate, fire NOC, lease terms and other documents.',
+      'Legal/litigation disclosure for the project.',
+      'Dated construction progress updates with optional photos.',
+      'Frequently asked questions shown on the public listing.',
+      'Agent and relationship manager assigned to this project.',
+      'Search engine metadata for the public project page.',
+      'Review every section before saving as draft or submitting for verification.'
+    ],
+    fields: COMMERCIAL_FIELDS,
+    sizePlainKeys: ['total_towers_buildings', 'total_floors', 'total_commercial_units', 'number_of_phases', 'area_unit', 'total_leasable_area', 'total_saleable_area', 'typical_floor_plate'],
+    unitKey: 'unit_type', unitLabel: 'Unit Type', unitSingular: 'Unit', chipLabel: 'Unit Types', unitCustomPlaceholder: 'Custom unit type…',
+    unitFields: COMMERCIAL_UNIT_FIELDS, unitPresets: () => presetList('commercial_unit', null, COMMERCIAL_UNIT_PRESET),
+    newUnit: newCommercialUnit, unitRow: commercialUnitRow, renderUnits: renderCommercialUnits,
+    specPresets: key => COMMERCIAL_SPEC_PRESETS[key] ? presetList('commercial_spec', key, COMMERCIAL_SPEC_PRESETS[key]) : null,
+    amenityPresets: cat => presetList('commercial_amenity', cat.key, cat.preset),
+    amenityCategories: COMMERCIAL_AMENITY_CATEGORIES,
+    galleryCategories: COMMERCIAL_GALLERY_CATEGORIES, docTypes: COMMERCIAL_DOC_TYPES,
+    freshProject: freshCommercialProject, payload: commercialPayload
+  }
+};
 
 function renderMedia() {
   if (!projectId) {
     return `<div class="empty">Save the project first (complete through Status &amp; Construction, then Save as Draft) to upload media.</div>`;
   }
-  const sizeHint = `<span class="hint">${esc(UPLOAD_LIMITS['residential-media'].label)}</span>`;
+  const sizeHint = `<span class="hint">${esc(UPLOAD_LIMITS[K.buckets.media].label)}</span>`;
   const main = state.media.main;
   const mp = state.media.masterPlan;
 
@@ -1193,7 +1465,7 @@ function renderMedia() {
       <img src="${esc(g.media_url || '')}" loading="lazy" onerror="this.style.display='none'">
       <div class="upload-thumb-body">
         <span class="name">${esc(g.file_name || 'Photo')}${g.file_size ? ` · ${fmtBytes(g.file_size)}` : ''}</span>
-        <select data-bind="media.gallery.${i}.category">${GALLERY_CATEGORIES.map(o => `<option value="${esc(o.value)}"${(g.category || 'exterior') === o.value ? ' selected' : ''}>${esc(o.label)}</option>`).join('')}</select>
+        <select data-bind="media.gallery.${i}.category">${K.galleryCategories.map(o => `<option value="${esc(o.value)}"${(g.category || 'exterior') === o.value ? ' selected' : ''}>${esc(o.label)}</option>`).join('')}</select>
         <input type="text" placeholder="Alt text (for SEO &amp; accessibility)" value="${esc(g.alt_text || '')}" data-bind="media.gallery.${i}.alt_text">
       </div>
       <button type="button" data-remove-gallery="${i}">✕</button>
@@ -1237,6 +1509,7 @@ function renderReview() {
   </div>`;
   const range = priceRangeFromConfigs();
   const priceText = range.min == null ? 'Not set' : (range.min === range.max ? fmtPriceWords(range.min) : `${fmtPriceWords(range.min)} – ${fmtPriceWords(range.max)}`);
+  if (K.key === 'commercial') return renderCommercialReview(section, { dev, city, loc, agent, relManager, priceText });
   const html = `<div class="review-grid">
     ${section('1. Basic Information', [['Project', p.project_name], ['Developer', dev], ['Type', p.project_type], ['RERA Number(s)', p.rera_numbers.length ? p.rera_numbers.join(', ') : '—'], ['Highlights', `${p.highlights.length} added`]], 1)}
     ${section('2. Project Location', [['Address', p.address], ['City / Locality', `${loc}, ${city}`], ['Pincode', p.pincode]], 2)}
@@ -1256,8 +1529,40 @@ function renderReview() {
     ${section('16. Contact / Enquiry', [['Assigned Agent', agent], ['Relationship Manager', relManager]], 16)}
     ${section('17. SEO', [['Slug', p.slug], ['SEO Title', p.seo_title]], 17)}
   </div>
-  <div class="confirm-row"><input type="checkbox" id="pf-confirm"><label for="pf-confirm">I confirm this information is accurate${originalModerationStatus === 'published' ? '' : ' and ready for verification'}. <span class="req">*</span></label></div>`;
+  ${confirmRowHtml()}`;
   return html;
+}
+
+function confirmRowHtml() {
+  return `<div class="confirm-row"><input type="checkbox" id="pf-confirm"><label for="pf-confirm">I confirm this information is accurate${originalModerationStatus === 'published' ? '' : ' and ready for verification'}. <span class="req">*</span></label></div>`;
+}
+
+function renderCommercialReview(section, { dev, city, loc, agent, relManager, priceText }) {
+  const p = state.project;
+  const n = i => `${i}. ${K.stepNames[i - 1]}`;
+  const label = v => (v ? String(v).replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : '—');
+  const rents = state.configurations.map(c => Number(c.expected_rent)).filter(x => x > 0);
+  const rentText = rents.length ? `${fmtPriceWords(Math.min(...rents))}${rents.length > 1 ? ` – ${fmtPriceWords(Math.max(...rents))}` : ''} / month` : 'Not set';
+  return `<div class="review-grid">
+    ${section(n(1), [['Project', p.project_name], ['Developer', dev], ['Property Type', label(p.project_type)], ['Available For', label(p.transaction_type)], ['RERA Number(s)', p.rera_numbers.length ? p.rera_numbers.join(', ') : '—'], ['Highlights', `${p.highlights.length} added`]], 1)}
+    ${section(n(2), [['Address', p.address], ['City / Locality', `${loc}, ${city}`], ['Pincode', p.pincode]], 2)}
+    ${section(n(3), [['Land Area', p.total_land_area ? `${p.total_land_area} ${p.land_area_unit}` : '—'], ['Leasable Area', p.total_leasable_area ? `${p.total_leasable_area} ${areaUnitLabel(p.area_unit)}` : '—'], ['Total Units', p.total_commercial_units]], 3)}
+    ${section(n(4), [['Status', p.status], ['Occupancy Certificate', label(p.occupancy_certificate)], ['Phases', state.phases.length || '—']], 4)}
+    ${section(n(5), [['Units', `${state.configurations.length} added`], ['Sale Price Range', priceText], ['Rent', rentText]], 5)}
+    ${section(n(6), [['Structure', p.structure], ['HVAC', p.hvac]], 6)}
+    ${section(n(7), [['Towers added', `${state.towers.length}`]], 7)}
+    ${section(n(8), [['Selected', `${state.amenities.length} amenities`]], 8)}
+    ${section(n(9), [['Added', `${state.nearby.length} landmarks`]], 9)}
+    ${section(n(10), [['Main image', state.media.main.media_url ? 'Uploaded' : 'Not set'], ['Gallery', `${state.media.gallery.length} images`], ['Videos', `${state.media.videos.length} added`]], 10)}
+    ${section(n(11), [['Pros', `${state.prosCons.filter(x => x.item_type === 'pro').length}`], ['Cons', `${state.prosCons.filter(x => x.item_type === 'con').length}`]], 11)}
+    ${section(n(12), [['Documents', `${state.documents.length} added`]], 12)}
+    ${section(n(13), [['Entries', `${state.litigation.length}`]], 13)}
+    ${section(n(14), [['Updates', `${state.updates.length}`]], 14)}
+    ${section(n(15), [['FAQs added', `${state.faqs.length}`]], 15)}
+    ${section(n(16), [['Assigned Agent', agent], ['Relationship Manager', relManager]], 16)}
+    ${section(n(17), [['Slug', p.slug], ['SEO Title', p.seo_title]], 17)}
+  </div>
+  ${confirmRowHtml()}`;
 }
 
 /* ============ toast ============ */
@@ -1311,7 +1616,8 @@ async function goNext() {
 }
 
 function stepFieldSpecs(i) {
-  const map = { 1: FIELDS.basic, 2: FIELDS.location, 3: FIELDS.size, 4: FIELDS.status, 6: FIELDS.specs, 16: FIELDS.contact, 17: FIELDS.seo };
+  const F = K.fields;
+  const map = { 1: F.basic, 2: F.location, 3: F.size, 4: F.status, 5: F.pricing, 6: F.specs, 16: F.contact, 17: F.seo };
   return map[i] || null;
 }
 
@@ -1322,7 +1628,7 @@ function stepFieldSpecs(i) {
 // do nothing.
 function repeatStepSpecs(i) {
   const map = {
-    4: ['phases', PHASE_FIELDS], 5: ['configurations', CONFIG_FIELDS], 7: ['towers', TOWER_FIELDS], 9: ['nearby', NEARBY_FIELDS],
+    4: ['phases', PHASE_FIELDS], 5: ['configurations', K.unitFields], 7: ['towers', TOWER_FIELDS], 9: ['nearby', NEARBY_FIELDS],
     12: ['documents', DOC_FIELDS], 14: ['updates', UPDATE_FIELDS], 15: ['faqs', FAQ_FIELDS]
   };
   return map[i] || null;
@@ -1357,7 +1663,7 @@ function handleSpecialBindings() {
   content.querySelectorAll('[data-set-bhktype]').forEach(el => {
     el.onclick = () => {
       const i = Number(el.dataset.setBhktype);
-      state.configurations[i].bhk_type = el.dataset.val;
+      state.configurations[i][K.unitKey] = el.dataset.val;
       touched = true;
       renderStepBody();
     };
@@ -1368,7 +1674,7 @@ function handleSpecialBindings() {
       const input = document.getElementById(el.dataset.input);
       const val = (input?.value || '').trim();
       if (!val) return;
-      state.configurations[i].bhk_type = val;
+      state.configurations[i][K.unitKey] = val;
       touched = true;
       renderStepBody();
     };
@@ -1415,7 +1721,7 @@ function handleSpecialBindings() {
   content.querySelectorAll('[data-remove-gallery]').forEach(el => {
     el.onclick = () => {
       const idx = Number(el.dataset.removeGallery);
-      deleteStorageFile('residential-media', state.media.gallery[idx]?.media_path);
+      deleteStorageFile(K.buckets.media, state.media.gallery[idx]?.media_path);
       state.media.gallery.splice(idx, 1);
       touched = true;
       renderStepBody();
@@ -1425,27 +1731,27 @@ function handleSpecialBindings() {
     el.onclick = () => { delete uploads[el.dataset.dismissUpload]; renderStepBody(); };
   });
   content.querySelectorAll('input[type=file][data-main-upload]').forEach(el => {
-    el.onchange = () => handleUpload(el.files[0], 'residential-media', 'media/main', 'media.main',
+    el.onchange = () => handleUpload(el.files[0], K.buckets.media, 'media/main', 'media.main',
       r => { state.media.main = { media_type: 'main_image', ...r }; });
   });
   content.querySelectorAll('input[type=file][data-masterplan-upload]').forEach(el => {
-    el.onchange = () => handleUpload(el.files[0], 'residential-media', 'media/master-plan', 'media.masterPlan',
+    el.onchange = () => handleUpload(el.files[0], K.buckets.media, 'media/master-plan', 'media.masterPlan',
       r => { state.media.masterPlan = { media_type: 'master_plan', ...r }; });
   });
   content.querySelectorAll('input[type=file][data-gallery-upload]').forEach(el => {
-    el.onchange = () => handleUpload(el.files[0], 'residential-media', 'media/gallery', `media.gallery.${uid()}`,
+    el.onchange = () => handleUpload(el.files[0], K.buckets.media, 'media/gallery', `media.gallery.${uid()}`,
       r => { state.media.gallery.push({ _k: uid(), media_type: 'gallery', category: 'exterior', alt_text: '', ...r }); });
   });
   content.querySelectorAll('input[type=file][data-doc-upload]').forEach(el => {
-    el.onchange = () => { const i = Number(el.dataset.docUpload); handleUpload(el.files[0], 'residential-documents', 'documents', `documents.${i}`,
+    el.onchange = () => { const i = Number(el.dataset.docUpload); handleUpload(el.files[0], K.buckets.docs, 'documents', `documents.${i}`,
       r => { state.documents[i].file_path = r.media_path; state.documents[i].file_url = r.media_url || null; state.documents[i].file_name = r.file_name; state.documents[i].file_size = r.file_size; }); };
   });
   content.querySelectorAll('input[type=file][data-lit-upload]').forEach(el => {
-    el.onchange = () => { const i = Number(el.dataset.litUpload); handleUpload(el.files[0], 'residential-documents', 'litigation', `litigation.${i}`,
+    el.onchange = () => { const i = Number(el.dataset.litUpload); handleUpload(el.files[0], K.buckets.docs, 'litigation', `litigation.${i}`,
       r => { state.litigation[i].supporting_document_path = r.media_path; state.litigation[i].supporting_document_url = r.media_url || null; state.litigation[i].supporting_document_name = r.file_name; state.litigation[i].supporting_document_size = r.file_size; }); };
   });
   content.querySelectorAll('input[type=file][data-update-upload]').forEach(el => {
-    el.onchange = () => { const i = Number(el.dataset.updateUpload); handleUpload(el.files[0], 'residential-media', 'construction-updates', `updates.${i}`,
+    el.onchange = () => { const i = Number(el.dataset.updateUpload); handleUpload(el.files[0], K.buckets.media, 'construction-updates', `updates.${i}`,
       r => { state.updates[i].media = state.updates[i].media || []; state.updates[i].media.push({ _k: uid(), media_path: r.media_path, media_url: r.media_url, file_name: r.file_name, file_size: r.file_size }); }); };
   });
 }
@@ -1502,7 +1808,7 @@ async function handleUpload(file, bucket, folder, key, cb) {
   }
 
   delete uploads[key];
-  const url = bucket === 'residential-documents' ? null : sb.storage.from(bucket).getPublicUrl(path).data.publicUrl;
+  const url = bucket === K.buckets.docs ? null : sb.storage.from(bucket).getPublicUrl(path).data.publicUrl;
   cb({ media_path: path, media_url: url, file_name: file.name, file_size: file.size });
   touched = true;
   renderStepBody();
@@ -1524,13 +1830,13 @@ function deleteStorageFile(bucket, path) {
 async function ensureProjectCode() {
   const cityName = lookups.cities.find(c => c.id === state.project.city_id)?.name || 'GEN';
   const cityCode = cityName.replace(/[^A-Za-z]/g, '').slice(0, 3).toUpperCase() || 'GEN';
-  return `RES-${cityCode}-${Date.now().toString(36).toUpperCase().slice(-6)}`;
+  return `${K.codePrefix}-${cityCode}-${Date.now().toString(36).toUpperCase().slice(-6)}`;
 }
 async function ensureUniqueSlug(base) {
   let slug = base || 'project';
   let n = 1;
   for (;;) {
-    let q = sb.from('residential_projects').select('id').eq('slug', slug);
+    let q = sb.from(K.tables.project).select('id').eq('slug', slug);
     if (projectId) q = q.neq('id', projectId);
     const { data } = await q.limit(1);
     if (!data || !data.length) return slug;
@@ -1540,9 +1846,13 @@ async function ensureUniqueSlug(base) {
 }
 
 function projectPayload() {
-  const p = state.project;
-  const num = v => (v === '' || v === null || v === undefined ? null : Number(v));
-  const str = v => (v === '' ? null : v);
+  return { ...K.payload(state.project), updated_by: currentUser.id };
+}
+
+const num = v => (v === '' || v === null || v === undefined ? null : Number(v));
+const str = v => (v === '' ? null : v);
+
+function residentialPayload(p) {
   return {
     project_name: p.project_name, developer_id: p.developer_id, project_type: p.project_type,
     launch_date: str(p.launch_date), rera_numbers: p.rera_numbers || [], rera_number: str((p.rera_numbers || [])[0] || null), overview: p.overview, highlights: p.highlights || [],
@@ -1562,8 +1872,7 @@ function projectPayload() {
     flooring: str(p.flooring), doors: str(p.doors), windows: str(p.windows), kitchen: str(p.kitchen), bathroom: str(p.bathroom),
     electrical: str(p.electrical), walls_paint: str(p.walls_paint), balcony: str(p.balcony), other_specifications: str(p.other_specifications),
     agent_id: str(p.agent_id), relationship_manager_id: str(p.relationship_manager_id),
-    seo_title: str(p.seo_title), seo_description: str(p.seo_description), canonical_url: str(p.canonical_url),
-    updated_by: currentUser.id
+    seo_title: str(p.seo_title), seo_description: str(p.seo_description), canonical_url: str(p.canonical_url)
   };
 }
 
@@ -1578,14 +1887,14 @@ async function saveProjectCore() {
     payload.slug = await ensureUniqueSlug(slugify(payload.project_name));
     payload.created_by = currentUser.id;
     payload.moderation_status = 'draft';
-    const { data, error } = await sb.from('residential_projects').insert(payload).select('id,project_code,slug').single();
+    const { data, error } = await sb.from(K.tables.project).insert(payload).select('id,project_code,slug').single();
     if (error) return { error: error.message };
     projectId = data.id;
     state.project.slug = data.slug;
-    await sb.from('residential_project_moderation_history').insert({ project_id: projectId, to_status: 'draft', action: 'created', changed_by: currentUser.id });
+    await sb.from(K.tables.history).insert({ project_id: projectId, to_status: 'draft', action: 'created', changed_by: currentUser.id });
   } else {
     if (state.project.slug) payload.slug = await ensureUniqueSlug(slugify(state.project.slug));
-    const { error } = await sb.from('residential_projects').update(payload).eq('id', projectId);
+    const { error } = await sb.from(K.tables.project).update(payload).eq('id', projectId);
     if (error) return { error: error.message };
   }
   return { error: null };
@@ -1605,10 +1914,10 @@ async function persistStep(i) {
   const { error: coreErr } = await saveProjectCore();
   if (coreErr) { toast(coreErr, true); return false; }
 
-  const num = v => (v === '' || v === null || v === undefined ? null : Number(v));
+  const T = K.tables;
   try {
     if (i === 4) {
-      const err = await replaceChildRows('residential_project_phases', state.phases.map((p, idx) => ({
+      const err = await replaceChildRows(T.phases, state.phases.map((p, idx) => ({
         phase_name: p.phase_name, construction_start_date: p.construction_start_date || null,
         expected_completion_date: p.expected_completion_date || null, rera_possession_date: p.rera_possession_date || null,
         target_possession_date: p.target_possession_date || null, units_per_phase: num(p.units_per_phase),
@@ -1617,17 +1926,10 @@ async function persistStep(i) {
       })));
       if (err) throw new Error(err);
     } else if (i === 5) {
-      const err = await replaceChildRows('residential_configurations', state.configurations.map((c, idx) => ({
-        bhk_type: c.bhk_type, area_unit: c.area_unit,
-        carpet_area: num(c.carpet_area), built_up_area: num(c.built_up_area), super_built_up_area: num(c.super_built_up_area),
-        starting_price: num(c.starting_price), maximum_price: num(c.maximum_price), price_type: c.price_type,
-        price_on_request: !!c.price_on_request, availability: c.availability, number_of_units: num(c.number_of_units),
-        parking_included: c.parking_included, parking_type: c.parking_type?.length ? c.parking_type : null,
-        description: c.description || null, display_order: idx
-      })));
+      const err = await replaceChildRows(T.units, state.configurations.map((c, idx) => K.unitRow(c, idx)));
       if (err) throw new Error(err);
     } else if (i === 7) {
-      const err = await replaceChildRows('residential_towers', state.towers.map((t, idx) => ({
+      const err = await replaceChildRows(T.towers, state.towers.map((t, idx) => ({
         tower_name: t.tower_name, number_of_floors: num(t.number_of_floors),
         number_of_units: num(t.number_of_units), configurations: t.configurations || [], tower_status: t.tower_status,
         construction_stage: t.construction_stage || null, construction_start_date: t.construction_start_date || null,
@@ -1636,7 +1938,7 @@ async function persistStep(i) {
       })));
       if (err) throw new Error(err);
     } else if (i === 8) {
-      const err = await replaceChildRows('residential_amenities', state.amenities.map((a, idx) => ({
+      const err = await replaceChildRows(T.amenities, state.amenities.map((a, idx) => ({
         category: a.category, amenity_type: a.amenity_type || a.amenity_name, amenity_name: a.amenity_name,
         description: a.description || null, is_available: a.is_available !== false, display_order: idx
       })));
@@ -1644,27 +1946,27 @@ async function persistStep(i) {
     } else if (i === 9) {
       // location_type is NOT NULL in the database but optional in the UI — must default to
       // '' (not null) here, or the insert fails whenever a landmark's "Type" is left blank.
-      const err = await replaceChildRows('residential_nearby_locations', state.nearby.map((n, idx) => ({
+      const err = await replaceChildRows(T.nearby, state.nearby.map((n, idx) => ({
         category: n.category, location_type: n.location_type || '', name: n.name, distance: num(n.distance),
         distance_unit: n.distance_unit, description: n.description || null, display_order: idx
       })));
       if (err) throw new Error(err);
     } else if (i === 10) {
-      const err = await replaceChildRows('residential_media', mediaRows());
+      const err = await replaceChildRows(T.media, mediaRows());
       if (err) throw new Error(err);
     } else if (i === 11) {
-      const err = await replaceChildRows('residential_project_pros_cons', state.prosCons.map((p, idx) => ({
+      const err = await replaceChildRows(T.prosCons, state.prosCons.map((p, idx) => ({
         item_type: p.item_type, content: p.content, display_order: idx, created_by: currentUser.id
       })));
       if (err) throw new Error(err);
     } else if (i === 12) {
-      const err = await replaceChildRows('residential_documents', state.documents.filter(d => d.file_path).map(d => ({
+      const err = await replaceChildRows(T.documents, state.documents.filter(d => d.file_path).map(d => ({
         document_type: d.document_type, title: d.title, file_path: d.file_path, file_url: d.file_url,
         visibility: d.visibility, description: d.description || null, uploaded_by: currentUser.id
       })));
       if (err) throw new Error(err);
     } else if (i === 13) {
-      const err = await replaceChildRows('residential_litigation', state.litigation.map(l => ({
+      const err = await replaceChildRows(T.litigation, state.litigation.map(l => ({
         status: l.status, case_title: l.case_title || null, court_tribunal: l.court_tribunal || null,
         case_type: l.case_type || null, filing_date: l.filing_date || null, current_status: l.current_status || null,
         case_description: l.case_description || null, supporting_document_path: l.supporting_document_path || null,
@@ -1672,20 +1974,20 @@ async function persistStep(i) {
       })));
       if (err) throw new Error(err);
     } else if (i === 14) {
-      await sb.from('residential_construction_updates').delete().eq('project_id', projectId);
+      await sb.from(T.updates).delete().eq('project_id', projectId);
       for (const u of state.updates) {
-        const { data, error } = await sb.from('residential_construction_updates').insert({
+        const { data, error } = await sb.from(T.updates).insert({
           project_id: projectId, update_title: u.update_title, update_date: u.update_date,
           construction_stage: u.construction_stage || null, description: u.description || null,
           is_published: !!u.is_published, created_by: currentUser.id
         }).select('id').single();
         if (error) throw new Error(error.message);
         if (u.media?.length) {
-          await sb.from('residential_construction_update_media').insert(u.media.map(m => ({ update_id: data.id, media_path: m.media_path, media_url: m.media_url })));
+          await sb.from(T.updateMedia).insert(u.media.map(m => ({ update_id: data.id, media_path: m.media_path, media_url: m.media_url })));
         }
       }
     } else if (i === 15) {
-      const err = await replaceChildRows('residential_faqs', state.faqs.map((f, idx) => ({
+      const err = await replaceChildRows(T.faqs, state.faqs.map((f, idx) => ({
         question: f.question, answer: f.answer, display_order: idx, is_published: f.is_published !== false, created_by: currentUser.id
       })));
       if (err) throw new Error(err);
@@ -1710,9 +2012,9 @@ function mediaRows() {
   // present on another row gets an explicit NULL for it instead of falling back to the
   // column default. So every row needs every one of these keys set, even if just to the
   // same value the default would have given it.
-  if (state.media.main.media_path) rows.push({ media_type: 'main_image', media_path: state.media.main.media_path, media_url: state.media.main.media_url, storage_bucket: 'residential-media', is_primary: true, display_order: 0 });
-  if (state.media.masterPlan.media_path) rows.push({ media_type: 'master_plan', media_path: state.media.masterPlan.media_path, media_url: state.media.masterPlan.media_url, storage_bucket: 'residential-media', is_primary: false, display_order: 0 });
-  state.media.gallery.forEach((g, i) => rows.push({ media_type: 'gallery', category: g.category || 'exterior', media_path: g.media_path, media_url: g.media_url, storage_bucket: 'residential-media', alt_text: g.alt_text || null, is_primary: false, display_order: i }));
+  if (state.media.main.media_path) rows.push({ media_type: 'main_image', media_path: state.media.main.media_path, media_url: state.media.main.media_url, storage_bucket: K.buckets.media, is_primary: true, display_order: 0 });
+  if (state.media.masterPlan.media_path) rows.push({ media_type: 'master_plan', media_path: state.media.masterPlan.media_path, media_url: state.media.masterPlan.media_url, storage_bucket: K.buckets.media, is_primary: false, display_order: 0 });
+  state.media.gallery.forEach((g, i) => rows.push({ media_type: 'gallery', category: g.category || 'exterior', media_path: g.media_path, media_url: g.media_url, storage_bucket: K.buckets.media, alt_text: g.alt_text || null, is_primary: false, display_order: i }));
   state.media.videos.forEach((v, i) => rows.push({ media_type: v.media_type || 'video', platform: v.platform, title: v.title || null, media_url: v.media_url, is_primary: false, display_order: i }));
   return rows;
 }
@@ -1755,17 +2057,17 @@ async function submitForVerification() {
     // project that hasn't been published yet (draft / changes_required / rejected / a brand
     // new one) actually needs this to move it into review.
     if (originalModerationStatus === 'published') {
-      const { error } = await sb.from('residential_projects').update({ updated_by: currentUser.id }).eq('id', projectId);
+      const { error } = await sb.from(K.tables.project).update({ updated_by: currentUser.id }).eq('id', projectId);
       if (error) { toast(error.message, true); return; }
       toast('Project updated');
       closeForm();
       return;
     }
-    const { error } = await sb.from('residential_projects').update({
+    const { error } = await sb.from(K.tables.project).update({
       moderation_status: 'pending_verification', submitted_at: new Date().toISOString(), updated_by: currentUser.id
     }).eq('id', projectId);
     if (error) { toast(error.message, true); return; }
-    await sb.from('residential_project_moderation_history').insert({
+    await sb.from(K.tables.history).insert({
       project_id: projectId, from_status: originalModerationStatus || 'draft', to_status: 'pending_verification', action: 'submitted', changed_by: currentUser.id
     });
     toast('Submitted for verification');
@@ -1803,7 +2105,7 @@ function showSubmitSuccess() {
     uploads = {};
     state = freshState();
     renderShell();
-    pushWizardState('#/residential/add');
+    pushWizardState(`#/${K.routeBase}/add`);
   });
 }
 

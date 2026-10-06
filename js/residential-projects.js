@@ -2,6 +2,7 @@ import { sb } from './supabase-client.js';
 import { openProjectForm } from './project-form.js';
 import { pageHead, emptyRow, icon, pill, fmtPrice, rowActions, bindStubs, confirmArchiveProject, escapeHtml } from './utils.js';
 import { enhanceSelects, refreshSelect } from './custom-select.js';
+import { projectKind, localityEmbed } from './project-kinds.js';
 
 // This page's markup (the panel/toolbar/table shell, plus a <template> for one row) lives
 // in residential-projects.html, and its layout-only rules in css/residential-projects.css —
@@ -38,14 +39,30 @@ const STATUS_LABELS = { draft: 'Draft' };
 //   rendered — used to restore an in-progress edit after a page refresh (see app.js's boot
 //   sequence, which reads this back out of the #/residential/edit/<id> URL the wizard stamps
 //   on itself while open).
-export async function residentialProjectsPage(content, currentUser, navigate, moderationFilter, openAdd, isSuperAdmin, openEditId) {
-  content.innerHTML = pageHead('Residential Projects', 'Manage the residential listing catalog') + `<div class="empty">Loading…</div>`;
+export function residentialProjectsPage(content, currentUser, navigate, moderationFilter, openAdd, isSuperAdmin, openEditId) {
+  return projectsListPage('residential', content, currentUser, navigate, moderationFilter, openAdd, isSuperAdmin, openEditId);
+}
+
+export function commercialProjectsPage(content, currentUser, navigate, moderationFilter, openAdd, isSuperAdmin, openEditId) {
+  return projectsListPage('commercial', content, currentUser, navigate, moderationFilter, openAdd, isSuperAdmin, openEditId);
+}
+
+const PAGE_TEXT = {
+  residential: { title: 'Residential Projects', subtitle: 'Manage the residential listing catalog', icon: 'home' },
+  commercial: { title: 'Commercial Projects', subtitle: 'Offices, shops, showrooms, warehouses and other commercial listings', icon: 'building' }
+};
+
+// Same page for both kinds — only the table, labels and the wizard's kind differ.
+async function projectsListPage(kind, content, currentUser, navigate, moderationFilter, openAdd, isSuperAdmin, openEditId) {
+  const K = projectKind(kind);
+  const text = PAGE_TEXT[K.key];
+  content.innerHTML = pageHead(text.title, text.subtitle) + `<div class="empty">Loading…</div>`;
 
   const [{ panelHtml, rowTemplate }, { data, error }] = await Promise.all([
     loadTemplate(),
     (() => {
-      let q = sb.from('residential_projects')
-        .select('id,project_code,project_name,project_type,status,moderation_status,starting_price,price_on_request,cities(name),localities!residential_projects_locality_id_fkey(name)')
+      let q = sb.from(K.tables.project)
+        .select(`id,project_code,project_name,project_type,status,moderation_status,starting_price,price_on_request,cities(name),${localityEmbed(K.key)}`)
         .is('deleted_at', null)
         .order('updated_at', { ascending: false }).limit(200);
       if (moderationFilter) q = q.eq('moderation_status', moderationFilter);
@@ -53,19 +70,19 @@ export async function residentialProjectsPage(content, currentUser, navigate, mo
     })()
   ]);
 
-  content.innerHTML = pageHead('Residential Projects', 'Manage the residential listing catalog') + panelHtml;
+  content.innerHTML = pageHead(text.title, text.subtitle) + panelHtml;
 
   if (moderationFilter) {
     content.querySelector('.panel-head h2').insertAdjacentHTML('afterend',
       `<span class="chip active" style="margin-left:8px">${STATUS_LABELS[moderationFilter] || moderationFilter}<span id="clear-filter" style="cursor:pointer;margin-left:6px">✕</span></span>`);
-    content.querySelector('#clear-filter').addEventListener('click', () => residentialProjectsPage(content, currentUser, navigate, null, false, isSuperAdmin));
+    content.querySelector('#clear-filter').addEventListener('click', () => projectsListPage(K.key, content, currentUser, navigate, null, false, isSuperAdmin));
   }
 
   const tbody = content.querySelector('#residential-projects-rows');
   if (error) {
     tbody.innerHTML = emptyRow(7, error.message);
   } else if (!data.length) {
-    tbody.innerHTML = emptyRow(7, moderationFilter ? `No ${(STATUS_LABELS[moderationFilter] || moderationFilter).toLowerCase()} projects.` : 'No residential projects yet. Click "+ Add Project" to create the first one.');
+    tbody.innerHTML = emptyRow(7, moderationFilter ? `No ${(STATUS_LABELS[moderationFilter] || moderationFilter).toLowerCase()} projects.` : `No ${K.label.toLowerCase()} projects yet. Click "+ Add Project" to create the first one.`);
   } else {
     tbody.innerHTML = '';
     data.forEach(p => {
@@ -73,15 +90,15 @@ export async function residentialProjectsPage(content, currentUser, navigate, mo
       tpl.innerHTML = rowTemplate;
       const row = tpl.content.firstElementChild;
       row.dataset.searchText = `${p.project_name} ${p.project_code}`.toLowerCase();
-      row.querySelector('[data-field="icon"]').innerHTML = icon('home', 16);
+      row.querySelector('[data-field="icon"]').innerHTML = icon(text.icon, 16);
       row.querySelector('[data-field="project_name"]').textContent = p.project_name;
       row.querySelector('[data-field="project_code"]').textContent = p.project_code;
-      row.querySelector('[data-field="project_type"]').textContent = p.project_type || '—';
+      row.querySelector('[data-field="project_type"]').textContent = K.key === 'commercial' ? (p.project_type || '—').replace(/_/g, ' ') : (p.project_type || '—');
       row.querySelector('[data-field="location"]').textContent = `${p.localities?.name || '—'}${p.cities?.name ? ', ' + p.cities.name : ''}`;
       row.querySelector('[data-field="price"]').textContent = fmtPrice(p.starting_price, p.price_on_request);
       row.querySelector('[data-field="status"]').textContent = (p.status || '—').replace(/_/g, ' ');
       row.querySelector('[data-field="moderation"]').innerHTML = pill(p.moderation_status);
-      row.querySelector('[data-field="actions"]').innerHTML = rowActions('project', p.id, p.project_name, isSuperAdmin);
+      row.querySelector('[data-field="actions"]').innerHTML = rowActions('project', p.id, p.project_name, isSuperAdmin, K.key);
       tbody.appendChild(row);
     });
 
@@ -103,12 +120,12 @@ export async function residentialProjectsPage(content, currentUser, navigate, mo
     });
   }
 
-  const openWizard = (projectId) => openProjectForm(content, currentUser, projectId, () => navigate('residential'));
+  const openWizard = (projectId) => openProjectForm(content, currentUser, projectId, () => navigate(K.routeBase), undefined, K.key);
   content.querySelector('#add-project')?.addEventListener('click', () => openWizard(null));
-  content.querySelector('#open-by-developer')?.addEventListener('click', () => openDeveloperProjectPicker(openWizard));
+  content.querySelector('#open-by-developer')?.addEventListener('click', () => openDeveloperProjectPicker(openWizard, K));
   bindStubs(content, {
     onEditProject: openWizard,
-    onDeleteProject: (id, name) => confirmArchiveProject(id, name, currentUser.id, () => residentialProjectsPage(content, currentUser, navigate, moderationFilter))
+    onDeleteProject: (id, name) => confirmArchiveProject(id, name, currentUser.id, () => projectsListPage(K.key, content, currentUser, navigate, moderationFilter, false, isSuperAdmin), K.key)
   });
 
   if (openAdd) openWizard(null);
@@ -120,7 +137,7 @@ export async function residentialProjectsPage(content, currentUser, navigate, mo
 // custom-select.js, auto-enabled once a list has more than a handful of options). The
 // Project dropdown stays empty/disabled until a Developer is chosen, then lists only that
 // developer's projects.
-async function openDeveloperProjectPicker(openWizard) {
+async function openDeveloperProjectPicker(openWizard, K) {
   const overlay = document.createElement('div');
   overlay.className = 'modal-overlay';
   overlay.innerHTML = `
@@ -174,7 +191,7 @@ async function openDeveloperProjectPicker(openWizard) {
     }
     projectSelect.innerHTML = '<option value="">Loading…</option>';
     refreshSelect(projectSelect);
-    const { data: projects } = await sb.from('residential_projects')
+    const { data: projects } = await sb.from(K.tables.project)
       .select('id,project_name').eq('developer_id', developerId).is('deleted_at', null).order('project_name');
     if (!projects || !projects.length) {
       projectSelect.innerHTML = '<option value="">No projects for this developer</option>';

@@ -1,5 +1,6 @@
 import { sb } from './supabase-client.js';
 import { pageHead, tablePanel, emptyRow, escapeHtml, fmtPrice, fmtDate, pill, toast } from './utils.js';
+import { KIND_KEYS, projectKind, queryAllKinds, localityEmbed, kindPill } from './project-kinds.js';
 
 // The Reports section of the sidebar. Each report loads its own data, renders summary
 // cards + a table, and can be exported as CSV or Excel (via the SheetJS CDN script
@@ -7,8 +8,15 @@ import { pageHead, tablePanel, emptyRow, escapeHtml, fmtPrice, fmtDate, pill, to
 // back to the sidebar.
 const IN_MODERATION = ['pending_verification', 'under_review', 'changes_required', 'resubmitted'];
 
+// Residential / Commercial / All — applies to every report that reads project or enquiry
+// tables. Kept across tab switches so comparing reports for one kind stays one click.
+const KIND_FILTERS = [{ key: 'all', label: 'All Projects' }, ...KIND_KEYS.map(k => ({ key: k, label: projectKind(k).label }))];
+let kindFilter = 'all';
+const selectedKinds = () => (kindFilter === 'all' ? KIND_KEYS : [kindFilter]);
+const typeLabel = k => projectKind(k).label;
+
 const REPORTS = {
-  projects: { label: 'Projects', title: 'Projects Report', subtitle: 'Every active residential project, with status and pricing', load: loadProjectsReport },
+  projects: { label: 'Projects', title: 'Projects Report', subtitle: 'Every active project, with status and pricing', load: loadProjectsReport },
   enquiries: { label: 'Enquiries', title: 'Enquiries Report', subtitle: 'Latest 500 enquiries, with conversion at a glance', load: loadEnquiriesReport },
   developers: { label: 'Developers', title: 'Developers Report', subtitle: 'Project counts per developer', load: loadDevelopersReport },
   agents: { label: 'Agents', title: 'Agents Report', subtitle: 'Enquiry load and conversions per agent', load: loadAgentsReport },
@@ -17,7 +25,7 @@ const REPORTS = {
 
 export async function reportsPage(content, navigate, kind = 'projects') {
   const def = REPORTS[kind] || REPORTS.projects;
-  content.innerHTML = pageHead(def.title, def.subtitle) + tabRowHtml(kind) + `<div class="empty">Loading…</div>`;
+  content.innerHTML = pageHead(def.title, def.subtitle) + tabRowHtml(kind) + kindRowHtml() + `<div class="empty">Loading…</div>`;
 
   const { cards, headers, exportRows, rowsHtml, emptyText } = await def.load();
 
@@ -28,10 +36,12 @@ export async function reportsPage(content, navigate, kind = 'projects') {
   const toolbar = `<div class="toolbar"><button type="button" class="btn-outline" id="export-csv">Export CSV</button><button type="button" class="btn-outline" id="export-excel">Export Excel</button></div>`;
   const body = rowsHtml.length ? rowsHtml.join('') : emptyRow(headers.length, emptyText);
 
-  content.innerHTML = pageHead(def.title, def.subtitle) + tabRowHtml(kind) + cardsHtml + tablePanel(def.title, toolbar, headers, body);
+  content.innerHTML = pageHead(def.title, def.subtitle) + tabRowHtml(kind) + kindRowHtml() + cardsHtml + tablePanel(def.title, toolbar, headers, body);
 
   content.querySelectorAll('[data-report-tab]').forEach(btn =>
     btn.addEventListener('click', () => reportsPage(content, navigate, btn.dataset.reportTab)));
+  content.querySelectorAll('[data-report-kind]').forEach(btn =>
+    btn.addEventListener('click', () => { kindFilter = btn.dataset.reportKind; reportsPage(content, navigate, kind); }));
   content.querySelector('#export-csv').addEventListener('click', () => exportCSV(`${kind}-report.csv`, headers, exportRows));
   content.querySelector('#export-excel').addEventListener('click', () => exportExcel(`${kind}-report.xlsx`, headers, exportRows));
 }
@@ -39,6 +49,12 @@ export async function reportsPage(content, navigate, kind = 'projects') {
 function tabRowHtml(active) {
   return `<div class="tab-row">${Object.entries(REPORTS).map(([key, r]) =>
     `<button type="button" class="tab-pill${key === active ? ' active' : ''}" data-report-tab="${key}">${escapeHtml(r.label)}</button>`
+  ).join('')}</div>`;
+}
+
+function kindRowHtml() {
+  return `<div class="tab-row">${KIND_FILTERS.map(f =>
+    `<button type="button" class="tab-pill${f.key === kindFilter ? ' active' : ''}" data-report-kind="${f.key}">${escapeHtml(f.label)}</button>`
   ).join('')}</div>`;
 }
 
@@ -50,14 +66,16 @@ function daysSince(iso) {
 /* ---------------- report data loaders ---------------- */
 
 async function loadProjectsReport() {
-  const [{ data }, { count: archivedCount }] = await Promise.all([
-    sb.from('residential_projects')
-      .select('project_code,project_name,project_type,status,moderation_status,starting_price,price_on_request,created_at,cities(name),localities!residential_projects_locality_id_fkey(name),developers(name)')
+  const kinds = selectedKinds();
+  const [{ data }, archivedCounts] = await Promise.all([
+    queryAllKinds(K => sb.from(K.tables.project)
+      .select(`project_code,project_name,project_type,status,moderation_status,starting_price,price_on_request,created_at,cities(name),${localityEmbed(K.key)},developers(name)`)
       .is('deleted_at', null)
-      .order('created_at', { ascending: false }),
-    sb.from('residential_projects').select('id', { count: 'exact', head: true }).not('deleted_at', 'is', null)
+      .order('created_at', { ascending: false }), kinds),
+    Promise.all(kinds.map(k => sb.from(projectKind(k).tables.project).select('id', { count: 'exact', head: true }).not('deleted_at', 'is', null)))
   ]);
-  const rows = data || [];
+  const archivedCount = archivedCounts.reduce((n, r) => n + (r.count ?? 0), 0);
+  const rows = (data || []).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
   const countBy = s => rows.filter(p => p.moderation_status === s).length;
 
   const cards = [
@@ -65,16 +83,16 @@ async function loadProjectsReport() {
     { label: 'Published', value: countBy('published') },
     { label: 'Draft', value: countBy('draft') },
     { label: 'In Moderation', value: rows.filter(p => IN_MODERATION.includes(p.moderation_status)).length },
-    { label: 'Archived', value: archivedCount ?? 0 }
+    { label: 'Archived', value: archivedCount }
   ];
 
-  const headers = ['Project', 'Code', 'Type', 'Developer', 'City', 'Locality', 'Status', 'Moderation', 'Starting Price', 'Created'];
+  const headers = ['Project', 'Code', 'Kind', 'Type', 'Developer', 'City', 'Locality', 'Status', 'Moderation', 'Starting Price', 'Created'];
   const exportRows = rows.map(p => [
-    p.project_name, p.project_code, p.project_type || '', p.developers?.name || '', p.cities?.name || '', p.localities?.name || '',
+    p.project_name, p.project_code, typeLabel(p._kind), p.project_type || '', p.developers?.name || '', p.cities?.name || '', p.localities?.name || '',
     p.status || '', p.moderation_status || '', p.price_on_request ? 'On request' : (p.starting_price ?? ''), fmtDate(p.created_at)
   ]);
   const rowsHtml = rows.map(p => `<tr>
-    <td>${escapeHtml(p.project_name)}</td><td>${escapeHtml(p.project_code)}</td><td>${escapeHtml(p.project_type || '—')}</td>
+    <td>${escapeHtml(p.project_name)}</td><td>${escapeHtml(p.project_code)}</td><td>${kindPill(p._kind)}</td><td>${escapeHtml((p.project_type || '—').replace(/_/g, ' '))}</td>
     <td>${escapeHtml(p.developers?.name || '—')}</td><td>${escapeHtml(p.cities?.name || '—')}</td><td>${escapeHtml(p.localities?.name || '—')}</td>
     <td>${escapeHtml((p.status || '—').replace(/_/g, ' '))}</td><td>${pill(p.moderation_status)}</td>
     <td>${fmtPrice(p.starting_price, p.price_on_request)}</td><td>${fmtDate(p.created_at)}</td>
@@ -84,10 +102,10 @@ async function loadProjectsReport() {
 }
 
 async function loadEnquiriesReport() {
-  const { data } = await sb.from('residential_enquiries')
-    .select('contact_person,phone,email,enquiry_type,status,source,created_at,residential_projects(project_name)')
-    .order('created_at', { ascending: false }).limit(500);
-  const rows = data || [];
+  const { data } = await queryAllKinds(K => sb.from(K.tables.enquiries)
+    .select(`contact_person,phone,email,enquiry_type,status,source,created_at,project:${K.tables.project}(project_name)`)
+    .order('created_at', { ascending: false }).limit(500), selectedKinds());
+  const rows = (data || []).sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 500);
   const countBy = s => rows.filter(e => e.status === s).length;
   const converted = countBy('converted');
 
@@ -99,13 +117,13 @@ async function loadEnquiriesReport() {
     { label: 'Conversion Rate', value: rows.length ? Math.round(converted / rows.length * 100) + '%' : '0%' }
   ];
 
-  const headers = ['Contact', 'Phone', 'Email', 'Project', 'Type', 'Source', 'Status', 'Date'];
+  const headers = ['Contact', 'Phone', 'Email', 'Project', 'Kind', 'Type', 'Source', 'Status', 'Date'];
   const exportRows = rows.map(e => [
-    e.contact_person, e.phone, e.email || '', e.residential_projects?.project_name || '', e.enquiry_type || '', e.source || '', e.status || '', fmtDate(e.created_at)
+    e.contact_person, e.phone, e.email || '', e.project?.project_name || '', typeLabel(e._kind), e.enquiry_type || '', e.source || '', e.status || '', fmtDate(e.created_at)
   ]);
   const rowsHtml = rows.map(e => `<tr>
     <td>${escapeHtml(e.contact_person)}</td><td>${escapeHtml(e.phone)}</td><td>${escapeHtml(e.email || '—')}</td>
-    <td>${escapeHtml(e.residential_projects?.project_name || '—')}</td><td>${escapeHtml((e.enquiry_type || '—').replace(/_/g, ' '))}</td>
+    <td>${escapeHtml(e.project?.project_name || '—')}</td><td>${kindPill(e._kind)}</td><td>${escapeHtml((e.enquiry_type || '—').replace(/_/g, ' '))}</td>
     <td>${escapeHtml(e.source || '—')}</td><td>${pill(e.status)}</td><td>${fmtDate(e.created_at)}</td>
   </tr>`);
 
@@ -115,7 +133,7 @@ async function loadEnquiriesReport() {
 async function loadDevelopersReport() {
   const [{ data: devs }, { data: projects }] = await Promise.all([
     sb.from('developers').select('id,name,verified,status').order('name'),
-    sb.from('residential_projects').select('developer_id,moderation_status').is('deleted_at', null)
+    queryAllKinds(K => sb.from(K.tables.project).select('developer_id,moderation_status').is('deleted_at', null), selectedKinds())
   ]);
   const devList = devs || [];
   const projList = projects || [];
@@ -144,7 +162,7 @@ async function loadDevelopersReport() {
 async function loadAgentsReport() {
   const [{ data: agentsData }, { data: enquiries }] = await Promise.all([
     sb.from('agents').select('id,full_name,company_name,verified,status').order('full_name'),
-    sb.from('residential_enquiries').select('assigned_agent_id,status')
+    queryAllKinds(K => sb.from(K.tables.enquiries).select('assigned_agent_id,status'), selectedKinds())
   ]);
   const agentList = agentsData || [];
   const enqList = enquiries || [];
@@ -171,9 +189,9 @@ async function loadAgentsReport() {
 }
 
 async function loadModerationReport() {
-  const { data } = await sb.from('residential_projects')
+  const { data } = await queryAllKinds(K => sb.from(K.tables.project)
     .select('project_code,project_name,moderation_status,submitted_at,updated_at')
-    .is('deleted_at', null);
+    .is('deleted_at', null), selectedKinds());
   const rows = data || [];
   const countBy = s => rows.filter(p => p.moderation_status === s).length;
 
@@ -183,10 +201,10 @@ async function loadModerationReport() {
   const queue = rows.filter(p => IN_MODERATION.includes(p.moderation_status))
     .sort((a, b) => new Date(a.submitted_at || a.updated_at) - new Date(b.submitted_at || b.updated_at));
 
-  const headers = ['Project', 'Code', 'Moderation Status', 'Submitted', 'Days In Queue'];
-  const exportRows = queue.map(p => [p.project_name, p.project_code, p.moderation_status || '', fmtDate(p.submitted_at), daysSince(p.submitted_at)]);
+  const headers = ['Project', 'Code', 'Kind', 'Moderation Status', 'Submitted', 'Days In Queue'];
+  const exportRows = queue.map(p => [p.project_name, p.project_code, typeLabel(p._kind), p.moderation_status || '', fmtDate(p.submitted_at), daysSince(p.submitted_at)]);
   const rowsHtml = queue.map(p => `<tr>
-    <td>${escapeHtml(p.project_name)}</td><td>${escapeHtml(p.project_code)}</td><td>${pill(p.moderation_status)}</td>
+    <td>${escapeHtml(p.project_name)}</td><td>${escapeHtml(p.project_code)}</td><td>${kindPill(p._kind)}</td><td>${pill(p.moderation_status)}</td>
     <td>${fmtDate(p.submitted_at)}</td><td>${daysSince(p.submitted_at)}</td>
   </tr>`);
 
