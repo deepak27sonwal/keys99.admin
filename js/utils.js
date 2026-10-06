@@ -1,4 +1,5 @@
 import { sb } from './supabase-client.js';
+import { projectKind } from './project-kinds.js';
 
 // Shared formatting, table/panel-markup and row-action helpers used across every admin
 // page (Dashboard, Residential Projects, Developers, Agents, Cities, Enquiries,
@@ -147,12 +148,15 @@ export function icon(name, size = 16) {
 
 const ENTITY_KINDS = ['developer', 'agent', 'city', 'relationship_manager'];
 
-export function rowActions(kind, id, name, canDelete = true) {
+// projectKind ('residential' | 'commercial') only applies to kind === 'project' — it's
+// carried on the buttons so bindStubs() can hand it back to the edit/archive callbacks.
+export function rowActions(kind, id, name, canDelete = true, projectKind = 'residential') {
   if (kind === 'project') {
-    const del = canDelete ? `<button class="icon-btn danger" data-delete-project="${id}" data-project-name="${escapeHtml(name || '')}">${icon('trash', 13)}</button>` : '';
+    const pk = `data-project-kind="${escapeHtml(projectKind)}"`;
+    const del = canDelete ? `<button class="icon-btn danger" data-delete-project="${id}" ${pk} data-project-name="${escapeHtml(name || '')}">${icon('trash', 13)}</button>` : '';
     return `<div class="row-actions">
-      <button class="icon-btn" data-edit-project="${id}">${icon('edit', 13)}</button>
-      <button class="icon-btn" data-edit-project="${id}">${icon('eye', 13)}</button>
+      <button class="icon-btn" data-edit-project="${id}" ${pk}>${icon('edit', 13)}</button>
+      <button class="icon-btn" data-edit-project="${id}" ${pk}>${icon('eye', 13)}</button>
       ${del}
     </div>`;
   }
@@ -186,12 +190,12 @@ export function bindStubs(content, opts = {}) {
   });
   if (opts.onEditProject) {
     content.querySelectorAll('[data-edit-project]').forEach(btn => {
-      btn.addEventListener('click', () => opts.onEditProject(btn.dataset.editProject));
+      btn.addEventListener('click', () => opts.onEditProject(btn.dataset.editProject, btn.dataset.projectKind || 'residential'));
     });
   }
   if (opts.onDeleteProject) {
     content.querySelectorAll('[data-delete-project]').forEach(btn => {
-      btn.addEventListener('click', () => opts.onDeleteProject(btn.dataset.deleteProject, btn.dataset.projectName));
+      btn.addEventListener('click', () => opts.onDeleteProject(btn.dataset.deleteProject, btn.dataset.projectName, btn.dataset.projectKind || 'residential'));
     });
   }
   if (opts.onEditEntity) {
@@ -208,16 +212,16 @@ export function bindStubs(content, opts = {}) {
   }
 }
 
-// Soft-deletes a residential project (sets deleted_at/deleted_by instead of removing the
-// row) so it drops out of every normal listing but can be brought back from the Archive
-// section. Shared by the Residential Projects list and the Dashboard's recent-projects table.
-export async function confirmArchiveProject(id, name, userId, onArchived) {
+// Soft-deletes a project (sets deleted_at/deleted_by instead of removing the row) so it
+// drops out of every normal listing but can be brought back from the Archive section.
+// Shared by both project lists and the Dashboard's recent-projects table.
+export async function confirmArchiveProject(id, name, userId, onArchived, kind = 'residential') {
   const ok = await customConfirm(
     `"${name || 'This project'}" will be moved to Archive and hidden from listings. You can restore it anytime from the Archive section.`,
     { title: 'Archive this project?', confirmLabel: 'Archive', danger: true }
   );
   if (!ok) return;
-  const { error } = await sb.from('residential_projects')
+  const { error } = await sb.from(projectKind(kind).tables.project)
     .update({ deleted_at: new Date().toISOString(), deleted_by: userId ?? null })
     .eq('id', id);
   if (error) { toast(error.message, true); return; }
@@ -278,5 +282,35 @@ export function customConfirm(message, opts = {}) {
     overlay.addEventListener('click', (e) => { if (e.target === overlay) finish(false); });
     overlay.querySelectorAll('[data-cancel]').forEach(b => b.addEventListener('click', () => finish(false)));
     overlay.querySelector('[data-confirm]').addEventListener('click', () => finish(true));
+  });
+}
+
+// Asks which kind of project to create (for the shared "Add Project" entry points — the
+// sidebar shortcut and a developer row's Add Project action). Resolves 'residential',
+// 'commercial', or null if dismissed.
+export function chooseProjectKind() {
+  return new Promise((resolve) => {
+    const overlay = document.createElement('div');
+    overlay.className = 'modal-overlay';
+    overlay.innerHTML = `
+      <div class="modal-box" style="max-width:420px">
+        <div class="modal-head">
+          <div><h2>Add Project</h2><p>What kind of project is this?</p></div>
+          <button type="button" class="modal-close" data-cancel>✕</button>
+        </div>
+        <div class="modal-body">
+          <div class="kind-choice">
+            <button type="button" class="kind-choice-btn" data-kind="residential">${icon('home', 22)}<b>Residential</b><span>Apartments, villas, plots</span></button>
+            <button type="button" class="kind-choice-btn" data-kind="commercial">${icon('building', 22)}<b>Commercial</b><span>Offices, shops, warehouses</span></button>
+          </div>
+        </div>
+      </div>`;
+    document.body.appendChild(overlay);
+    const finish = (val) => { overlay.remove(); document.removeEventListener('keydown', escHandler); resolve(val); };
+    const escHandler = (e) => { if (e.key === 'Escape') finish(null); };
+    document.addEventListener('keydown', escHandler);
+    overlay.addEventListener('click', (e) => { if (e.target === overlay) finish(null); });
+    overlay.querySelectorAll('[data-cancel]').forEach(b => b.addEventListener('click', () => finish(null)));
+    overlay.querySelectorAll('[data-kind]').forEach(b => b.addEventListener('click', () => finish(b.dataset.kind)));
   });
 }

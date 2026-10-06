@@ -48,6 +48,37 @@ The browser application uses only the Supabase publishable key. A service-role k
 - residential_project_moderation_history
 - residential_project_blogs
 
+### Commercial
+
+Mirrors the residential tables one for one (same RLS model, moderation workflow and
+archive behaviour), with commercial-specific columns and enums. Covers Office, Shop,
+Showroom, Warehouse, Industrial, Healthcare, Education, Hospitality, Commercial Land and
+Commercial Building.
+
+- commercial_projects (sale / lease / sale-and-lease, leasable and saleable area, lease terms, building specs)
+- commercial_units (unit type, floor, furnishing, rent or sale price, per unit)
+- commercial_project_phases
+- commercial_towers
+- commercial_amenities
+- commercial_nearby_locations
+- commercial_media
+- commercial_documents
+- commercial_litigation
+- commercial_construction_updates
+- commercial_construction_update_media
+- commercial_faqs
+- commercial_project_pros_cons
+- commercial_enquiries
+- commercial_project_moderation_history
+- commercial_project_blogs
+
+Storage buckets: `commercial-media` (public) and `commercial-documents` (private), mirroring
+`residential-media` / `residential-documents`.
+
+The admin code looks every table and bucket up through `js/project-kinds.js` rather than
+naming them directly, and the project wizard (`js/project-form.js`) drives both kinds from
+the same 18-step skeleton with a per-kind config.
+
 All current public tables have RLS enabled.
 
 ## Admin workflow

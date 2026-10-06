@@ -1,14 +1,14 @@
 import { sb } from './supabase-client.js';
 import { pageHead, tablePanel, emptyRow, escapeHtml, fmtDate, toast, customConfirm, icon, pill } from './utils.js';
 import { enhanceSelects } from './custom-select.js';
+import { KIND_KEYS, projectKind, queryAllKinds, kindPill } from './project-kinds.js';
 
 // Project Blogs: a standalone page (not part of the project wizard) that manages blog posts
-// across every residential project, each row of residential_project_blogs tied to a
-// project_id. Mirrors the look of Admins/Reports (pageHead + tablePanel) and the modal
+// across every project of both kinds — each post lives in its kind's <kind>_project_blogs
+// table, tied to a project_id in that kind's project table. Mirrors the look of Admins/Reports (pageHead + tablePanel) and the modal
 // mechanics of entity-form.js, but needs its own form since a blog post has a cover-image
 // upload and a long-form body textarea that the generic entity form doesn't support.
 
-const BUCKET = 'residential-media';
 const COVER_LIMITS = { maxBytes: 10 * 1024 * 1024, mimeTypes: ['image/jpeg', 'image/png', 'image/webp', 'image/avif', 'image/gif'], label: 'JPG, PNG, WEBP, AVIF or GIF · up to 10MB' };
 
 function slugify(text) {
@@ -18,59 +18,64 @@ function slugify(text) {
 }
 
 export async function blogPage(content, currentUser) {
-  content.innerHTML = pageHead('Project Blogs', 'Blog posts published under each residential project') + `<div class="empty">Loading…</div>`;
+  const subtitle = 'Blog posts published under each residential or commercial project';
+  content.innerHTML = pageHead('Project Blogs', subtitle) + `<div class="empty">Loading…</div>`;
 
   const [{ data: posts, error }, { data: projects }] = await Promise.all([
-    sb.from('residential_project_blogs')
-      .select('id,title,slug,author,is_published,published_at,updated_at,project_id,residential_projects(project_name)')
-      .order('updated_at', { ascending: false }),
-    sb.from('residential_projects').select('id,project_name').is('deleted_at', null).order('project_name')
+    queryAllKinds(K => sb.from(K.tables.blogs)
+      .select(`id,title,slug,author,is_published,published_at,updated_at,project_id,project:${K.tables.project}(project_name)`)
+      .order('updated_at', { ascending: false })),
+    queryAllKinds(K => sb.from(K.tables.project).select('id,project_name').is('deleted_at', null).order('project_name'))
   ]);
 
   if (error) {
-    content.innerHTML = pageHead('Project Blogs', 'Blog posts published under each residential project') + `<div class="empty">${escapeHtml(error.message)}</div>`;
+    content.innerHTML = pageHead('Project Blogs', subtitle) + `<div class="empty">${escapeHtml(error.message)}</div>`;
     return;
   }
+  posts.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at));
 
   const rows = posts.map(p => `
     <tr>
       <td>${escapeHtml(p.title)}</td>
-      <td>${escapeHtml(p.residential_projects?.project_name || '—')}</td>
+      <td>${escapeHtml(p.project?.project_name || '—')} ${kindPill(p._kind)}</td>
       <td>${escapeHtml(p.author || '—')}</td>
       <td>${pill(p.is_published ? 'published' : 'draft')}</td>
       <td>${fmtDate(p.updated_at)}</td>
       <td>
         <div class="row-actions">
-          <button class="icon-btn" data-edit-blog="${p.id}">${icon('edit', 13)}</button>
-          <button class="icon-btn danger" data-delete-blog="${p.id}" data-title="${escapeHtml(p.title)}">${icon('trash', 13)}</button>
+          <button class="icon-btn" data-edit-blog="${p.id}" data-kind="${p._kind}">${icon('edit', 13)}</button>
+          <button class="icon-btn danger" data-delete-blog="${p.id}" data-kind="${p._kind}" data-title="${escapeHtml(p.title)}">${icon('trash', 13)}</button>
         </div>
       </td>
     </tr>`).join('');
 
   const toolbar = `<button type="button" class="btn-primary" id="add-blog-btn">+ Add Blog Post</button>`;
 
-  content.innerHTML = pageHead('Project Blogs', 'Blog posts published under each residential project') +
+  content.innerHTML = pageHead('Project Blogs', subtitle) +
     tablePanel('Blog Posts', toolbar, ['Title', 'Project', 'Author', 'Status', 'Updated', 'Actions'], rows.length ? rows : emptyRow(6, 'No blog posts yet. Click "+ Add Blog Post" to write the first one.'));
 
   const reload = () => blogPage(content, currentUser);
 
   content.querySelector('#add-blog-btn').addEventListener('click', () => openBlogForm({ currentUser, projects, onSaved: reload }));
   content.querySelectorAll('[data-edit-blog]').forEach(btn =>
-    btn.addEventListener('click', () => openBlogForm({ currentUser, projects, existingId: btn.dataset.editBlog, onSaved: reload })));
+    btn.addEventListener('click', () => openBlogForm({ currentUser, projects, existingId: btn.dataset.editBlog, existingKind: btn.dataset.kind, onSaved: reload })));
   content.querySelectorAll('[data-delete-blog]').forEach(btn =>
-    btn.addEventListener('click', () => deleteBlogPost(btn.dataset.deleteBlog, btn.dataset.title, reload)));
+    btn.addEventListener('click', () => deleteBlogPost(btn.dataset.deleteBlog, btn.dataset.kind, btn.dataset.title, reload)));
 }
 
-async function deleteBlogPost(id, title, onDeleted) {
+async function deleteBlogPost(id, kind, title, onDeleted) {
   const ok = await customConfirm('This cannot be undone.', { title: `Delete "${title}"?`, confirmLabel: 'Delete', danger: true });
   if (!ok) return;
-  const { error } = await sb.from('residential_project_blogs').delete().eq('id', id);
+  const { error } = await sb.from(projectKind(kind).tables.blogs).delete().eq('id', id);
   if (error) { toast(error.message, true); return; }
   toast('Blog post deleted');
   onDeleted();
 }
 
-async function openBlogForm({ currentUser, projects, existingId, onSaved }) {
+// Project options are "<kind>:<id>" so the post is saved to the right kind's blogs table.
+// An existing post stays with its kind — moving it would mean a different table — so its
+// project picker only offers projects of that same kind.
+async function openBlogForm({ currentUser, projects, existingId, existingKind, onSaved }) {
   let values = {
     project_id: '', title: '', slug: '', excerpt: '', body: '', author: '', tags: '',
     meta_description: '', is_published: false, published_at: '',
@@ -79,7 +84,7 @@ async function openBlogForm({ currentUser, projects, existingId, onSaved }) {
   let slugTouched = !!existingId;
 
   if (existingId) {
-    const { data, error } = await sb.from('residential_project_blogs').select('*').eq('id', existingId).single();
+    const { data, error } = await sb.from(projectKind(existingKind).tables.blogs).select('*').eq('id', existingId).single();
     if (error) { toast(error.message, true); return; }
     values = {
       ...data,
@@ -102,7 +107,9 @@ async function openBlogForm({ currentUser, projects, existingId, onSaved }) {
             <label>Project <span class="req">*</span></label>
             <select data-field="project_id">
               <option value="">Select a project…</option>
-              ${projects.map(p => `<option value="${escapeHtml(p.id)}"${values.project_id === p.id ? ' selected' : ''}>${escapeHtml(p.project_name)}</option>`).join('')}
+              ${KIND_KEYS.filter(k => !existingId || k === existingKind).map(k => `<optgroup label="${escapeHtml(projectKind(k).label)}">${
+        projects.filter(p => p._kind === k).map(p => `<option value="${escapeHtml(`${k}:${p.id}`)}"${values.project_id === p.id && (existingKind || k) === k ? ' selected' : ''}>${escapeHtml(p.project_name)}</option>`).join('')
+      }</optgroup>`).join('')}
             </select>
           </div>
           <div class="field full">
@@ -159,6 +166,8 @@ async function openBlogForm({ currentUser, projects, existingId, onSaved }) {
 
   const coverSlot = overlay.querySelector('#blog-cover-slot');
   let cover = { path: values.cover_image_path, url: values.cover_image_url };
+  const projectSelect = overlay.querySelector('[data-field="project_id"]');
+  const selectedKind = () => (projectSelect.value ? projectSelect.value.split(':')[0] : existingKind || null);
   renderCoverSlot();
 
   function renderCoverSlot() {
@@ -170,14 +179,17 @@ async function openBlogForm({ currentUser, projects, existingId, onSaved }) {
       coverSlot.querySelector('input[type=file]').addEventListener('change', async (e) => {
         const file = e.target.files[0];
         if (!file) return;
+        const kind = selectedKind();
+        if (!kind) { toast('Select a project first', true); e.target.value = ''; return; }
+        const bucket = projectKind(kind).buckets.media;
         if (file.size > COVER_LIMITS.maxBytes) { toast(`Too large. Max is ${(COVER_LIMITS.maxBytes / 1024 / 1024).toFixed(0)}MB.`, true); return; }
         if (!COVER_LIMITS.mimeTypes.includes(file.type)) { toast(`Unsupported file type. Allowed: ${COVER_LIMITS.label}.`, true); return; }
         coverSlot.innerHTML = `<div class="upload-box uploading">Uploading ${escapeHtml(file.name)}…</div>`;
         const safeName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, '_');
         const path = `blog/${Date.now()}-${safeName}`;
-        const { error } = await sb.storage.from(BUCKET).upload(path, file, { upsert: true });
+        const { error } = await sb.storage.from(bucket).upload(path, file, { upsert: true });
         if (error) { toast(error.message, true); renderCoverSlot(); return; }
-        cover = { path, url: sb.storage.from(BUCKET).getPublicUrl(path).data.publicUrl };
+        cover = { path, url: sb.storage.from(bucket).getPublicUrl(path).data.publicUrl };
         renderCoverSlot();
         toast('Uploaded');
       });
@@ -200,8 +212,9 @@ async function openBlogForm({ currentUser, projects, existingId, onSaved }) {
   overlay.querySelector('[data-save]').addEventListener('click', async () => {
     const box = overlay.querySelector('.modal-box');
     const get = (key) => box.querySelector(`[data-field="${key}"]`);
+    const [kind, projectId] = (get('project_id').value || ':').split(':');
     const payload = {
-      project_id: get('project_id').value || null,
+      project_id: projectId || null,
       title: get('title').value.trim(),
       slug: slugify(get('slug').value),
       excerpt: get('excerpt').value.trim() || null,
@@ -212,7 +225,8 @@ async function openBlogForm({ currentUser, projects, existingId, onSaved }) {
       published_at: get('published_at').value || null,
       is_published: get('is_published').checked,
       cover_image_path: cover.path,
-      cover_image_url: cover.url
+      cover_image_url: cover.url,
+      storage_bucket: kind ? projectKind(kind).buckets.media : null
     };
 
     const missing = [];
@@ -224,9 +238,10 @@ async function openBlogForm({ currentUser, projects, existingId, onSaved }) {
 
     const saveBtn = overlay.querySelector('[data-save]');
     saveBtn.disabled = true;
+    const table = projectKind(kind).tables.blogs;
     const { error } = existingId
-      ? await sb.from('residential_project_blogs').update({ ...payload, updated_by: currentUser.id }).eq('id', existingId)
-      : await sb.from('residential_project_blogs').insert({ ...payload, created_by: currentUser.id });
+      ? await sb.from(table).update({ ...payload, updated_by: currentUser.id }).eq('id', existingId)
+      : await sb.from(table).insert({ ...payload, created_by: currentUser.id });
     saveBtn.disabled = false;
     if (error) { toast(error.message, true); return; }
 
