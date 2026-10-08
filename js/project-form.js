@@ -2,6 +2,7 @@ import { sb } from './supabase-client.js';
 import { toast, fmtPriceWords } from './utils.js';
 import { enhanceSelects } from './custom-select.js';
 import { PROJECT_KINDS } from './project-kinds.js';
+import { compressImageToWebp, isCompressibleImage } from './image-compress.js';
 
 /* ============ small utils ============ */
 
@@ -56,7 +57,7 @@ const UPLOAD_LIMITS = {
   'residential-media': {
     maxBytes: 10 * 1024 * 1024,
     mimeTypes: ['image/jpeg', 'image/png', 'image/webp', 'image/avif', 'image/gif'],
-    label: 'JPG, PNG, WEBP, AVIF or GIF · up to 10MB'
+    label: 'JPG, PNG, WEBP or AVIF · auto-optimized to ~100 KB WebP'
   },
   'residential-documents': {
     maxBytes: 20 * 1024 * 1024,
@@ -1480,7 +1481,7 @@ function renderMedia() {
   const galleryUploads = Object.entries(uploads).filter(([k]) => k.startsWith('media.gallery.')).map(([key, up]) =>
     up.error
       ? `<div class="upload-thumb upload-error"><span class="name">⚠️ ${esc(up.error)}</span><button type="button" data-dismiss-upload="${key}">✕</button></div>`
-      : `<div class="upload-thumb uploading"><div class="upload-spinner"></div><span class="name">Uploading ${esc(up.name)}…</span></div>`
+      : `<div class="upload-thumb uploading"><div class="upload-spinner"></div><span class="name">${up.optimizing ? 'Optimizing' : 'Uploading'} ${esc(up.name)}…</span></div>`
   ).join('');
 
   const videos = state.media.videos.map((v, i) => `<div class="form-grid" style="margin-bottom:10px">
@@ -1537,7 +1538,7 @@ function renderFloorPlans(sizeHint) {
       const inFlight = Object.entries(uploads).filter(([k]) => k.startsWith(prefix)).map(([key, up]) =>
         up.error
           ? `<div class="upload-thumb upload-error"><span class="name">⚠️ ${esc(up.error)}</span><button type="button" data-dismiss-upload="${key}">✕</button></div>`
-          : `<div class="upload-thumb uploading"><div class="upload-spinner"></div><span class="name">Uploading ${esc(up.name)}…</span></div>`).join('');
+          : `<div class="upload-thumb uploading"><div class="upload-spinner"></div><span class="name">${up.optimizing ? 'Optimizing' : 'Uploading'} ${esc(up.name)}…</span></div>`).join('');
       return `<div class="fp-col">
         <div class="fp-col-head">${esc(t.label)} <span class="hint">${plans.length || 'none'}</span></div>
         ${thumbs}${inFlight}
@@ -1881,7 +1882,7 @@ function renderUploadSlot(key, inputHtml) {
   if (up.error) {
     return `<div class="upload-box upload-error"><span>⚠️ ${esc(up.error)}</span><label class="retry-link">Try again${inputHtml}</label></div>`;
   }
-  return `<div class="upload-box uploading"><div class="upload-spinner"></div><div class="upload-progress-wrap"><div class="name">Uploading ${esc(up.name)}${up.size ? ` · ${fmtBytes(up.size)}` : ''}…</div></div></div>`;
+  return `<div class="upload-box uploading"><div class="upload-spinner"></div><div class="upload-progress-wrap"><div class="name">${up.optimizing ? 'Optimizing' : 'Uploading'} ${esc(up.name)}${up.size ? ` · ${fmtBytes(up.size)}` : ''}…</div></div></div>`;
 }
 
 // Uses the Supabase JS storage client directly (the same call every other upload in this
@@ -1895,17 +1896,34 @@ async function handleUpload(file, bucket, folder, key, cb) {
   if (!file || !projectId) return;
 
   const limits = UPLOAD_LIMITS[bucket];
-  if (limits) {
-    if (file.size > limits.maxBytes) {
-      uploads[key] = { error: `Too large (${fmtBytes(file.size)}). Max is ${fmtBytes(limits.maxBytes)}.` };
-      renderStepBody();
-      return;
+  if (limits && limits.mimeTypes.length && !limits.mimeTypes.includes(file.type)) {
+    uploads[key] = { error: `Unsupported file type${file.type ? ` (${file.type})` : ''}. Allowed: ${limits.label}.` };
+    renderStepBody();
+    return;
+  }
+
+  // Photos going to the media bucket are converted to ~100 KB WebP first (see
+  // image-compress.js). Documents are uploaded exactly as given. The size limit below is
+  // checked against what's actually uploaded, so a large camera photo is fine.
+  let note = '';
+  if (bucket === K.buckets.media && isCompressibleImage(file)) {
+    uploads[key] = { name: file.name, size: file.size, optimizing: true };
+    renderStepBody();
+    try {
+      const out = await compressImageToWebp(file);
+      if (out.compressed) {
+        note = ` · ${fmtBytes(out.originalSize)} → ${fmtBytes(out.file.size)} WebP`;
+        file = out.file;
+      }
+    } catch (e) {
+      console.warn('Image compression failed, uploading the original', e);
     }
-    if (limits.mimeTypes.length && !limits.mimeTypes.includes(file.type)) {
-      uploads[key] = { error: `Unsupported file type${file.type ? ` (${file.type})` : ''}. Allowed: ${limits.label}.` };
-      renderStepBody();
-      return;
-    }
+  }
+
+  if (limits && file.size > limits.maxBytes) {
+    uploads[key] = { error: `Too large (${fmtBytes(file.size)}). Max is ${fmtBytes(limits.maxBytes)}.` };
+    renderStepBody();
+    return;
   }
 
   uploads[key] = { name: file.name, size: file.size };
@@ -1926,7 +1944,7 @@ async function handleUpload(file, bucket, folder, key, cb) {
   cb({ media_path: path, media_url: url, file_name: file.name, file_size: file.size });
   touched = true;
   renderStepBody();
-  toast('Uploaded');
+  toast(`Uploaded${note}`);
 }
 
 // Best-effort delete of a file from Supabase Storage when its reference is removed from the
