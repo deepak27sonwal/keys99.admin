@@ -22,6 +22,7 @@ export const PROJECT_KINDS = {
       updateMedia: 'residential_construction_update_media',
       faqs: 'residential_faqs',
       media: 'residential_media',
+      floorPlans: 'residential_floor_plans',
       history: 'residential_project_moderation_history',
       enquiries: 'residential_enquiries',
       blogs: 'residential_project_blogs'

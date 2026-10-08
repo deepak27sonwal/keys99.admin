@@ -74,12 +74,13 @@ export async function archivePage(content, navigate, isSuperAdmin) {
 // path, a network blip) should never block the person from actually deleting the project.
 async function deleteProjectStorageFiles(projectId, kind) {
   const { tables: T, buckets } = projectKind(kind);
-  const [media, documents, litigation, updates, blogs] = await Promise.all([
+  const [media, documents, litigation, updates, blogs, floorPlans] = await Promise.all([
     sb.from(T.media).select('media_path').eq('project_id', projectId),
     sb.from(T.documents).select('file_path').eq('project_id', projectId),
     sb.from(T.litigation).select('supporting_document_path').eq('project_id', projectId),
     sb.from(T.updates).select('id').eq('project_id', projectId),
-    sb.from(T.blogs).select('cover_image_path').eq('project_id', projectId)
+    sb.from(T.blogs).select('cover_image_path').eq('project_id', projectId),
+    T.floorPlans ? sb.from(T.floorPlans).select('image_path').eq('project_id', projectId) : { data: [] }
   ]);
 
   const updateIds = (updates.data || []).map(u => u.id);
@@ -90,7 +91,8 @@ async function deleteProjectStorageFiles(projectId, kind) {
   const mediaPaths = [
     ...(media.data || []).map(r => r.media_path),
     ...(updateMedia.data || []).map(r => r.media_path),
-    ...(blogs.data || []).map(r => r.cover_image_path)
+    ...(blogs.data || []).map(r => r.cover_image_path),
+    ...(floorPlans.data || []).map(r => r.image_path)
   ].filter(Boolean);
   const documentPaths = [
     ...(documents.data || []).map(r => r.file_path),

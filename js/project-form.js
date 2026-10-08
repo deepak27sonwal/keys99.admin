@@ -91,7 +91,7 @@ const STEP_SUB = [
   'Add one record per tower/building in the project.',
   'Group amenities by category — check the ones available, or add custom ones.',
   'Points of interest around the project, grouped by category.',
-  'Main image, gallery, master plan, videos and reels.',
+  'Main image, gallery, master plan, 2D/3D floor plans per BHK, videos and reels.',
   'Short, factual pros and cons for the public listing.',
   'RERA certificate, brochure and other project documents.',
   'Legal/litigation disclosure for the project.',
@@ -228,7 +228,7 @@ const DEFAULTS = {
   phase: () => ({ _k: uid(), phase_name: '', construction_start_date: '', expected_completion_date: '', rera_possession_date: '', target_possession_date: '', units_per_phase: '', configurations: [] })
 };
 
-const BHK_PRESET = ['1 BHK', '1.5 BHK', '2 BHK', '2.5 BHK', '3 BHK', '3.5 BHK', '4 BHK', '4.5 BHK', '5 BHK'];
+const BHK_PRESET = ['1 BHK', '1.5 BHK', '2 BHK', '2.5 BHK', '3 BHK', '3.5 BHK', '4 BHK', '4.5 BHK', '5 BHK', '5.5 BHK', '6 BHK'];
 
 // The preset chips/options below are editable from Settings → Lookup Lists (lookup_options
 // table). The hardcoded constants above stay as the fallback: a list falls back to them
@@ -255,7 +255,10 @@ function freshState() {
   return {
     project: K.freshProject(),
     configurations: [], towers: [], amenities: [], nearby: [], prosCons: [], documents: [], litigation: [], updates: [], faqs: [], phases: [],
-    media: { main: {}, masterPlan: {}, gallery: [], videos: [] }
+    media: { main: {}, masterPlan: {}, gallery: [], videos: [] },
+    // Floor plans (residential only): one row per uploaded 2D/3D image, tagged with its BHK.
+    // floorPlanBhks is UI-only — BHK sections opened with "+ Add BHK" that have no image yet.
+    floorPlans: [], floorPlanBhks: []
   };
 }
 
@@ -422,6 +425,10 @@ async function loadProject(id) {
     else if (m.media_type === 'gallery') s.media.gallery.push({ ...m, _k: m.id });
     else s.media.videos.push({ ...m, _k: m.id });
   });
+  if (T.floorPlans) {
+    const { data: plans } = await sb.from(T.floorPlans).select('*').eq('project_id', id).order('display_order');
+    s.floorPlans = (plans || []).map(r => ({ ...r, _k: r.id, file_name: (r.image_path || '').split('/').pop() }));
+  }
   return s;
 }
 
@@ -1488,9 +1495,82 @@ function renderMedia() {
       ${galleryItems}${galleryUploads}
       <label class="upload-box">🖼️ Add gallery photo<input type="file" accept="image/*" data-gallery-upload="1">${sizeHint}</label>
     </div>
+    ${K.tables.floorPlans ? renderFloorPlans(sizeHint) : ''}
     <div class="field full"><label>Videos / Virtual Tour / Reels</label>${videos}
       <button type="button" class="add-repeat" data-add-item="media.videos">+ Add Video Link</button>
     </div>`;
+}
+
+/* ============ floor plans (residential, inside Project Media) ============ */
+
+const FLOOR_PLAN_TYPES = [{ key: '2d', label: '2D Floor Plan' }, { key: '3d', label: '3D Floor Plan' }];
+const bhkSlug = bhk => String(bhk).replace(/[^a-z0-9]+/gi, '_');
+
+// BHK sections to show: every BHK configured in Step 5, every BHK that already has a plan,
+// and any opened manually with "+ Add BHK" — ordered like the BHK presets, customs last.
+function floorPlanBhks() {
+  const order = bhkPresets();
+  const set = new Set([
+    ...state.configurations.map(c => c.bhk_type).filter(Boolean),
+    ...state.floorPlans.map(f => f.bhk_type),
+    ...state.floorPlanBhks
+  ]);
+  const rank = b => (order.includes(b) ? order.indexOf(b) : order.length);
+  return [...set].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
+}
+
+function renderFloorPlans(sizeHint) {
+  const bhks = floorPlanBhks();
+  const sections = bhks.map(bhk => {
+    const cols = FLOOR_PLAN_TYPES.map(t => {
+      const plans = state.floorPlans.map((f, idx) => ({ f, idx })).filter(({ f }) => f.bhk_type === bhk && f.plan_type === t.key);
+      const thumbs = plans.map(({ f, idx }) => `
+        <div class="upload-thumb upload-thumb-wide">
+          <img src="${esc(f.image_url || '')}" loading="lazy" onerror="this.style.display='none'">
+          <div class="upload-thumb-body">
+            <span class="name">${esc(f.file_name || `${bhk} ${t.label}`)}${f.file_size ? ` · ${fmtBytes(f.file_size)}` : ''}</span>
+            <input type="text" placeholder="Alt text (for SEO &amp; accessibility)" value="${esc(f.alt_text || '')}" data-bind="floorPlans.${idx}.alt_text">
+          </div>
+          <button type="button" data-remove-floorplan="${idx}" title="Remove">✕</button>
+        </div>`).join('');
+      const prefix = `floorPlans.${bhkSlug(bhk)}.${t.key}.`;
+      const inFlight = Object.entries(uploads).filter(([k]) => k.startsWith(prefix)).map(([key, up]) =>
+        up.error
+          ? `<div class="upload-thumb upload-error"><span class="name">⚠️ ${esc(up.error)}</span><button type="button" data-dismiss-upload="${key}">✕</button></div>`
+          : `<div class="upload-thumb uploading"><div class="upload-spinner"></div><span class="name">Uploading ${esc(up.name)}…</span></div>`).join('');
+      return `<div class="fp-col">
+        <div class="fp-col-head">${esc(t.label)} <span class="hint">${plans.length || 'none'}</span></div>
+        ${thumbs}${inFlight}
+        <label class="upload-box">${t.key === '2d' ? '📐' : '🏠'} Add ${esc(t.label)}<input type="file" accept="image/*" data-fp-upload="1" data-bhk="${esc(bhk)}" data-plan-type="${t.key}">${sizeHint}</label>
+      </div>`;
+    }).join('');
+    const hasPlans = state.floorPlans.some(f => f.bhk_type === bhk);
+    const configured = state.configurations.some(c => c.bhk_type === bhk);
+    const removeBtn = !hasPlans && !configured ? `<button type="button" class="repeat-remove" data-fp-remove-bhk="${esc(bhk)}" title="Remove section">✕</button>` : '';
+    return `<div class="repeat-card fp-card"><div class="repeat-card-head"><b>${esc(bhk)}</b>${removeBtn}</div><div class="fp-grid">${cols}</div></div>`;
+  }).join('');
+
+  const addable = bhkPresets().filter(b => !bhks.includes(b));
+  const addRow = addable.length ? `<div class="fp-add">
+      <select id="fp-add-bhk"><option value="">Add floor plans for…</option>${addable.map(b => `<option value="${esc(b)}">${esc(b)}</option>`).join('')}</select>
+      <button type="button" class="btn-outline" data-fp-add-bhk="1">+ Add BHK</button>
+    </div>` : '';
+  const total = state.floorPlans.length;
+  return `<div class="field full"><label>Floor Plans <span class="hint">${total} image${total === 1 ? '' : 's'} · 2D and 3D per BHK</span></label>
+    ${sections || '<div class="empty" style="padding:18px">No BHK types yet — add configurations in Step 5, or pick a BHK below.</div>'}
+    ${addRow}
+  </div>`;
+}
+
+function floorPlanRows() {
+  // Every row carries every key — replaceChildRows() sends one batch insert, where a key
+  // missing on one row would become an explicit NULL instead of the column default.
+  return state.floorPlans.filter(f => f.image_path).map((f, idx) => ({
+    bhk_type: f.bhk_type, plan_type: f.plan_type,
+    title: `${f.bhk_type} ${f.plan_type.toUpperCase()} Floor Plan`,
+    image_path: f.image_path, image_url: f.image_url, alt_text: f.alt_text || null,
+    storage_bucket: K.buckets.media, display_order: idx, is_featured: false, is_active: true
+  }));
 }
 
 /* ============ review ============ */
@@ -1520,7 +1600,7 @@ function renderReview() {
     ${section('7. Tower / Building Details', [['Towers added', `${state.towers.length}`]], 7)}
     ${section('8. Amenities & Features', [['Selected', `${state.amenities.length} amenities`]], 8)}
     ${section('9. Nearby Locations', [['Added', `${state.nearby.length} landmarks`]], 9)}
-    ${section('10. Project Media', [['Main image', state.media.main.media_url ? 'Uploaded' : 'Not set'], ['Gallery', `${state.media.gallery.length} images`], ['Videos', `${state.media.videos.length} added`]], 10)}
+    ${section('10. Project Media', [['Main image', state.media.main.media_url ? 'Uploaded' : 'Not set'], ['Gallery', `${state.media.gallery.length} images`], ['Floor Plans', floorPlanSummary()], ['Videos', `${state.media.videos.length} added`]], 10)}
     ${section('11. Pros & Cons', [['Pros', `${state.prosCons.filter(x => x.item_type === 'pro').length}`], ['Cons', `${state.prosCons.filter(x => x.item_type === 'con').length}`]], 11)}
     ${section('12. Project Documents', [['Documents', `${state.documents.length} added`]], 12)}
     ${section('13. Litigation & Legal', [['Entries', `${state.litigation.length}`]], 13)}
@@ -1531,6 +1611,12 @@ function renderReview() {
   </div>
   ${confirmRowHtml()}`;
   return html;
+}
+
+function floorPlanSummary() {
+  if (!state.floorPlans.length) return 'None';
+  const by = t => state.floorPlans.filter(f => f.plan_type === t).length;
+  return `${by('2d')} 2D · ${by('3d')} 3D across ${new Set(state.floorPlans.map(f => f.bhk_type)).size} BHK types`;
 }
 
 function confirmRowHtml() {
@@ -1741,6 +1827,34 @@ function handleSpecialBindings() {
   content.querySelectorAll('input[type=file][data-gallery-upload]').forEach(el => {
     el.onchange = () => handleUpload(el.files[0], K.buckets.media, 'media/gallery', `media.gallery.${uid()}`,
       r => { state.media.gallery.push({ _k: uid(), media_type: 'gallery', category: 'exterior', alt_text: '', ...r }); });
+  });
+  content.querySelectorAll('input[type=file][data-fp-upload]').forEach(el => {
+    const bhk = el.dataset.bhk, planType = el.dataset.planType;
+    el.onchange = () => handleUpload(el.files[0], K.buckets.media, 'media/floor-plans', `floorPlans.${bhkSlug(bhk)}.${planType}.${uid()}`,
+      r => { state.floorPlans.push({ _k: uid(), bhk_type: bhk, plan_type: planType, image_path: r.media_path, image_url: r.media_url, file_name: r.file_name, file_size: r.file_size, alt_text: '' }); });
+  });
+  content.querySelectorAll('[data-remove-floorplan]').forEach(el => {
+    el.onclick = () => {
+      const idx = Number(el.dataset.removeFloorplan);
+      deleteStorageFile(K.buckets.media, state.floorPlans[idx]?.image_path);
+      state.floorPlans.splice(idx, 1);
+      touched = true;
+      renderStepBody();
+    };
+  });
+  content.querySelectorAll('[data-fp-add-bhk]').forEach(el => {
+    el.onclick = () => {
+      const bhk = content.querySelector('#fp-add-bhk')?.value;
+      if (!bhk) { toast('Pick a BHK type first', true); return; }
+      state.floorPlanBhks.push(bhk);
+      renderStepBody();
+    };
+  });
+  content.querySelectorAll('[data-fp-remove-bhk]').forEach(el => {
+    el.onclick = () => {
+      state.floorPlanBhks = state.floorPlanBhks.filter(b => b !== el.dataset.fpRemoveBhk);
+      renderStepBody();
+    };
   });
   content.querySelectorAll('input[type=file][data-doc-upload]').forEach(el => {
     el.onchange = () => { const i = Number(el.dataset.docUpload); handleUpload(el.files[0], K.buckets.docs, 'documents', `documents.${i}`,
@@ -1954,6 +2068,10 @@ async function persistStep(i) {
     } else if (i === 10) {
       const err = await replaceChildRows(T.media, mediaRows());
       if (err) throw new Error(err);
+      if (T.floorPlans) {
+        const fpErr = await replaceChildRows(T.floorPlans, floorPlanRows());
+        if (fpErr) throw new Error(fpErr);
+      }
     } else if (i === 11) {
       const err = await replaceChildRows(T.prosCons, state.prosCons.map((p, idx) => ({
         item_type: p.item_type, content: p.content, display_order: idx, created_by: currentUser.id
