@@ -2,6 +2,7 @@ import { sb } from './supabase-client.js';
 import { pageHead, tablePanel, emptyRow, escapeHtml, fmtDate, toast, customConfirm, icon, pill } from './utils.js';
 import { enhanceSelects } from './custom-select.js';
 import { KIND_KEYS, projectKind, queryAllKinds, kindPill } from './project-kinds.js';
+import { compressImageToWebp, isCompressibleImage } from './image-compress.js';
 
 // Project Blogs: a standalone page (not part of the project wizard) that manages blog posts
 // across every project of both kinds — each post lives in its kind's <kind>_project_blogs
@@ -9,7 +10,7 @@ import { KIND_KEYS, projectKind, queryAllKinds, kindPill } from './project-kinds
 // mechanics of entity-form.js, but needs its own form since a blog post has a cover-image
 // upload and a long-form body textarea that the generic entity form doesn't support.
 
-const COVER_LIMITS = { maxBytes: 10 * 1024 * 1024, mimeTypes: ['image/jpeg', 'image/png', 'image/webp', 'image/avif', 'image/gif'], label: 'JPG, PNG, WEBP, AVIF or GIF · up to 10MB' };
+const COVER_LIMITS = { maxBytes: 10 * 1024 * 1024, mimeTypes: ['image/jpeg', 'image/png', 'image/webp', 'image/avif', 'image/gif'], label: 'JPG, PNG, WEBP or AVIF · auto-optimized to ~100 KB WebP' };
 
 function slugify(text) {
   return String(text || '').toLowerCase().trim()
@@ -177,13 +178,27 @@ async function openBlogForm({ currentUser, projects, existingId, existingKind, o
     } else {
       coverSlot.innerHTML = `<label class="upload-box">🖼️ Click to upload cover image<input type="file" accept="image/*"><span class="hint">${COVER_LIMITS.label}</span></label>`;
       coverSlot.querySelector('input[type=file]').addEventListener('change', async (e) => {
-        const file = e.target.files[0];
+        let file = e.target.files[0];
         if (!file) return;
         const kind = selectedKind();
         if (!kind) { toast('Select a project first', true); e.target.value = ''; return; }
         const bucket = projectKind(kind).buckets.media;
-        if (file.size > COVER_LIMITS.maxBytes) { toast(`Too large. Max is ${(COVER_LIMITS.maxBytes / 1024 / 1024).toFixed(0)}MB.`, true); return; }
         if (!COVER_LIMITS.mimeTypes.includes(file.type)) { toast(`Unsupported file type. Allowed: ${COVER_LIMITS.label}.`, true); return; }
+        // Same ~100 KB WebP conversion as the project wizard's photos (see image-compress.js).
+        let note = '';
+        if (isCompressibleImage(file)) {
+          coverSlot.innerHTML = `<div class="upload-box uploading">Optimizing ${escapeHtml(file.name)}…</div>`;
+          try {
+            const out = await compressImageToWebp(file);
+            if (out.compressed) {
+              note = ` · ${(out.originalSize / 1024).toFixed(0)} KB → ${(out.file.size / 1024).toFixed(0)} KB WebP`;
+              file = out.file;
+            }
+          } catch (err) {
+            console.warn('Image compression failed, uploading the original', err);
+          }
+        }
+        if (file.size > COVER_LIMITS.maxBytes) { toast(`Too large. Max is ${(COVER_LIMITS.maxBytes / 1024 / 1024).toFixed(0)}MB.`, true); renderCoverSlot(); return; }
         coverSlot.innerHTML = `<div class="upload-box uploading">Uploading ${escapeHtml(file.name)}…</div>`;
         const safeName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, '_');
         const path = `blog/${Date.now()}-${safeName}`;
@@ -191,7 +206,7 @@ async function openBlogForm({ currentUser, projects, existingId, existingKind, o
         if (error) { toast(error.message, true); renderCoverSlot(); return; }
         cover = { path, url: sb.storage.from(bucket).getPublicUrl(path).data.publicUrl };
         renderCoverSlot();
-        toast('Uploaded');
+        toast(`Uploaded${note}`);
       });
     }
   }
