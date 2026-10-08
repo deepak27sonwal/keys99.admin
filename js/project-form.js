@@ -1,7 +1,7 @@
 import { sb } from './supabase-client.js';
 import { toast, fmtPriceWords } from './utils.js';
 import { enhanceSelects } from './custom-select.js';
-import { PROJECT_KINDS } from './project-kinds.js';
+import { PROJECT_KINDS, KIND_KEYS, projectPageUrl } from './project-kinds.js';
 import { compressImageToWebp, isCompressibleImage } from './image-compress.js';
 
 /* ============ small utils ============ */
@@ -985,11 +985,28 @@ function seoCounterHtml(key) {
 
 function seoPreviewHtml() {
   const p = state.project;
-  const url = p.canonical_url ? p.canonical_url.replace(/^https?:\/\//, '') : `keys99.com › ${p.slug || 'project-url'}`;
+  const url = (p.canonical_url || projectPageUrl(p.slug || 'project-url')).replace(/^https?:\/\//, '').replace(/\//g, ' › ');
   return `<div class="seo-preview" id="seo-preview">
     <div class="seo-preview-url">${esc(url)}</div>
     <div class="seo-preview-title">${esc(p.seo_title || p.project_name || 'Page title')}</div>
     <div class="seo-preview-desc">${esc(p.seo_description || 'Add a description to control the text shown in search results.')}</div>
+  </div>`;
+}
+
+// Read-only info: the public page address (from the slug) and which address search engines
+// will treat as canonical — the page itself unless a Canonical URL override is set.
+function seoAddressHtml() {
+  const p = state.project;
+  const pageUrl = projectPageUrl(p.slug);
+  const canonical = tidy(p.canonical_url);
+  const live = originalModerationStatus === 'published' && p.slug;
+  return `<div class="seo-address" id="seo-address">
+    <div><span class="seo-address-label">Page address</span>
+      <code>${esc(pageUrl)}</code>${live ? ` <a href="${esc(pageUrl)}" target="_blank" rel="noopener noreferrer">Open ↗</a>` : ''}</div>
+    <div><span class="seo-address-label">Canonical address</span>
+      ${canonical
+        ? `<code>${esc(canonical)}</code>${canonical === pageUrl ? '' : ' <span class="seo-address-note">override — differs from the page address</span>'}`
+        : `<code>${esc(pageUrl)}</code> <span class="seo-address-note">same as page address (default)</span>`}</div>
   </div>`;
 }
 
@@ -1001,6 +1018,8 @@ function refreshSeoWidgets() {
   });
   const prev = content.querySelector('#seo-preview');
   if (prev) prev.outerHTML = seoPreviewHtml();
+  const addr = content.querySelector('#seo-address');
+  if (addr) addr.outerHTML = seoAddressHtml();
 }
 
 function renderSeo() {
@@ -1027,7 +1046,8 @@ function renderSeo() {
     ${seoField(specs.seo_description, 'description')}
     <div class="field full"><label>Search result preview</label>${seoPreviewHtml()}
       <span class="hint">Suggested from the project's name, location, configurations, price and status. Aim for ≤ ${SEO_LIMITS.title} characters in the title and ≤ ${SEO_LIMITS.description} in the description so search engines don't cut them off.</span></div>
-    ${field(specs.canonical_url)}
+    <div class="field full">${seoAddressHtml()}</div>
+    ${renderField({ ...specs.canonical_url, placeholder: projectPageUrl(p.slug), hint: 'Leave blank — the page address above is used automatically. Only set this for a duplicate or moved listing, to point search engines at the main page.' }, p.canonical_url, 'data-bind="project.canonical_url"')}
     <div class="field full"><div class="hint">🔒 Indexing is controlled automatically by publishing status — draft, pending, under-review and rejected projects are never indexable, regardless of this content.</div></div>
   </div>`;
 }
@@ -2132,14 +2152,18 @@ async function ensureProjectCode() {
   const cityCode = cityName.replace(/[^A-Za-z]/g, '').slice(0, 3).toUpperCase() || 'GEN';
   return `${K.codePrefix}-${cityCode}-${Date.now().toString(36).toUpperCase().slice(-6)}`;
 }
+// Both kinds share one URL space (keys99.com/project/<slug>), so a slug must be free in every
+// kind's project table, not just this one's.
 async function ensureUniqueSlug(base) {
   let slug = base || 'project';
   let n = 1;
   for (;;) {
-    let q = sb.from(K.tables.project).select('id').eq('slug', slug);
-    if (projectId) q = q.neq('id', projectId);
-    const { data } = await q.limit(1);
-    if (!data || !data.length) return slug;
+    const results = await Promise.all(KIND_KEYS.map(k => {
+      let q = sb.from(PROJECT_KINDS[k].tables.project).select('id').eq('slug', slug);
+      if (projectId && k === K.key) q = q.neq('id', projectId);
+      return q.limit(1);
+    }));
+    if (results.every(({ data }) => !data || !data.length)) return slug;
     n++;
     slug = `${base}-${n}`;
   }
@@ -2196,6 +2220,8 @@ async function saveProjectCore() {
     if (state.project.slug) payload.slug = await ensureUniqueSlug(slugify(state.project.slug));
     const { error } = await sb.from(K.tables.project).update(payload).eq('id', projectId);
     if (error) return { error: error.message };
+    // A taken slug was bumped (e.g. -2) — show what was actually saved.
+    if (payload.slug && payload.slug !== state.project.slug) state.project.slug = payload.slug;
   }
   return { error: null };
 }

@@ -58,6 +58,13 @@ export const PROJECT_KINDS = {
 
 export const KIND_KEYS = Object.keys(PROJECT_KINDS);
 
+// Public property pages live at https://keys99.com/project/<slug> for both kinds — which is
+// why a slug has to be unique across residential AND commercial (see ensureUniqueSlug()).
+export const PUBLIC_SITE_URL = 'https://keys99.com';
+export function projectPageUrl(slug) {
+  return `${PUBLIC_SITE_URL}/project/${slug || ''}`;
+}
+
 export function projectKind(key) {
   return PROJECT_KINDS[key] || PROJECT_KINDS.residential;
 }
