@@ -1,0 +1,6 @@
+# Cache rules for static hosts that read this file (Cloudflare Pages, Netlify; others ignore it).
+# Everything the admin loads is revalidated on each visit (a cheap 304 when unchanged), so a
+# deploy is picked up immediately. scripts/stamp-build.sh additionally versions every JS/CSS
+# URL, which covers hosts and CDNs that don't honour this file.
+/*
+  Cache-Control: no-cache

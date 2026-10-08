@@ -68,6 +68,13 @@ async function guard() {
   return true;
 }
 
+/* ---------------- build label ---------------- */
+
+// Which build is live (stamped by scripts/stamp-build.sh) — lets anyone confirm at a glance
+// that staging is running the latest deploy rather than a cached copy.
+const buildEl = document.getElementById('sb-build');
+if (buildEl) buildEl.textContent = `Build ${document.querySelector('meta[name="build"]')?.content || 'unknown'}`;
+
 /* ---------------- sidebar counts ---------------- */
 
 async function loadSidebarCounts() {

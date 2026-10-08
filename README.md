@@ -86,3 +86,18 @@ All current public tables have RLS enabled.
 Authentication → role check → dashboard → residential project management → moderation → publish.
 
 The residential project editor is being built around the finalized 20-section posting specification. Child records are stored in their dedicated tables rather than flattened into one JSON field.
+
+## Releasing
+
+The admin has no build step, so browsers and CDNs can keep serving an old copy of a JS
+module after a deploy. Before committing a change that should go live, run:
+
+```sh
+scripts/stamp-build.sh
+```
+
+It writes a new build stamp into `index.html` and `login.html`: an import map that adds
+`?v=<build>` to every `js/*.js` module, plus versioned CSS and entry-script URLs. The live
+build is shown at the bottom of the sidebar ("Build 20261008.1619-47aa326"), so you can check
+that staging is on the latest deploy. `_headers` also tells Cloudflare Pages / Netlify to
+revalidate every file on each visit.
