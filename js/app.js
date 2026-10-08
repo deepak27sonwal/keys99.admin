@@ -2,6 +2,7 @@ import { openProjectForm, isWizardOpen, handleWizardPopState } from './project-f
 import { sb } from './supabase-client.js';
 import { residentialProjectsPage, commercialProjectsPage } from './residential-projects.js';
 import { PROJECT_KINDS, KIND_KEYS, projectKind, queryAllKinds, localityEmbed, kindPill } from './project-kinds.js';
+import { attachProjectThumbs, projectThumbHtml, bindThumbFallbacks } from './project-thumbs.js';
 import { openEntityForm, confirmDeleteEntity } from './entity-form.js';
 import { enhanceSelects } from './custom-select.js';
 import {
@@ -273,6 +274,7 @@ async function dashboardPage() {
     queryAllKinds(K => sb.from(K.tables.history).select(`id,to_status,action,changed_at,project:${K.tables.project}(project_name)`).order('changed_at', { ascending: false }).limit(5))
   ]);
   recentProjects.data = newestFirst(recentProjects.data, 'updated_at', 4);
+  await attachProjectThumbs(recentProjects.data);
   recentEnquiries.data = newestFirst(recentEnquiries.data, 'created_at', 4);
   recentHistory.data = newestFirst(recentHistory.data, 'changed_at', 5);
 
@@ -353,7 +355,7 @@ async function dashboardPage() {
             <thead><tr><th>Project</th><th>Type</th><th>Location</th><th>Starting Price</th><th>Status</th><th>Moderation</th><th>Actions</th></tr></thead>
             <tbody>${(recentProjects.data || []).length ? recentProjects.data.map(p => `
               <tr>
-                <td><div class="proj-cell"><span class="proj-thumb">${icon(p._kind === 'commercial' ? 'building' : 'home', 16)}</span><div><div class="proj-name">${escapeHtml(p.project_name)}</div><div class="proj-code">${escapeHtml(p.project_code)}</div></div></div></td>
+                <td><div class="proj-cell"><span class="proj-thumb">${projectThumbHtml(p._thumb, p._kind === 'commercial' ? 'building' : 'home')}</span><div><div class="proj-name">${escapeHtml(p.project_name)}</div><div class="proj-code">${escapeHtml(p.project_code)}</div></div></div></td>
                 <td>${kindPill(p._kind)} ${escapeHtml((p.project_type || '—').replace(/_/g, ' '))}</td>
                 <td>${escapeHtml(p.localities?.name || '—')}${p.cities?.name ? ', ' + escapeHtml(p.cities.name) : ''}</td>
                 <td>${fmtPrice(p.starting_price, p.price_on_request)}</td>
@@ -393,6 +395,7 @@ async function dashboardPage() {
     </div>
   `;
 
+  bindThumbFallbacks(content);
   enhanceSelects(content);
   content.querySelectorAll('[data-nav]').forEach(b => b.addEventListener('click', () => navigate(b.dataset.nav, { filter: b.dataset.filter })));
   content.querySelectorAll('.dash-tab').forEach(btn => btn.addEventListener('click', () => {

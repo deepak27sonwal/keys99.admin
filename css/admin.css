@@ -173,7 +173,10 @@ table{width:100%;border-collapse:collapse}
 th{text-align:left;font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--muted);padding:10px 20px;border-bottom:1px solid var(--line);white-space:nowrap}
 td{padding:11px 20px;font-size:12.5px;border-bottom:1px solid var(--line);vertical-align:middle}
 tr:last-child td{border-bottom:0}
-.proj-thumb{width:38px;height:38px;border-radius:8px;background:var(--green-tint);color:var(--green);display:flex;align-items:center;justify-content:center;flex:none}
+.proj-thumb{width:38px;height:38px;border-radius:8px;background:var(--green-tint);color:var(--green);display:flex;align-items:center;justify-content:center;flex:none;position:relative;overflow:hidden}
+/* Project photo (Main Image) over the kind icon — the icon shows through if the photo fails. */
+.proj-thumb:has(img){width:56px;height:42px}
+.proj-thumb img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:var(--green-tint)}
 .proj-cell{display:flex;align-items:center;gap:10px}
 .proj-name{font-weight:700;font-size:12.5px}
 .proj-code{font-size:10.5px;color:var(--muted)}
