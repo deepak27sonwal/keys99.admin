@@ -613,6 +613,7 @@ function onFieldInput(e) {
   applyBind(el);
   const wordsEl = content.querySelector(`[data-words-for="${CSS.escape(el.dataset.bind)}"]`);
   if (wordsEl) wordsEl.textContent = fmtPriceWords(getPath(state, el.dataset.bind));
+  if (/^project\.(seo_title|seo_description|slug|canonical_url)$/.test(el.dataset.bind)) refreshSeoWidgets();
 }
 function onFieldChange(e) {
   const el = e.target.closest('[data-bind]');
@@ -870,9 +871,163 @@ function validateConfigPriceRange() {
   return badIdx >= 0 ? `Maximum Price must be greater than or equal to Starting Price (${K.unitSingular} #${badIdx + 1})` : null;
 }
 
+/* ============ SEO title / description suggestions (Step 17) ============ */
+
+const SEO_LIMITS = { title: 60, description: 160 };
+const RES_TYPE_NOUN = { apartment: 'Flats', villa: 'Villas', row_house: 'Row Houses', townhouse: 'Townhouses', residential_plot: 'Plots', independent_house: 'Independent Houses', mixed_residential: 'Homes', other: 'Homes' };
+const titleCase = v => String(v || '').replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+const tidy = v => String(v || '').replace(/\s+/g, ' ').trim();
+
+// "₹52.5 L" / "₹1.25 Cr" — compact, no trailing zeros (search snippets are short).
+function shortPrice(n) {
+  n = Number(n);
+  if (!n) return '';
+  const fmt = (v, unit) => `₹${String(Number(v.toFixed(2)))} ${unit}`;
+  if (n >= 1e7) return fmt(n / 1e7, 'Cr');
+  if (n >= 1e5) return fmt(n / 1e5, 'L');
+  return `₹${n.toLocaleString('en-IN')}`;
+}
+
+// ["1 BHK","2 BHK","3 BHK"] -> "1, 2 & 3 BHK"; keeps custom values as they are.
+function joinList(items) {
+  if (items.length <= 1) return items[0] || '';
+  return `${items.slice(0, -1).join(', ')} & ${items[items.length - 1]}`;
+}
+function bhkSummary() {
+  const order = bhkPresets();
+  const vals = [...new Set(state.configurations.map(c => tidy(c.bhk_type)).filter(Boolean))]
+    .sort((a, b) => (order.indexOf(a) === -1 ? 99 : order.indexOf(a)) - (order.indexOf(b) === -1 ? 99 : order.indexOf(b)));
+  if (!vals.length) return '';
+  const nums = vals.map(v => (v.match(/^([\d.]+)\s*BHK$/i) || [])[1]);
+  return nums.every(Boolean) ? `${joinList(nums)} BHK` : joinList(vals);
+}
+function unitTypeSummary() {
+  return joinList([...new Set(state.configurations.map(c => tidy(c.unit_type)).filter(Boolean))].slice(0, 3));
+}
+
+// Builds "a | b" from parts, dropping optional parts (lowest priority first) until it fits.
+// parts: [{ text, drop }] — drop: lower number is dropped first; Infinity = never dropped.
+function fitTitle(head, tailParts, max) {
+  let parts = tailParts.filter(t => t.text);
+  const build = ps => tidy(`${head}${ps.length ? ' | ' + ps.map(t => t.text).join(' ') : ''}`);
+  while (build(parts).length > max && parts.length) {
+    const victim = parts.reduce((lo, t) => (t.drop < lo.drop ? t : lo), parts[0]);
+    parts = parts.filter(t => t !== victim);
+  }
+  return build(parts);
+}
+// Joins sentences, dropping whole trailing optional ones so it never ends mid-word.
+function fitSentences(sentences, max) {
+  const out = [];
+  for (const sentence of sentences.map(tidy).filter(Boolean)) {
+    const next = [...out, sentence].join(' ');
+    if (next.length <= max) out.push(sentence);
+  }
+  return out.join(' ');
+}
+
+function seoSuggestion() {
+  const p = state.project;
+  const name = tidy(p.project_name);
+  const locality = tidy(lookups.localities.find(l => l.id === p.locality_id)?.name);
+  const city = tidy(lookups.cities.find(c => c.id === p.city_id)?.name);
+  const developer = tidy(lookups.developers.find(d => d.id === p.developer_id)?.name);
+  const where = [locality, city].filter(Boolean).join(', ');
+  const head = tidy([name, [locality, city].filter(Boolean).join(' ')].filter(Boolean).join(', '));
+  const headShort = tidy([name, locality || city].filter(Boolean).join(', '));
+  const range = priceRangeFromConfigs();
+  const fromPrice = !p.price_on_request && range.min ? shortPrice(range.min) : '';
+  const status = p.status ? String(p.status).replace(/_/g, ' ').replace(/^\w/, c => c.toUpperCase()) : ''; // "Ready to move"
+  const rera = (p.rera_numbers || [])[0];
+
+  if (K.key === 'commercial') {
+    const units = unitTypeSummary() || titleCase(p.project_type);
+    const txn = { sale: 'Sale', lease: 'Lease', sale_and_lease: 'Sale & Lease' }[p.transaction_type] || '';
+    const tail = [{ text: units, drop: 2 }, { text: txn ? `for ${txn}` : '', drop: 1 }];
+    let title = fitTitle(head, tail, SEO_LIMITS.title);
+    if (title.length > SEO_LIMITS.title) title = fitTitle(headShort, tail, SEO_LIMITS.title);
+    const rents = state.configurations.map(c => Number(c.expected_rent)).filter(n => n > 0);
+    const area = Number(p.total_leasable_area) ? `${Number(p.total_leasable_area).toLocaleString('en-IN')} ${areaUnitLabel(p.area_unit)} leasable` : '';
+    const pricing = [fromPrice && `from ${fromPrice}`, rents.length && `rent from ${shortPrice(Math.min(...rents))}/month`].filter(Boolean).join(' or ');
+    const description = fitSentences([
+      `${name}${developer ? ` by ${developer}` : ''}: ${titleCase(p.project_type)} space${where ? ` in ${where}` : ''}.`,
+      units && txn ? `${units} for ${txn.toLowerCase()}${area ? `, ${area}` : ''}${pricing ? `, ${pricing}` : ''}.` : '',
+      status ? `${status}${p.occupancy_certificate === 'received' ? ', OC received' : ''}.` : '',
+      rera ? `RERA ${rera}.` : '',
+      'Specs, amenities & enquiries on Keys99.'
+    ], SEO_LIMITS.description);
+    return { title, description };
+  }
+
+  const bhks = bhkSummary();
+  const noun = RES_TYPE_NOUN[p.project_type] || 'Homes';
+  const tail = [{ text: bhks, drop: 2 }, { text: noun, drop: 1 }];
+  let title = fitTitle(head, tail, SEO_LIMITS.title);
+  if (title.length > SEO_LIMITS.title) title = fitTitle(headShort, tail, SEO_LIMITS.title);
+  const possession = state.phases.map(ph => ph.target_possession_date || ph.rera_possession_date).filter(Boolean).sort()[0];
+  const possessionText = possession ? `, possession ${new Date(possession).toLocaleDateString('en-IN', { month: 'short', year: 'numeric' })}` : '';
+  const description = fitSentences([
+    `${name}${developer ? ` by ${developer}` : ''}${where ? ` in ${where}` : ''}.`,
+    bhks || fromPrice ? `${[bhks, noun].filter(Boolean).join(' ')}${fromPrice ? ` from ${fromPrice}` : ''}.` : '',
+    status ? `${status}${possessionText}.` : '',
+    rera ? `RERA ${rera}.` : '',
+    'Floor plans, prices & amenities on Keys99.'
+  ], SEO_LIMITS.description);
+  return { title, description };
+}
+
+function seoCounterHtml(key) {
+  const len = String(state.project[key] || '').length;
+  const max = SEO_LIMITS[key === 'seo_title' ? 'title' : 'description'];
+  const cls = len === 0 ? 'empty' : len > max + (key === 'seo_title' ? 10 : 0) ? 'over' : len > max ? 'warn' : 'ok';
+  return `<span class="seo-count ${cls}" data-seo-count="${key}">${len} / ${max}</span>`;
+}
+
+function seoPreviewHtml() {
+  const p = state.project;
+  const url = p.canonical_url ? p.canonical_url.replace(/^https?:\/\//, '') : `keys99.com › ${p.slug || 'project-url'}`;
+  return `<div class="seo-preview" id="seo-preview">
+    <div class="seo-preview-url">${esc(url)}</div>
+    <div class="seo-preview-title">${esc(p.seo_title || p.project_name || 'Page title')}</div>
+    <div class="seo-preview-desc">${esc(p.seo_description || 'Add a description to control the text shown in search results.')}</div>
+  </div>`;
+}
+
+// Live update of counters + preview while typing, without re-rendering (keeps focus).
+function refreshSeoWidgets() {
+  ['seo_title', 'seo_description'].forEach(key => {
+    const el = content.querySelector(`[data-seo-count="${key}"]`);
+    if (el) el.outerHTML = seoCounterHtml(key);
+  });
+  const prev = content.querySelector('#seo-preview');
+  if (prev) prev.outerHTML = seoPreviewHtml();
+}
+
 function renderSeo() {
   if (!state.project.slug) state.project.slug = slugify([state.project.project_name, lookups.localities.find(l => l.id === state.project.locality_id)?.name, lookups.cities.find(c => c.id === state.project.city_id)?.name].filter(Boolean).join('-'));
-  return `<div class="form-grid">${K.fields.seo.map(s => renderField(s, state.project[s.key], `data-bind="project.${s.key}"`)).join('')}
+  // Blank title/description get a suggestion built from the project's data; anything already
+  // written (typed or previously suggested) is left alone — "Regenerate" replaces it on request.
+  const suggestion = seoSuggestion();
+  if (!tidy(state.project.seo_title) && suggestion.title) { state.project.seo_title = suggestion.title; touched = true; }
+  if (!tidy(state.project.seo_description) && suggestion.description) { state.project.seo_description = suggestion.description; touched = true; }
+
+  const p = state.project;
+  const field = s => renderField(s, p[s.key], `data-bind="project.${s.key}"`);
+  const seoField = (s, which) => `<div class="field full">
+      <div class="seo-label-row"><label>${esc(s.label)}</label>${seoCounterHtml(s.key)}
+        <button type="button" class="seo-regen" data-seo-regen="${which}" title="Replace with a suggestion built from this project's details">↻ Regenerate</button></div>
+      ${s.type === 'textarea'
+        ? `<textarea data-bind="project.${s.key}" rows="3">${esc(p[s.key] ?? '')}</textarea>`
+        : `<input type="text" data-bind="project.${s.key}" value="${esc(p[s.key] ?? '')}">`}
+    </div>`;
+  const specs = Object.fromEntries(K.fields.seo.map(s => [s.key, s]));
+  return `<div class="form-grid">
+    ${field(specs.slug)}
+    ${seoField(specs.seo_title, 'title')}
+    ${seoField(specs.seo_description, 'description')}
+    <div class="field full"><label>Search result preview</label>${seoPreviewHtml()}
+      <span class="hint">Suggested from the project's name, location, configurations, price and status. Aim for ≤ ${SEO_LIMITS.title} characters in the title and ≤ ${SEO_LIMITS.description} in the description so search engines don't cut them off.</span></div>
+    ${field(specs.canonical_url)}
     <div class="field full"><div class="hint">🔒 Indexing is controlled automatically by publishing status — draft, pending, under-review and rejected projects are never indexable, regardless of this content.</div></div>
   </div>`;
 }
@@ -1814,6 +1969,19 @@ function handleSpecialBindings() {
       renderStepBody();
     };
   });
+  content.querySelectorAll('[data-seo-regen]').forEach(el => {
+    el.onclick = () => {
+      const which = el.dataset.seoRegen;
+      const key = which === 'title' ? 'seo_title' : 'seo_description';
+      const next = seoSuggestion()[which];
+      const current = tidy(state.project[key]);
+      if (!next || next === current) { toast('Already matches the suggestion'); return; }
+      if (current && !confirm(`Replace the current ${which} with a suggestion built from this project's details?\n\n${next}`)) return;
+      state.project[key] = next;
+      touched = true;
+      renderStepBody();
+    };
+  });
   content.querySelectorAll('[data-dismiss-upload]').forEach(el => {
     el.onclick = () => { delete uploads[el.dataset.dismissUpload]; renderStepBody(); };
   });
@@ -2181,6 +2349,9 @@ async function saveCurrentAndDraft() {
 async function submitForVerification() {
   const priceError = validateConfigPriceRange();
   if (priceError) { toast(priceError, true); return; }
+  if (!tidy(state.project.seo_title) || !tidy(state.project.seo_description)) {
+    toast('Heads up: SEO title or description is empty — search results will fall back to defaults. You can fill them in Step 17.');
+  }
   $('#pf-next').disabled = true;
   try {
     for (let i = FIRST_SAVE_AFTER_STEP; i <= 15; i++) {
