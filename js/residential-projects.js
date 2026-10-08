@@ -12,7 +12,10 @@ import { projectKind, localityEmbed } from './project-kinds.js';
 let templateCache = null;
 async function loadTemplate() {
   if (templateCache) return templateCache;
-  const html = await (await fetch('./residential-projects.html')).text();
+  // Versioned like the JS modules (see scripts/stamp-build.sh) so a deploy never pairs new
+  // code with a cached template.
+  const build = document.querySelector('meta[name="build"]')?.content || '';
+  const html = await (await fetch(`./residential-projects.html${build ? `?v=${encodeURIComponent(build)}` : ''}`)).text();
   const doc = new DOMParser().parseFromString(html, 'text/html');
   templateCache = {
     panelHtml: doc.getElementById('residential-projects-panel').outerHTML,
