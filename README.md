@@ -87,6 +87,26 @@ Authentication → role check → dashboard → residential project management �
 
 The residential project editor is being built around the finalized 20-section posting specification. Child records are stored in their dedicated tables rather than flattened into one JSON field.
 
+## Rendering blog posts (public site)
+
+Blog posts (`residential_project_blogs` / `commercial_project_blogs`) are written in a
+rich-text editor in the admin (Quill, `js/rich-text.js`). Each post stores:
+
+| Column | Use on the site |
+|---|---|
+| `body_html` | The post body — sanitized HTML using only `h2 h3 p br strong em u s a ul ol li blockquote img hr` (alignment via `ql-align-center/right/justify` classes). **Render this.** Older posts may have it empty: fall back to `body`, splitting on blank lines into `<p>`s. |
+| `body` | Plain-text copy of the post, for search, feeds and the fallback above. |
+| `title`, `excerpt` | Page `<h1>` and intro / card summary. |
+| `cover_image_url`, `cover_image_alt` | Hero image (16:9 works best) and its `alt`. All images are ≤ 100 KB WebP. |
+| `author`, `published_at`, `reading_time_minutes`, `tags[]` | Meta line ("Keys99 Editorial · 09 Oct 2026 · 3 min read") and tag chips. |
+| `meta_title`, `meta_description` | `<title>` and `<meta name="description">` (fall back to `title` / `excerpt`). |
+| `is_published`, `is_featured` | Only show published posts; pin featured ones first. |
+
+Sanitize `body_html` again on the site (e.g. DOMPurify with the tag list above) — never
+trust stored HTML blindly. Wrap it in `<div class="k99-article">` and copy the
+`.k99-post-*` / `.k99-article` rules from `css/admin.css` (section "Post typography") so the
+site matches the admin's Preview exactly.
+
 ## Releasing
 
 The admin has no build step, so browsers and CDNs can keep serving an old copy of a JS
