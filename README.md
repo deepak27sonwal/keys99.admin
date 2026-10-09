@@ -107,6 +107,36 @@ trust stored HTML blindly. Wrap it in `<div class="k99-article">` and copy the
 `.k99-post-*` / `.k99-article` rules from `css/admin.css` (section "Post typography") so the
 site matches the admin's Preview exactly.
 
+## Newsletter
+
+Sidebar → **Newsletter** (`js/newsletter.js`). Write an email in the rich-text composer,
+pick who receives it, preview it (desktop / mobile), send yourself a test, then send.
+
+- **Audience** — everyone subscribed, newsletter subscribers only, registered users only
+  (optionally narrowed by city / interest), or hand-picked people. Only rows with
+  `is_subscribed = true` are ever emailed.
+- **Registered users count as subscribers.** Opening the Newsletter page runs the
+  `send-newsletter` function's `sync_users` action, which adds every keys99.com account
+  without a staff role (`user_roles`) to `newsletter_subscribers` (source `registered_user`).
+- **Personalisation** — `{{first_name}}`, `{{name}}`, `{{email}}` in the subject or body are
+  filled in per recipient.
+- **Sending** — `supabase/functions/send-newsletter` (Brevo transactional API) sends each
+  email individually from **Keys99 &lt;newsletter@keys99.com&gt;**, in batches the page drives
+  with a progress bar; each recipient's result is in `newsletter_campaign_recipients`
+  (Delivery report). A send interrupted by closing the tab can be resumed from the list.
+- **Unsubscribe** — every email links to `unsubscribe.html?t=<token>` on this site (it asks
+  for a click before unsubscribing) and carries a one-click `List-Unsubscribe` header handled
+  by `supabase/functions/newsletter-unsubscribe`.
+
+Setup checklist:
+1. In Brevo → *Senders, domains & dedicated IPs*, add and verify **newsletter@keys99.com**
+   (and authenticate the keys99.com domain — SPF/DKIM — for good deliverability). Brevo
+   rejects sends from an unverified sender.
+2. The Brevo API key must be set as an Edge Function secret named `BREVO_API_KEY`
+   (`Brevo_apikey`, used by `subscribe-newsletter`, also works).
+3. Run `supabase/manual/newsletter_admin_policies.sql` once in the SQL editor so
+   super admins (not only admins) can use the Newsletter page.
+
 ## Releasing
 
 The admin has no build step, so browsers and CDNs can keep serving an old copy of a JS

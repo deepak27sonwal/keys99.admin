@@ -15,6 +15,7 @@ import { archivePage } from './archive.js';
 import { reportsPage } from './reports.js';
 import { adminsPage } from './admins.js';
 import { blogPage } from './blog.js';
+import { newsletterPage } from './newsletter.js';
 import { settingsPage } from './settings.js';
 
 const $ = s => document.querySelector(s);
@@ -1087,6 +1088,7 @@ const PAGES = {
   'report-moderation': () => reportsPage(content, navigate, 'moderation'),
   admins: () => adminsPage(content, navigate, isSuperAdmin),
   blog: () => blogPage(content, currentUser),
+  newsletter: () => newsletterPage(content, currentUser),
   settings: () => settingsPage(content, currentUser, isSuperAdmin),
   profile: profilePage
 };
