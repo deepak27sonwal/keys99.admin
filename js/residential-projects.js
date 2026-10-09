@@ -1,8 +1,9 @@
 import { sb } from './supabase-client.js';
 import { openProjectForm } from './project-form.js';
-import { pageHead, emptyRow, icon, pill, fmtPrice, rowActions, bindStubs, confirmArchiveProject, escapeHtml } from './utils.js';
+import { pageHead, emptyRow, pill, fmtPrice, rowActions, bindStubs, confirmArchiveProject, escapeHtml } from './utils.js';
 import { enhanceSelects, refreshSelect } from './custom-select.js';
 import { projectKind, localityEmbed } from './project-kinds.js';
+import { attachProjectThumbs, projectThumbHtml, bindThumbFallbacks } from './project-thumbs.js';
 
 // This page's markup (the panel/toolbar/table shell, plus a <template> for one row) lives
 // in residential-projects.html, and its layout-only rules in css/residential-projects.css —
@@ -69,7 +70,10 @@ async function projectsListPage(kind, content, currentUser, navigate, moderation
         .is('deleted_at', null)
         .order('updated_at', { ascending: false }).limit(200);
       if (moderationFilter) q = q.eq('moderation_status', moderationFilter);
-      return q;
+      return q.then(async res => {
+        if (!res.error && res.data?.length) await attachProjectThumbs(res.data, K.key);
+        return res;
+      });
     })()
   ]);
 
@@ -93,7 +97,7 @@ async function projectsListPage(kind, content, currentUser, navigate, moderation
       tpl.innerHTML = rowTemplate;
       const row = tpl.content.firstElementChild;
       row.dataset.searchText = `${p.project_name} ${p.project_code}`.toLowerCase();
-      row.querySelector('[data-field="icon"]').innerHTML = icon(text.icon, 16);
+      row.querySelector('[data-field="icon"]').innerHTML = projectThumbHtml(p._thumb, text.icon);
       row.querySelector('[data-field="project_name"]').textContent = p.project_name;
       row.querySelector('[data-field="project_code"]').textContent = p.project_code;
       row.querySelector('[data-field="project_type"]').textContent = K.key === 'commercial' ? (p.project_type || '—').replace(/_/g, ' ') : (p.project_type || '—');
@@ -104,6 +108,7 @@ async function projectsListPage(kind, content, currentUser, navigate, moderation
       row.querySelector('[data-field="actions"]').innerHTML = rowActions('project', p.id, p.project_name, isSuperAdmin, K.key);
       tbody.appendChild(row);
     });
+    bindThumbFallbacks(tbody);
 
     const noMatchRow = document.createElement('tr');
     noMatchRow.hidden = true;
