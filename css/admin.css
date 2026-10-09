@@ -546,6 +546,7 @@ tr:last-child td{border-bottom:0}
 .fp-col{display:flex;flex-direction:column;gap:8px;min-width:0}
 .fp-col-head{font-size:12.5px;font-weight:700;color:var(--ink)}
 .fp-col-head .hint{font-weight:500;color:var(--muted);margin-left:4px}
+.fp-assign{margin-top:6px;width:100%;padding:6px 8px;font-size:12px;border:1px solid var(--line);border-radius:7px;background:var(--white);color:var(--ink)}
 .fp-add{display:flex;gap:8px;align-items:center;margin-top:4px}
 .fp-add select{flex:1;min-width:0;max-width:260px;border:1px solid #d5dfde;border-radius:9px;padding:9px 12px;font-size:13px}
 @media(max-width:520px){
