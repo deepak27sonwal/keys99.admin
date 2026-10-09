@@ -56,7 +56,7 @@ const PAGE_TEXT = {
   commercial: { title: 'Commercial Projects', subtitle: 'Offices, shops, showrooms, warehouses and other commercial listings', icon: 'building' }
 };
 
-// Each kind gets its own filter bar above the table. Options are built from the loaded
+// Each kind gets its own set of filters (in the Filters bottom sheet). Options are built from the loaded
 // projects (with counts), so a dropdown only offers values that actually match something.
 // `get` reads the value off a project row; `label` overrides the default title-casing.
 const FILTERS = {
@@ -77,6 +77,7 @@ const FILTERS = {
     { key: 'moderation_status', label: 'Moderation', get: p => p.moderation_status }
   ]
 };
+const FILTER_ICON = '<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 6h16M7 12h10M10 18h4"/></svg>';
 const TXN_SHORT = { sale: 'For Sale', lease: 'For Lease', sale_and_lease: 'Sale & Lease' };
 const OC_SHORT = { received: 'OC received', applied: 'OC applied', not_applied: 'OC not applied' };
 const titleCase = v => String(v).replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
@@ -153,20 +154,67 @@ async function projectsListPage(kind, content, currentUser, navigate, moderation
     noMatchRow.innerHTML = `<td colspan="7"><div class="empty">No projects match your search or filters.</div></td>`;
     tbody.appendChild(noMatchRow);
 
-    // Filter bar — this kind's own set of dropdowns, built from the loaded projects.
+    // Filters — this kind's own set of dropdowns, built from the loaded projects. They live
+    // in a bottom sheet opened from the toolbar's Filters button; the active ones show as
+    // removable chips under the panel head.
     const filters = FILTERS[K.key].filter(f => !(f.key === 'moderation_status' && moderationFilter));
     const chosen = savedFilters[K.key];
-    const bar = document.createElement('div');
-    bar.className = 'list-filters';
-    bar.innerHTML = filters.map(f => {
+    const fieldsHtml = filters.map(f => {
       const counts = new Map();
       data.forEach(p => { const v = f.get(p); if (v) counts.set(v, (counts.get(v) || 0) + 1); });
       if (chosen[f.key] && !counts.has(chosen[f.key])) delete chosen[f.key];
       const opts = [...counts].sort((a, b) => filterLabel(f, a[0]).localeCompare(filterLabel(f, b[0])))
         .map(([v, n]) => `<option value="${escapeHtml(v)}"${chosen[f.key] === v ? ' selected' : ''}>${escapeHtml(filterLabel(f, v))} (${n})</option>`).join('');
       return `<label class="list-filter"><span>${f.label}</span><select data-filter="${f.key}"${counts.size ? '' : ' disabled'}><option value="">All</option>${opts}</select></label>`;
-    }).join('') + `<div class="list-filter-meta"><span id="filter-count"></span><button type="button" class="panel-link" id="clear-filters" hidden>Clear filters</button></div>`;
-    content.querySelector('#residential-projects-panel .panel-head').after(bar);
+    }).join('');
+
+    const filtersBtn = document.createElement('button');
+    filtersBtn.type = 'button';
+    filtersBtn.className = 'btn-outline filters-btn';
+    filtersBtn.setAttribute('aria-haspopup', 'dialog');
+    filtersBtn.innerHTML = `${FILTER_ICON}<span>Filters</span><span class="filters-badge" hidden></span>`;
+    content.querySelector('#open-by-developer').before(filtersBtn);
+
+    const summary = document.createElement('div');
+    summary.className = 'filter-summary';
+    summary.hidden = true;
+    content.querySelector('#residential-projects-panel .panel-head').after(summary);
+
+    const sheet = document.createElement('div');
+    sheet.className = 'filter-sheet-layer';
+    sheet.hidden = true;
+    sheet.innerHTML = `
+      <div class="filter-sheet-backdrop" data-close-sheet></div>
+      <div class="filter-sheet" role="dialog" aria-modal="true" aria-labelledby="filter-sheet-title">
+        <div class="filter-sheet-grip"></div>
+        <div class="filter-sheet-head">
+          <h2 id="filter-sheet-title">Filter ${K.label} Projects</h2>
+          <button type="button" class="modal-close" data-close-sheet aria-label="Close">✕</button>
+        </div>
+        <div class="filter-sheet-body">${fieldsHtml}</div>
+        <div class="filter-sheet-foot">
+          <button type="button" class="btn-outline" id="sheet-clear">Clear all</button>
+          <button type="button" class="btn-primary" id="sheet-apply" data-close-sheet></button>
+        </div>
+      </div>`;
+    content.appendChild(sheet);
+
+    const openSheet = () => {
+      sheet.hidden = false;
+      requestAnimationFrame(() => requestAnimationFrame(() => sheet.classList.add('open')));
+      document.addEventListener('keydown', escClose);
+      sheet.querySelector('select:not(:disabled)')?.focus({ preventScroll: true });
+    };
+    const closeSheet = () => {
+      if (!sheet.classList.contains('open')) return;
+      sheet.classList.remove('open');
+      document.removeEventListener('keydown', escClose);
+      setTimeout(() => { if (!sheet.classList.contains('open')) sheet.hidden = true; }, 260);
+      filtersBtn.focus({ preventScroll: true });
+    };
+    const escClose = (e) => { if (e.key === 'Escape') closeSheet(); };
+    filtersBtn.addEventListener('click', openSheet);
+    sheet.querySelectorAll('[data-close-sheet]').forEach(el => el.addEventListener('click', closeSheet));
 
     const applyFilters = () => {
       const q = (searchInput?.value || '').trim().toLowerCase();
@@ -179,19 +227,36 @@ async function projectsListPage(kind, content, currentUser, navigate, moderation
         if (match) shown++;
       });
       noMatchRow.hidden = shown > 0;
-      bar.querySelector('#filter-count').textContent = shown === data.length ? `${data.length} project${data.length === 1 ? '' : 's'}` : `Showing ${shown} of ${data.length}`;
-      bar.querySelector('#clear-filters').hidden = !active.length && !q;
-      bar.querySelectorAll('select[data-filter]').forEach(sel => sel.classList.toggle('active', !!sel.value));
+
+      const badge = filtersBtn.querySelector('.filters-badge');
+      badge.hidden = !active.length;
+      badge.textContent = active.length;
+      filtersBtn.classList.toggle('active', active.length > 0);
+      sheet.querySelector('#sheet-apply').textContent = `Show ${shown} project${shown === 1 ? '' : 's'}`;
+      sheet.querySelector('#sheet-clear').disabled = !active.length;
+      sheet.querySelectorAll('select[data-filter]').forEach(sel => sel.classList.toggle('active', !!sel.value));
+
+      summary.hidden = !active.length && !q;
+      summary.innerHTML = active.map(f => `<span class="chip active filter-chip">${escapeHtml(f.label)}: ${escapeHtml(filterLabel(f, chosen[f.key]))}<button type="button" data-remove-filter="${f.key}" aria-label="Remove ${escapeHtml(f.label)} filter">✕</button></span>`).join('') +
+        `<span class="filter-summary-count">Showing ${shown} of ${data.length}</span><button type="button" class="panel-link" data-clear-all>Clear all</button>`;
     };
-    bar.querySelectorAll('select[data-filter]').forEach(sel => sel.addEventListener('change', () => {
-      if (sel.value) chosen[sel.dataset.filter] = sel.value; else delete chosen[sel.dataset.filter];
+    const setFilter = (key, value) => {
+      if (value) chosen[key] = value; else delete chosen[key];
+      const sel = sheet.querySelector(`select[data-filter="${key}"]`);
+      if (sel) sel.value = value || '';
       applyFilters();
-    }));
-    bar.querySelector('#clear-filters').addEventListener('click', () => {
-      Object.keys(chosen).forEach(k => delete chosen[k]);
-      bar.querySelectorAll('select[data-filter]').forEach(sel => { sel.value = ''; });
-      if (searchInput) searchInput.value = '';
+    };
+    const clearAll = (alsoSearch) => {
+      Object.keys(chosen).forEach(k => setFilter(k, ''));
+      if (alsoSearch && searchInput) searchInput.value = '';
       applyFilters();
+    };
+    sheet.querySelectorAll('select[data-filter]').forEach(sel => sel.addEventListener('change', () => setFilter(sel.dataset.filter, sel.value)));
+    sheet.querySelector('#sheet-clear').addEventListener('click', () => clearAll(false));
+    summary.addEventListener('click', (e) => {
+      const rm = e.target.closest('[data-remove-filter]');
+      if (rm) setFilter(rm.dataset.removeFilter, '');
+      else if (e.target.closest('[data-clear-all]')) clearAll(true);
     });
     searchInput?.addEventListener('input', applyFilters);
     applyFilters();
