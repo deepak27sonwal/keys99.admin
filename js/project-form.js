@@ -143,8 +143,8 @@ const FIELDS = {
     { key: 'locality_id', label: 'Locality', req: true, type: 'select', options: () => lookups.localities.filter(l => l.city_id === state.project.city_id).map(l => ({ value: l.id, label: l.name })), hint: 'Options depend on the selected city', quickAdd: 'locality' },
     { key: 'address', label: 'Full Address', req: true, full: true, placeholder: 'Street, area, landmark' },
     { key: 'pincode', label: 'Pincode', req: true, placeholder: '6-digit pincode' },
-    { key: 'latitude', label: 'Latitude', type: 'number', placeholder: 'e.g. 18.5590' },
-    { key: 'longitude', label: 'Longitude', type: 'number', placeholder: 'e.g. 73.7868' }
+    { key: 'latitude', label: 'Latitude', type: 'number', placeholder: 'e.g. 18.5590', allowNegative: true },
+    { key: 'longitude', label: 'Longitude', type: 'number', placeholder: 'e.g. 73.7868', allowNegative: true }
   ],
   size: [
     { key: 'total_land_area', label: 'Total Land Area', type: 'number' },
@@ -529,6 +529,9 @@ function renderField(spec, value, attr, item) {
   if (spec.type === 'checkbox') {
     return `<div class="field${fullCls}"><label style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" ${attr} ${value ? 'checked' : ''} style="width:16px;height:16px;accent-color:var(--green)"> ${esc(spec.label)}</label>${hint}</div>`;
   }
+  // Counts, areas and prices can't be negative (the database rejects them) — min="0" lets
+  // checkNumberFields() catch a negative entry before saving, with a readable message.
+  if (spec.type === 'number' && !spec.allowNegative) attr += ' min="0" step="any"';
   let input;
   if (spec.type === 'select') {
     let opts = typeof spec.options === 'function' ? spec.options(item) : spec.options;
@@ -567,7 +570,7 @@ function renderFieldWithUnit(valueSpec, unitSpec, values, bindPrefix) {
   const value = values[valueSpec.key];
   const unitValue = values[unitSpec.key];
   const opts = typeof unitSpec.options === 'function' ? unitSpec.options() : unitSpec.options;
-  const input = `<input data-bind="${bindPrefix}.${valueSpec.key}" type="number" value="${value == null ? '' : esc(String(value))}" placeholder="${esc(valueSpec.placeholder || '')}">`;
+  const input = `<input data-bind="${bindPrefix}.${valueSpec.key}" type="number" min="0" step="any" value=""${value == null ? '' : esc(String(value))}" placeholder="${esc(valueSpec.placeholder || '')}">`;
   const select = `<select data-bind="${bindPrefix}.${unitSpec.key}">${opts.map(o => `<option value="${esc(o.value)}"${String(unitValue ?? '') === String(o.value) ? ' selected' : ''}>${esc(o.label)}</option>`).join('')}</select>`;
   return `<div class="field"><label>${esc(valueSpec.label)}</label><div class="field-unit-group">${input}${select}</div></div>`;
 }
@@ -610,6 +613,7 @@ function chipRowHtml(label, hint, values, bindPath, inputId) {
 function onFieldInput(e) {
   const el = e.target.closest('[data-bind]');
   if (!el || el.tagName === 'SELECT') return;
+  el.closest('.field.invalid')?.classList.remove('invalid');
   applyBind(el);
   const wordsEl = content.querySelector(`[data-words-for="${CSS.escape(el.dataset.bind)}"]`);
   if (wordsEl) wordsEl.textContent = fmtPriceWords(getPath(state, el.dataset.bind));
@@ -1835,6 +1839,33 @@ function goBack() {
   history.back();
 }
 
+// Flags number fields on the current step holding a negative (or unreadable) value — the
+// database's check constraints reject those, which used to surface as a raw
+// 'violates check constraint' error after the step's rows had already been cleared.
+function checkNumberFields() {
+  const bad = [...$('#pf-panel-body').querySelectorAll('input[type="number"][min="0"]')]
+    .filter(el => el.validity.badInput || (el.value !== '' && Number(el.value) < 0));
+  $('#pf-panel-body').querySelectorAll('.field.invalid').forEach(f => f.classList.remove('invalid'));
+  if (!bad.length) return true;
+  bad.forEach(el => el.closest('.field')?.classList.add('invalid'));
+  const names = [...new Set(bad.map(el => el.closest('.field')?.querySelector('label')?.textContent.replace('*', '').trim() || 'This field'))];
+  toast(`${names.join(', ')} can't be negative — enter 0 or more.`, true);
+  bad[0].scrollIntoView({ block: 'center', behavior: 'smooth' });
+  bad[0].focus({ preventScroll: true });
+  return false;
+}
+
+// Turns a Postgres check-constraint failure into something an admin can act on, e.g.
+// 'new row for relation "residential_towers" violates check constraint
+// "residential_towers_number_of_floors_check"' → 'Number of floors has a value that isn't
+// allowed…'. Other messages pass through unchanged.
+function friendlyDbError(message) {
+  const m = /relation "([a-z_]+)" violates check constraint "([a-z_]+)"/.exec(message || '');
+  if (!m || !m[2].startsWith(m[1] + '_') || !m[2].endsWith('_check')) return message;
+  const column = m[2].slice(m[1].length + 1, -'_check'.length).replace(/_/g, ' ');
+  return `${column.charAt(0).toUpperCase() + column.slice(1)} has a value that isn't allowed — check it isn't negative or left on an invalid option, then try again.`;
+}
+
 async function goNext() {
   handleSpecialBindings();
   const specs = stepFieldSpecs(stepIndex);
@@ -1848,6 +1879,7 @@ async function goNext() {
     const missing = validateRepeatStep(getPath(state, arrayKey) || [], fields);
     if (missing.length) { toast(`Please fill: ${missing.join(', ')}`, true); return; }
   }
+  if (!checkNumberFields()) return;
   if (stepIndex === 5) {
     const priceError = validateConfigPriceRange();
     if (priceError) { toast(priceError, true); return; }
@@ -1866,7 +1898,7 @@ async function goNext() {
     // Without this, an unexpected error here (a thrown exception rather than a returned
     // {error} — a network drop mid-request, a bug) left the wizard stuck on the current
     // step with the Next button simply doing nothing and no visible explanation.
-    toast(e.message || 'Something went wrong saving this step — please try again.', true);
+    toast(friendlyDbError(e.message) || 'Something went wrong saving this step — please try again.', true);
     return;
   } finally {
     $('#pf-next').disabled = false;
@@ -2238,7 +2270,7 @@ async function persistStep(i) {
   if (i < FIRST_SAVE_AFTER_STEP) return true;
 
   const { error: coreErr } = await saveProjectCore();
-  if (coreErr) { toast(coreErr, true); return false; }
+  if (coreErr) { toast(friendlyDbError(coreErr), true); return false; }
 
   const T = K.tables;
   try {
@@ -2323,7 +2355,7 @@ async function persistStep(i) {
       if (err) throw new Error(err);
     }
   } catch (e) {
-    toast(e.message, true);
+    toast(friendlyDbError(e.message), true);
     return false;
   }
   return true;
