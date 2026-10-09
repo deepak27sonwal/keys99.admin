@@ -2,7 +2,7 @@ import { sb } from './supabase-client.js';
 import { toast, fmtPriceWords } from './utils.js';
 import { enhanceSelects } from './custom-select.js';
 import { PROJECT_KINDS, KIND_KEYS, projectPageUrl } from './project-kinds.js';
-import { compressImageToWebp, isCompressibleImage } from './image-compress.js';
+import { prepareImageForUpload, isCompressibleImage } from './image-compress.js';
 
 /* ============ small utils ============ */
 
@@ -57,12 +57,12 @@ const UPLOAD_LIMITS = {
   'residential-media': {
     maxBytes: 10 * 1024 * 1024,
     mimeTypes: ['image/jpeg', 'image/png', 'image/webp', 'image/avif', 'image/gif'],
-    label: 'JPG, PNG, WEBP or AVIF · auto-optimized to ~100 KB WebP'
+    label: 'JPG, PNG, WEBP, AVIF or GIF · compressed to 100 KB WebP'
   },
   'residential-documents': {
     maxBytes: 20 * 1024 * 1024,
     mimeTypes: ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'],
-    label: 'PDF, JPG, PNG or WEBP · up to 20MB'
+    label: 'PDF (up to 20MB), or JPG, PNG or WEBP · images compressed to 100 KB WebP'
   }
 };
 UPLOAD_LIMITS['commercial-media'] = UPLOAD_LIMITS['residential-media'];
@@ -428,7 +428,17 @@ async function loadProject(id) {
   });
   if (T.floorPlans) {
     const { data: plans } = await sb.from(T.floorPlans).select('*').eq('project_id', id).order('display_order');
-    s.floorPlans = (plans || []).map(r => ({ ...r, _k: r.id, file_name: (r.image_path || '').split('/').pop() }));
+    // config_key points at a configuration's _k (its id, for loaded ones). Plans saved before
+    // plans were linked to a size have no configuration_id: they're linked automatically when
+    // their BHK has only one configuration, otherwise left for the admin to assign.
+    s.floorPlans = (plans || []).map(r => {
+      let cfg = s.configurations.find(c => c.id === r.configuration_id);
+      if (!cfg) {
+        const sameBhk = s.configurations.filter(c => c.bhk_type === r.bhk_type);
+        if (sameBhk.length === 1) cfg = sameBhk[0];
+      }
+      return { ...r, _k: r.id, config_key: cfg?._k || null, file_name: (r.image_path || '').split('/').pop() };
+    });
   }
   return s;
 }
@@ -570,7 +580,7 @@ function renderFieldWithUnit(valueSpec, unitSpec, values, bindPrefix) {
   const value = values[valueSpec.key];
   const unitValue = values[unitSpec.key];
   const opts = typeof unitSpec.options === 'function' ? unitSpec.options() : unitSpec.options;
-  const input = `<input data-bind="${bindPrefix}.${valueSpec.key}" type="number" min="0" step="any" value=""${value == null ? '' : esc(String(value))}" placeholder="${esc(valueSpec.placeholder || '')}">`;
+  const input = `<input data-bind="${bindPrefix}.${valueSpec.key}" type="number" min="0" step="any" value="${value == null ? '' : esc(String(value))}" placeholder="${esc(valueSpec.placeholder || '')}">`;
   const select = `<select data-bind="${bindPrefix}.${unitSpec.key}">${opts.map(o => `<option value="${esc(o.value)}"${String(unitValue ?? '') === String(o.value) ? ' selected' : ''}>${esc(o.label)}</option>`).join('')}</select>`;
   return `<div class="field"><label>${esc(valueSpec.label)}</label><div class="field-unit-group">${input}${select}</div></div>`;
 }
@@ -1686,34 +1696,63 @@ function renderMedia() {
 const FLOOR_PLAN_TYPES = [{ key: '2d', label: '2D Floor Plan' }, { key: '3d', label: '3D Floor Plan' }];
 const bhkSlug = bhk => String(bhk).replace(/[^a-z0-9]+/gi, '_');
 
-// BHK sections to show: every BHK configured in Step 5, every BHK that already has a plan,
-// and any opened manually with "+ Add BHK" — ordered like the BHK presets, customs last.
-function floorPlanBhks() {
-  const order = bhkPresets();
-  const set = new Set([
-    ...state.configurations.map(c => c.bhk_type).filter(Boolean),
-    ...state.floorPlans.map(f => f.bhk_type),
+// Floor plans are uploaded per configuration (Step 5) — so a project with 2 BHK at 720 and
+// at 770 sq ft gets a separate section for each size — plus a per-BHK "size not specified"
+// section for plans not linked to a configuration (older uploads, a configuration that was
+// deleted, or a BHK opened manually with "+ Add BHK" that has no configuration).
+const fpConfigFor = f => (f.config_key ? state.configurations.find(c => c._k === f.config_key) : null);
+const bhkRank = b => { const order = bhkPresets(); return order.includes(b) ? order.indexOf(b) : order.length; };
+
+function configSizeLabel(c) {
+  if (c.carpet_area !== '' && c.carpet_area != null) return `${Number(c.carpet_area).toLocaleString('en-IN')} ${areaUnitLabel(c.area_unit)} carpet`;
+  const sameBhk = state.configurations.filter(x => x.bhk_type === c.bhk_type);
+  return sameBhk.length > 1 ? `Option ${sameBhk.indexOf(c) + 1}` : '';
+}
+function configTitle(c) {
+  return [c.bhk_type || 'Configuration', configSizeLabel(c)].filter(Boolean).join(' · ');
+}
+
+function floorPlanSections() {
+  const configs = state.configurations
+    .filter(c => c.bhk_type)
+    .map(c => ({ key: c._k, bhk: c.bhk_type, config: c, title: configTitle(c) }))
+    .sort((a, b) => bhkRank(a.bhk) - bhkRank(b.bhk) || a.bhk.localeCompare(b.bhk) ||
+      (Number(a.config.carpet_area) || 0) - (Number(b.config.carpet_area) || 0));
+  const looseBhks = new Set([
+    ...state.floorPlans.filter(f => !fpConfigFor(f)).map(f => f.bhk_type),
     ...state.floorPlanBhks
   ]);
-  const rank = b => (order.includes(b) ? order.indexOf(b) : order.length);
-  return [...set].sort((a, b) => rank(a) - rank(b) || a.localeCompare(b));
+  const loose = [...looseBhks].map(bhk => {
+    const hasConfigs = state.configurations.some(c => c.bhk_type === bhk);
+    return { key: `bhk:${bhk}`, bhk, config: null, title: hasConfigs ? `${bhk} · size not specified` : bhk };
+  });
+  return [...configs, ...loose].sort((a, b) => bhkRank(a.bhk) - bhkRank(b.bhk) || a.bhk.localeCompare(b.bhk) || (a.config ? 0 : 1) - (b.config ? 0 : 1));
+}
+
+function plansInSection(sec) {
+  return state.floorPlans.map((f, idx) => ({ f, idx }))
+    .filter(({ f }) => (sec.config ? f.config_key === sec.key : !fpConfigFor(f) && f.bhk_type === sec.bhk));
 }
 
 function renderFloorPlans(sizeHint) {
-  const bhks = floorPlanBhks();
-  const sections = bhks.map(bhk => {
+  const sections = floorPlanSections();
+  const html = sections.map(sec => {
+    const inSection = plansInSection(sec);
+    // Unlinked plans of a BHK that has configurations can be moved to the right size.
+    const sizeChoices = sec.config ? [] : state.configurations.filter(c => c.bhk_type === sec.bhk);
     const cols = FLOOR_PLAN_TYPES.map(t => {
-      const plans = state.floorPlans.map((f, idx) => ({ f, idx })).filter(({ f }) => f.bhk_type === bhk && f.plan_type === t.key);
+      const plans = inSection.filter(({ f }) => f.plan_type === t.key);
       const thumbs = plans.map(({ f, idx }) => `
         <div class="upload-thumb upload-thumb-wide">
           <img src="${esc(f.image_url || '')}" loading="lazy" onerror="this.style.display='none'">
           <div class="upload-thumb-body">
-            <span class="name">${esc(f.file_name || `${bhk} ${t.label}`)}${f.file_size ? ` · ${fmtBytes(f.file_size)}` : ''}</span>
+            <span class="name">${esc(f.file_name || `${sec.title} ${t.label}`)}${f.file_size ? ` · ${fmtBytes(f.file_size)}` : ''}</span>
             <input type="text" placeholder="Alt text (for SEO &amp; accessibility)" value="${esc(f.alt_text || '')}" data-bind="floorPlans.${idx}.alt_text">
+            ${sizeChoices.length ? `<select class="fp-assign" data-fp-assign="${idx}"><option value="">Assign to size…</option>${sizeChoices.map(c => `<option value="${esc(c._k)}">${esc(configTitle(c))}</option>`).join('')}</select>` : ''}
           </div>
           <button type="button" data-remove-floorplan="${idx}" title="Remove">✕</button>
         </div>`).join('');
-      const prefix = `floorPlans.${bhkSlug(bhk)}.${t.key}.`;
+      const prefix = `floorPlans.${bhkSlug(sec.key)}.${t.key}.`;
       const inFlight = Object.entries(uploads).filter(([k]) => k.startsWith(prefix)).map(([key, up]) =>
         up.error
           ? `<div class="upload-thumb upload-error"><span class="name">⚠️ ${esc(up.error)}</span><button type="button" data-dismiss-upload="${key}">✕</button></div>`
@@ -1721,23 +1760,25 @@ function renderFloorPlans(sizeHint) {
       return `<div class="fp-col">
         <div class="fp-col-head">${esc(t.label)} <span class="hint">${plans.length || 'none'}</span></div>
         ${thumbs}${inFlight}
-        <label class="upload-box">${t.key === '2d' ? '📐' : '🏠'} Add ${esc(t.label)}<input type="file" accept="image/*" data-fp-upload="1" data-bhk="${esc(bhk)}" data-plan-type="${t.key}">${sizeHint}</label>
+        <label class="upload-box">${t.key === '2d' ? '📐' : '🏠'} Add ${esc(t.label)}<input type="file" accept="image/*" data-fp-upload="1" data-fp-section="${esc(sec.key)}" data-bhk="${esc(sec.bhk)}" data-plan-type="${t.key}">${sizeHint}</label>
       </div>`;
     }).join('');
-    const hasPlans = state.floorPlans.some(f => f.bhk_type === bhk);
-    const configured = state.configurations.some(c => c.bhk_type === bhk);
-    const removeBtn = !hasPlans && !configured ? `<button type="button" class="repeat-remove" data-fp-remove-bhk="${esc(bhk)}" title="Remove section">✕</button>` : '';
-    return `<div class="repeat-card fp-card"><div class="repeat-card-head"><b>${esc(bhk)}</b>${removeBtn}</div><div class="fp-grid">${cols}</div></div>`;
+    const removable = !sec.config && !inSection.length;
+    const removeBtn = removable ? `<button type="button" class="repeat-remove" data-fp-remove-bhk="${esc(sec.bhk)}" title="Remove section">✕</button>` : '';
+    const note = !sec.config && sizeChoices.length && inSection.length
+      ? `<div class="hint" style="margin:-4px 0 10px">These plans aren't linked to a size yet — use "Assign to size" on each one.</div>` : '';
+    return `<div class="repeat-card fp-card"><div class="repeat-card-head"><b>${esc(sec.title)}</b>${removeBtn}</div>${note}<div class="fp-grid">${cols}</div></div>`;
   }).join('');
 
-  const addable = bhkPresets().filter(b => !bhks.includes(b));
+  const shownBhks = new Set(sections.map(s => s.bhk));
+  const addable = bhkPresets().filter(b => !shownBhks.has(b));
   const addRow = addable.length ? `<div class="fp-add">
       <select id="fp-add-bhk"><option value="">Add floor plans for…</option>${addable.map(b => `<option value="${esc(b)}">${esc(b)}</option>`).join('')}</select>
       <button type="button" class="btn-outline" data-fp-add-bhk="1">+ Add BHK</button>
     </div>` : '';
   const total = state.floorPlans.length;
-  return `<div class="field full"><label>Floor Plans <span class="hint">${total} image${total === 1 ? '' : 's'} · 2D and 3D per BHK</span></label>
-    ${sections || '<div class="empty" style="padding:18px">No BHK types yet — add configurations in Step 5, or pick a BHK below.</div>'}
+  return `<div class="field full"><label>Floor Plans <span class="hint">${total} image${total === 1 ? '' : 's'} · 2D and 3D for each configuration (BHK + carpet area)</span></label>
+    ${html || '<div class="empty" style="padding:18px">No configurations yet — add them in Step 5, or pick a BHK below.</div>'}
     ${addRow}
   </div>`;
 }
@@ -1745,12 +1786,16 @@ function renderFloorPlans(sizeHint) {
 function floorPlanRows() {
   // Every row carries every key — replaceChildRows() sends one batch insert, where a key
   // missing on one row would become an explicit NULL instead of the column default.
-  return state.floorPlans.filter(f => f.image_path).map((f, idx) => ({
-    bhk_type: f.bhk_type, plan_type: f.plan_type,
-    title: `${f.bhk_type} ${f.plan_type.toUpperCase()} Floor Plan`,
+  return state.floorPlans.filter(f => f.image_path).map((f, idx) => {
+    const cfg = fpConfigFor(f);
+    const size = cfg ? configSizeLabel(cfg).replace(/ carpet$/, '') : '';
+    return {
+    bhk_type: cfg?.bhk_type || f.bhk_type, plan_type: f.plan_type, configuration_id: cfg?.id || null,
+    title: `${[cfg?.bhk_type || f.bhk_type, size].filter(Boolean).join(' ')} ${f.plan_type.toUpperCase()} Floor Plan`,
     image_path: f.image_path, image_url: f.image_url, alt_text: f.alt_text || null,
     storage_bucket: K.buckets.media, display_order: idx, is_featured: false, is_active: true
-  }));
+    };
+  });
 }
 
 /* ============ review ============ */
@@ -1796,7 +1841,8 @@ function renderReview() {
 function floorPlanSummary() {
   if (!state.floorPlans.length) return 'None';
   const by = t => state.floorPlans.filter(f => f.plan_type === t).length;
-  return `${by('2d')} 2D · ${by('3d')} 3D across ${new Set(state.floorPlans.map(f => f.bhk_type)).size} BHK types`;
+  const groups = new Set(state.floorPlans.map(f => fpConfigFor(f)?._k || `bhk:${f.bhk_type}`)).size;
+  return `${by('2d')} 2D · ${by('3d')} 3D across ${groups} configuration${groups === 1 ? '' : 's'}`;
 }
 
 function confirmRowHtml() {
@@ -2050,9 +2096,21 @@ function handleSpecialBindings() {
       r => { state.media.gallery.push({ _k: uid(), media_type: 'gallery', category: 'exterior', alt_text: '', ...r }); });
   });
   content.querySelectorAll('input[type=file][data-fp-upload]').forEach(el => {
-    const bhk = el.dataset.bhk, planType = el.dataset.planType;
-    el.onchange = () => handleUpload(el.files[0], K.buckets.media, 'media/floor-plans', `floorPlans.${bhkSlug(bhk)}.${planType}.${uid()}`,
-      r => { state.floorPlans.push({ _k: uid(), bhk_type: bhk, plan_type: planType, image_path: r.media_path, image_url: r.media_url, file_name: r.file_name, file_size: r.file_size, alt_text: '' }); });
+    const bhk = el.dataset.bhk, planType = el.dataset.planType, section = el.dataset.fpSection;
+    const configKey = section.startsWith('bhk:') ? null : section;
+    el.onchange = () => handleUpload(el.files[0], K.buckets.media, 'media/floor-plans', `floorPlans.${bhkSlug(section)}.${planType}.${uid()}`,
+      r => { state.floorPlans.push({ _k: uid(), bhk_type: bhk, config_key: configKey, plan_type: planType, image_path: r.media_path, image_url: r.media_url, file_name: r.file_name, file_size: r.file_size, alt_text: '' }); });
+  });
+  content.querySelectorAll('[data-fp-assign]').forEach(el => {
+    el.onchange = () => {
+      const plan = state.floorPlans[Number(el.dataset.fpAssign)];
+      const cfg = state.configurations.find(c => c._k === el.value);
+      if (!plan || !cfg) return;
+      plan.config_key = cfg._k;
+      plan.bhk_type = cfg.bhk_type;
+      touched = true;
+      renderStepBody();
+    };
   });
   content.querySelectorAll('[data-remove-floorplan]').forEach(el => {
     el.onclick = () => {
@@ -2122,22 +2180,21 @@ async function handleUpload(file, bucket, folder, key, cb) {
     return;
   }
 
-  // Photos going to the media bucket are converted to ~100 KB WebP first (see
-  // image-compress.js). Documents are uploaded exactly as given. The size limit below is
-  // checked against what's actually uploaded, so a large camera photo is fine.
+  // Every image — photos, floor plans, and images attached as documents — is converted to a
+  // 100 KB-or-smaller WebP first (see image-compress.js); one that can't be compressed is
+  // refused rather than uploaded as the original. PDFs are uploaded exactly as given.
   let note = '';
-  if (bucket === K.buckets.media && isCompressibleImage(file)) {
+  if (isCompressibleImage(file)) {
     uploads[key] = { name: file.name, size: file.size, optimizing: true };
     renderStepBody();
-    try {
-      const out = await compressImageToWebp(file);
-      if (out.compressed) {
-        note = ` · ${fmtBytes(out.originalSize)} → ${fmtBytes(out.file.size)} WebP`;
-        file = out.file;
-      }
-    } catch (e) {
-      console.warn('Image compression failed, uploading the original', e);
+    const out = await prepareImageForUpload(file);
+    if (out.error) {
+      uploads[key] = { error: out.error };
+      renderStepBody();
+      return;
     }
+    file = out.file;
+    note = out.note;
   }
 
   if (limits && file.size > limits.maxBytes) {
@@ -2265,6 +2322,35 @@ async function replaceChildRows(table, rows) {
   return error ? error.message : null;
 }
 
+// Like replaceChildRows(), but keeps each existing row's id: rows with an id are updated in
+// place, new ones inserted (their new id written back onto the item), removed ones deleted.
+// Used for configurations, whose ids floor plans link to (configuration_id) — a delete +
+// re-insert would give every configuration a new id on each save and orphan its plans.
+async function syncChildRows(table, items, toRow) {
+  const { data: existing, error: readErr } = await sb.from(table).select('id').eq('project_id', projectId);
+  if (readErr) return readErr.message;
+  const existingIds = new Set((existing || []).map(r => r.id));
+  const keptIds = new Set(items.map(it => it.id).filter(id => existingIds.has(id)));
+  const removed = [...existingIds].filter(id => !keptIds.has(id));
+  if (removed.length) {
+    const { error } = await sb.from(table).delete().in('id', removed);
+    if (error) return error.message;
+  }
+  for (let idx = 0; idx < items.length; idx++) {
+    const it = items[idx];
+    const row = { ...toRow(it, idx), project_id: projectId };
+    if (keptIds.has(it.id)) {
+      const { error } = await sb.from(table).update(row).eq('id', it.id);
+      if (error) return error.message;
+    } else {
+      const { data, error } = await sb.from(table).insert(row).select('id').single();
+      if (error) return error.message;
+      it.id = data.id;
+    }
+  }
+  return null;
+}
+
 async function persistStep(i) {
   // steps 1-4 (and the core-required set) must exist locally until step 4 completes; only then create the row
   if (i < FIRST_SAVE_AFTER_STEP) return true;
@@ -2284,7 +2370,7 @@ async function persistStep(i) {
       })));
       if (err) throw new Error(err);
     } else if (i === 5) {
-      const err = await replaceChildRows(T.units, state.configurations.map((c, idx) => K.unitRow(c, idx)));
+      const err = await syncChildRows(T.units, state.configurations, (c, idx) => K.unitRow(c, idx));
       if (err) throw new Error(err);
     } else if (i === 7) {
       const err = await replaceChildRows(T.towers, state.towers.map((t, idx) => ({
