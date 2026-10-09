@@ -3,6 +3,7 @@ import { sb } from './supabase-client.js';
 import { residentialProjectsPage, commercialProjectsPage } from './residential-projects.js';
 import { PROJECT_KINDS, KIND_KEYS, projectKind, queryAllKinds, localityEmbed, kindPill } from './project-kinds.js';
 import { attachProjectThumbs, projectThumbHtml, bindThumbFallbacks } from './project-thumbs.js';
+import { attachListFilters, dateRangeOptions } from './list-filters.js';
 import { openEntityForm, confirmDeleteEntity } from './entity-form.js';
 import { enhanceSelects } from './custom-select.js';
 import {
@@ -438,7 +439,7 @@ function buildActivity(historyRows, enquiryRows) {
 
 async function developersPage() {
   content.innerHTML = pageHead('Developers', 'Builder and developer master data') + `<div class="empty">Loading…</div>`;
-  const { data, error } = await sb.from('developers').select('id,name,rera_id,contact_email,contact_phone,verified,status').order('created_at', { ascending: false }).limit(200);
+  const { data, error } = await sb.from('developers').select('id,name,rera_id,contact_email,contact_phone,verified,status,created_at').order('created_at', { ascending: false }).limit(200);
 
   const toolbar = `<div class="toolbar"><button class="btn-primary" id="add-developer">+ Add Developer</button></div>`;
   const rows = error
@@ -455,6 +456,19 @@ async function developersPage() {
 
   content.innerHTML = pageHead('Developers', 'Builder and developer master data') +
     tablePanel('All Developers', toolbar, ['Name', 'RERA ID', 'Email', 'Phone', 'Verified', 'Actions'], rows);
+
+  if (!error) attachListFilters({
+    panel: content.querySelector('.panel'), items: data, rows: [...content.querySelectorAll('tbody tr')],
+    stateKey: 'developers', title: 'Filter Developers', noun: ['developer', 'developers'],
+    searchText: d => [d.name, d.rera_id, d.contact_email, d.contact_phone].filter(Boolean).join(' '),
+    searchPlaceholder: 'Search developers',
+    filters: [
+      { key: 'verified', label: 'Verification', get: d => d.verified ? 'verified' : 'unverified' },
+      { key: 'status', label: 'Status', get: d => d.status },
+      { key: 'rera', label: 'RERA ID', get: d => d.rera_id ? 'yes' : 'no', labels: { yes: 'Has RERA ID', no: 'No RERA ID' } },
+      { key: 'added', label: 'Added', options: dateRangeOptions(d => d.created_at) }
+    ]
+  });
 
   $('#add-developer')?.addEventListener('click', () => openDeveloperForm(null));
   content.querySelectorAll('[data-add-project-for]').forEach(btn => {
@@ -597,7 +611,7 @@ async function manageLocalities(cityId, cityName) {
 
 async function agentsPage() {
   content.innerHTML = pageHead('Agents', 'Agent profiles and verification') + `<div class="empty">Loading…</div>`;
-  const { data, error } = await sb.from('agents').select('id,full_name,company_name,email,phone,verified,status').order('created_at', { ascending: false }).limit(200);
+  const { data, error } = await sb.from('agents').select('id,full_name,company_name,email,phone,verified,status,created_at').order('created_at', { ascending: false }).limit(200);
 
   const toolbar = `<div class="toolbar"><button class="btn-primary" id="add-agent">+ Add Agent</button></div>`;
   const rows = error
@@ -614,6 +628,19 @@ async function agentsPage() {
 
   content.innerHTML = pageHead('Agents', 'Agent profiles and verification') +
     tablePanel('All Agents', toolbar, ['Name', 'Company', 'Email', 'Phone', 'Verified', 'Actions'], rows);
+
+  if (!error) attachListFilters({
+    panel: content.querySelector('.panel'), items: data, rows: [...content.querySelectorAll('tbody tr')],
+    stateKey: 'agents', title: 'Filter Agents', noun: ['agent', 'agents'],
+    searchText: a => [a.full_name, a.company_name, a.email, a.phone].filter(Boolean).join(' '),
+    searchPlaceholder: 'Search agents',
+    filters: [
+      { key: 'verified', label: 'Verification', get: a => a.verified ? 'verified' : 'unverified' },
+      { key: 'status', label: 'Status', get: a => a.status },
+      { key: 'company', label: 'Company', get: a => a.company_name, raw: true },
+      { key: 'added', label: 'Added', options: dateRangeOptions(a => a.created_at) }
+    ]
+  });
 
   $('#add-agent')?.addEventListener('click', () => openAgentForm(null));
   bindStubs(content, {
@@ -728,6 +755,22 @@ async function enquiriesPage(openId) {
 
   content.innerHTML = pageHead('Enquiries', 'Residential and commercial project leads') +
     tablePanel('All Enquiries', '', ['Name', 'Phone', 'Project', 'Type', 'Assigned', 'Date', 'Status', 'Actions'], rows);
+
+  if (!error) attachListFilters({
+    panel: content.querySelector('.panel'), items: data, rows: [...content.querySelectorAll('tbody tr')],
+    stateKey: 'enquiries', title: 'Filter Enquiries', noun: ['enquiry', 'enquiries'],
+    searchText: e => [e.contact_person, e.phone, e.whatsapp, e.email, e.project?.project_name].filter(Boolean).join(' '),
+    searchPlaceholder: 'Search name, phone, email, project',
+    filters: [
+      { key: 'status', label: 'Status', get: e => e.status },
+      { key: 'kind', label: 'Project Kind', get: e => e._kind },
+      { key: 'project', label: 'Project', get: e => e.project?.project_name, raw: true },
+      { key: 'enquiry_type', label: 'Enquiry Type', get: e => e.enquiry_type },
+      { key: 'assigned', label: 'Assigned Agent', get: e => e.agents?.full_name || 'Unassigned', raw: true },
+      { key: 'source', label: 'Source', get: e => e.source },
+      { key: 'received', label: 'Received', options: dateRangeOptions(e => e.created_at) }
+    ]
+  });
 
   const byId = Object.fromEntries((data || []).map(e => [e.id, e]));
   content.querySelectorAll('[data-view-enquiry]').forEach(btn => {
@@ -958,7 +1001,7 @@ async function moderationPage() {
 
     const tab = MOD_TABS.find(t => t.key === activeTab);
     const { data, error } = await queryAllKinds(K => {
-      let q = sb.from(K.tables.project).select('id,project_code,project_name,moderation_status,updated_at').is('deleted_at', null).order('updated_at', { ascending: false }).limit(200);
+      let q = sb.from(K.tables.project).select('id,project_code,project_name,project_type,moderation_status,updated_at').is('deleted_at', null).order('updated_at', { ascending: false }).limit(200);
       if (tab.statuses) q = q.in('moderation_status', tab.statuses);
       return q;
     });
@@ -986,6 +1029,19 @@ async function moderationPage() {
 
     content.innerHTML = pageHead('Moderation Queue', 'Review, approve and publish residential and commercial projects') + tabsHtml +
       tablePanel(tab.label, '', ['Project', 'Type', 'Status', 'Updated', 'Actions'], rows);
+
+    if (!error) attachListFilters({
+      panel: content.querySelector('.panel'), items: data, rows: [...content.querySelectorAll('tbody tr')],
+      stateKey: 'moderation', title: 'Filter Moderation Queue', noun: ['project', 'projects'],
+      searchText: p => `${p.project_name} ${p.project_code}`,
+      searchPlaceholder: 'Search projects',
+      filters: [
+        { key: 'kind', label: 'Project Kind', get: p => p._kind },
+        { key: 'moderation_status', label: 'Status', get: p => p.moderation_status },
+        { key: 'project_type', label: 'Property Type', get: p => p.project_type },
+        { key: 'updated', label: 'Updated', options: dateRangeOptions(p => p.updated_at) }
+      ]
+    });
 
     const byId = Object.fromEntries((data || []).map(p => [p.id, p]));
     content.querySelectorAll('[data-mod-tab]').forEach(btn => btn.addEventListener('click', () => { activeTab = btn.dataset.modTab; render(); }));
