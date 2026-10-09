@@ -2,7 +2,7 @@ import { sb } from './supabase-client.js';
 import { toast, fmtPriceWords } from './utils.js';
 import { enhanceSelects } from './custom-select.js';
 import { PROJECT_KINDS, KIND_KEYS, projectPageUrl } from './project-kinds.js';
-import { compressImageToWebp, isCompressibleImage } from './image-compress.js';
+import { prepareImageForUpload, isCompressibleImage } from './image-compress.js';
 
 /* ============ small utils ============ */
 
@@ -57,12 +57,12 @@ const UPLOAD_LIMITS = {
   'residential-media': {
     maxBytes: 10 * 1024 * 1024,
     mimeTypes: ['image/jpeg', 'image/png', 'image/webp', 'image/avif', 'image/gif'],
-    label: 'JPG, PNG, WEBP or AVIF · auto-optimized to ~100 KB WebP'
+    label: 'JPG, PNG, WEBP, AVIF or GIF · compressed to 100 KB WebP'
   },
   'residential-documents': {
     maxBytes: 20 * 1024 * 1024,
     mimeTypes: ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'],
-    label: 'PDF, JPG, PNG or WEBP · up to 20MB'
+    label: 'PDF (up to 20MB), or JPG, PNG or WEBP · images compressed to 100 KB WebP'
   }
 };
 UPLOAD_LIMITS['commercial-media'] = UPLOAD_LIMITS['residential-media'];
@@ -2180,22 +2180,21 @@ async function handleUpload(file, bucket, folder, key, cb) {
     return;
   }
 
-  // Photos going to the media bucket are converted to ~100 KB WebP first (see
-  // image-compress.js). Documents are uploaded exactly as given. The size limit below is
-  // checked against what's actually uploaded, so a large camera photo is fine.
+  // Every image — photos, floor plans, and images attached as documents — is converted to a
+  // 100 KB-or-smaller WebP first (see image-compress.js); one that can't be compressed is
+  // refused rather than uploaded as the original. PDFs are uploaded exactly as given.
   let note = '';
-  if (bucket === K.buckets.media && isCompressibleImage(file)) {
+  if (isCompressibleImage(file)) {
     uploads[key] = { name: file.name, size: file.size, optimizing: true };
     renderStepBody();
-    try {
-      const out = await compressImageToWebp(file);
-      if (out.compressed) {
-        note = ` · ${fmtBytes(out.originalSize)} → ${fmtBytes(out.file.size)} WebP`;
-        file = out.file;
-      }
-    } catch (e) {
-      console.warn('Image compression failed, uploading the original', e);
+    const out = await prepareImageForUpload(file);
+    if (out.error) {
+      uploads[key] = { error: out.error };
+      renderStepBody();
+      return;
     }
+    file = out.file;
+    note = out.note;
   }
 
   if (limits && file.size > limits.maxBytes) {
