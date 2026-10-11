@@ -1,5 +1,5 @@
 import { sb } from './supabase-client.js';
-import { toast, fmtPriceWords } from './utils.js';
+import { toast, fmtPriceWords, uploadBoxHead } from './utils.js';
 import { enhanceSelects } from './custom-select.js';
 import { PROJECT_KINDS, KIND_KEYS, projectPageUrl } from './project-kinds.js';
 import { prepareImageForUpload, isCompressibleImage } from './image-compress.js';
@@ -57,12 +57,12 @@ const UPLOAD_LIMITS = {
   'residential-media': {
     maxBytes: 10 * 1024 * 1024,
     mimeTypes: ['image/jpeg', 'image/png', 'image/webp', 'image/avif', 'image/gif'],
-    label: 'JPG, PNG, WEBP, AVIF or GIF · compressed to 100 KB WebP'
+    label: 'JPG, PNG, WEBP, AVIF or GIF · auto-compressed to WebP (max 100 KB)'
   },
   'residential-documents': {
     maxBytes: 20 * 1024 * 1024,
     mimeTypes: ['application/pdf', 'image/jpeg', 'image/png', 'image/webp'],
-    label: 'PDF (up to 20MB), or JPG, PNG or WEBP · images compressed to 100 KB WebP'
+    label: 'PDF (up to 20MB), or JPG, PNG or WEBP · images auto-compressed to WebP (max 100 KB)'
   }
 };
 UPLOAD_LIMITS['commercial-media'] = UPLOAD_LIMITS['residential-media'];
@@ -1415,7 +1415,7 @@ function renderUpdates() {
       const media = (u.media || []).map(m => `<div class="upload-thumb"><span class="name">${esc(m.file_name || m.media_path?.split('/').pop() || 'photo')}${m.file_size ? ` · ${fmtBytes(m.file_size)}` : ''}</span></div>`).join('');
       const input = `<input type="file" accept="image/*" data-update-upload="${i}">`;
       const uploadHtml = !projectId ? `<div class="hint">Save the project first to attach photos.</div>`
-        : renderUploadSlot(`updates.${i}`, input) || `<label class="upload-box">📷 Add site photo${input}<span class="hint">${esc(UPLOAD_LIMITS[K.buckets.media].label)}</span></label>`;
+        : renderUploadSlot(`updates.${i}`, input) || `<label class="upload-box">${uploadBoxHead('camera', 'Add site photo')}${input}<span class="hint">${esc(UPLOAD_LIMITS[K.buckets.media].label)}</span></label>`;
       return `<div class="field full">${uploadHtml}${media}</div>`;
     }
   });
@@ -1435,7 +1435,7 @@ function renderDocuments() {
       const uploadHtml = d.file_name
         ? `<div class="upload-thumb"><span class="name">${esc(d.file_name)}${d.file_size ? ` · ${fmtBytes(d.file_size)}` : ''}</span><button type="button" data-remove-upload="documents.${i}.file">✕</button></div>`
         : !projectId ? `<div class="hint">Save the project first (through Status &amp; Construction) to upload files.</div>`
-        : renderUploadSlot(`documents.${i}`, input) || `<label class="upload-box">📄 Click to upload file${input}<span class="hint">${esc(UPLOAD_LIMITS[K.buckets.docs].label)}</span></label>`;
+        : renderUploadSlot(`documents.${i}`, input) || `<label class="upload-box">${uploadBoxHead('file', 'Upload document')}${input}<span class="hint">${esc(UPLOAD_LIMITS[K.buckets.docs].label)}</span></label>`;
       return `<div class="field full">${uploadHtml}</div>`;
     }
   });
@@ -1459,7 +1459,7 @@ function renderLitigation() {
       const uploadHtml = l.supporting_document_name
         ? `<div class="upload-thumb"><span class="name">${esc(l.supporting_document_name)}${l.supporting_document_size ? ` · ${fmtBytes(l.supporting_document_size)}` : ''}</span><button type="button" data-remove-upload="litigation.${i}.supporting_document">✕</button></div>`
         : !projectId ? `<div class="hint">Save the project first to attach a document.</div>`
-        : renderUploadSlot(`litigation.${i}`, input) || `<label class="upload-box">📄 Attach supporting document${input}<span class="hint">${esc(UPLOAD_LIMITS[K.buckets.docs].label)}</span></label>`;
+        : renderUploadSlot(`litigation.${i}`, input) || `<label class="upload-box">${uploadBoxHead('file', 'Attach supporting document')}${input}<span class="hint">${esc(UPLOAD_LIMITS[K.buckets.docs].label)}</span></label>`;
       return `<div class="field full">${uploadHtml}</div>`;
     }
   });
@@ -1650,12 +1650,12 @@ function renderMedia() {
   const mainInput = `<input type="file" accept="image/*" data-main-upload="1">`;
   const mainBox = renderUploadSlot('media.main', mainInput) || (main.media_url
     ? `<div class="upload-thumb"><img src="${esc(main.media_url)}" loading="lazy" onerror="this.style.display='none'"><span class="name">Main image set${main.file_size ? ` · ${fmtBytes(main.file_size)}` : ''}</span><button type="button" data-remove-upload="media.main">✕</button></div>`
-    : `<label class="upload-box">📷 Click to upload main image${mainInput}${sizeHint}</label>`);
+    : `<label class="upload-box">${uploadBoxHead('image', 'Upload main image')}${mainInput}${sizeHint}</label>`);
 
   const mpInput = `<input type="file" accept="image/*" data-masterplan-upload="1">`;
   const mpBox = renderUploadSlot('media.masterPlan', mpInput) || (mp.media_url
     ? `<div class="upload-thumb"><img src="${esc(mp.media_url)}" loading="lazy" onerror="this.style.display='none'"><span class="name">Master plan set${mp.file_size ? ` · ${fmtBytes(mp.file_size)}` : ''}</span><button type="button" data-remove-upload="media.masterPlan">✕</button></div>`
-    : `<label class="upload-box">🗺️ Click to upload master plan${mpInput}${sizeHint}</label>`);
+    : `<label class="upload-box">${uploadBoxHead('map', 'Upload master plan')}${mpInput}${sizeHint}</label>`);
 
   const galleryItems = state.media.gallery.map((g, i) => `
     <div class="upload-thumb upload-thumb-wide">
@@ -1683,7 +1683,7 @@ function renderMedia() {
     <div class="field full"><label>Master Plan</label>${mpBox}</div>
     <div class="field full"><label>Gallery <span class="hint">${state.media.gallery.length} photo${state.media.gallery.length === 1 ? '' : 's'}</span></label>
       ${galleryItems}${galleryUploads}
-      <label class="upload-box">🖼️ Add gallery photo<input type="file" accept="image/*" data-gallery-upload="1">${sizeHint}</label>
+      <label class="upload-box">${uploadBoxHead('image', 'Add gallery photo')}<input type="file" accept="image/*" data-gallery-upload="1">${sizeHint}</label>
     </div>
     ${K.tables.floorPlans ? renderFloorPlans(sizeHint) : ''}
     <div class="field full"><label>Videos / Virtual Tour / Reels</label>${videos}
@@ -1760,7 +1760,7 @@ function renderFloorPlans(sizeHint) {
       return `<div class="fp-col">
         <div class="fp-col-head">${esc(t.label)} <span class="hint">${plans.length || 'none'}</span></div>
         ${thumbs}${inFlight}
-        <label class="upload-box">${t.key === '2d' ? '📐' : '🏠'} Add ${esc(t.label)}<input type="file" accept="image/*" data-fp-upload="1" data-fp-section="${esc(sec.key)}" data-bhk="${esc(sec.bhk)}" data-plan-type="${t.key}">${sizeHint}</label>
+        <label class="upload-box">${uploadBoxHead(t.key === '2d' ? 'plan' : 'cube', `Add ${t.label}`)}<input type="file" accept="image/*" data-fp-upload="1" data-fp-section="${esc(sec.key)}" data-bhk="${esc(sec.bhk)}" data-plan-type="${t.key}">${sizeHint}</label>
       </div>`;
     }).join('');
     const removable = !sec.config && !inSection.length;
