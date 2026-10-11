@@ -1,17 +1,18 @@
-// Every image the admin uploads goes through here first and is stored at 100 KB or less, as
-// WebP (or JPEG in a browser that can't encode WebP). Quality is kept as high as the budget
-// allows, in this order:
-//   1. full size (longest side up to 2400px), highest encoder quality that fits (0.95 → 0.6);
-//   2. shrink the dimensions, still at quality ≥ 0.6, down to 1000px;
-//   3. at 1000px, allow quality down to 0.4;
-//   4. only if it still doesn't fit (very detailed pictures), keep shrinking below 1000px.
-// So a photo is never degraded more than the 100 KB cap requires, but the cap always holds.
+// Every image the admin uploads goes through here first and is stored as WebP (or JPEG in a
+// browser that can't encode WebP), as small as it can be without a visible loss:
+//   1. resize so the longest side is at most 1920px (larger than any listing display) and
+//      encode once at a fixed "visually lossless" quality (WebP 0.75 / JPEG 0.78) — most
+//      photos come out around 30–70 KB, simple images and logos far less;
+//   2. only if that is still over the 100 KB hard limit (very detailed pictures), search for
+//      the highest quality ≤ that level which fits, then shrink the dimensions down to 1000px,
+//      allow quality down to 0.4, and finally shrink further — so 100 KB always holds.
 //
 // SVGs are left alone (vector, already small); GIFs are converted to a still image.
 
 const DEFAULTS = {
-  targetBytes: 100 * 1024,
-  maxDimension: 2400,   // longest side for the first attempt — larger than any listing display
+  targetBytes: 100 * 1024,   // hard upper limit, never exceeded
+  quality: { 'image/webp': 0.75, 'image/jpeg': 0.78 },   // the normal, visually lossless level
+  maxDimension: 1920,   // longest side — larger than any listing display
   minDimension: 1000,   // preferred floor: shrink below this only when quality 0.4 can't fit
   floorDimension: 320,  // absolute floor; quality is lowered further rather than going smaller
   minQuality: 0.6,      // quality floor before resorting to smaller dimensions
@@ -89,12 +90,18 @@ export async function compressImageToWebp(file, options = {}) {
   opaque = type === 'image/jpeg';
 
   const longest = Math.max(srcW, srcH);
+  const quality = opts.quality[type];
   let scale = Math.min(1, opts.maxDimension / longest);
   let result = null;
-  for (;;) {
+  // 1. The normal case: one encode at the standard quality.
+  draw(scale);
+  const standard = await encode(canvas, type, quality);
+  if (standard && standard.size <= opts.targetBytes) result = standard;
+  // 2. Too detailed for 100 KB at that quality: step down until it fits.
+  while (!result) {
     const side = draw(scale);
     const lo = side <= opts.minDimension ? opts.hardMinQuality : opts.minQuality;
-    result = await bestQualityThatFits(canvas, type, opts.targetBytes, lo, 0.95);
+    result = await bestQualityThatFits(canvas, type, opts.targetBytes, Math.min(lo, quality), quality);
     if (result) break;
     if (side <= opts.floorDimension) {
       // Tiny already and still too big (rare: extreme noise) — lower quality until it fits.
@@ -123,7 +130,7 @@ export async function compressImageToWebp(file, options = {}) {
 }
 
 // The one entry point every image upload uses. Resolves { file, note } with the file to
-// upload (≤ 100 KB for any image) and a short "2.1 MB → 98 KB WebP" note, or
+// upload (as small as possible, never over 100 KB) and a short "2.1 MB → 48 KB WebP" note, or
 // { error } when an image couldn't be compressed — the upload must then be refused, never
 // sent as the original. Non-image files (PDFs) pass through untouched.
 export async function prepareImageForUpload(file) {
