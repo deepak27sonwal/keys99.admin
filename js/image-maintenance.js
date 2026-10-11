@@ -18,6 +18,13 @@ const MEDIA_LABELS = { main_image: 'Main image', master_plan: 'Master plan', gal
 // counts as used while any blog or newsletter HTML still contains its path.
 const INLINE_PREFIXES = ['blog/inline/', 'newsletter/'];
 
+const DIRECTORY_SOURCES = [
+  { table: 'cities', url: 'city_image', where: () => 'City photo', name: r => r.name },
+  { table: 'developers', url: 'logo_url', where: () => 'Developer logo', name: r => r.name },
+  { table: 'agents', url: 'photo_url', where: () => 'Agent photo', name: r => r.full_name },
+  { table: 'relationship_managers', url: 'photo_url', where: () => 'Relationship manager photo', name: r => r.full_name }
+];
+
 const isImage = mime => /^image\//.test(mime || '') && mime !== 'image/svg+xml';
 const fmtKb = n => (n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.round(n / 1024)} KB`);
 const typeLabel = mime => (mime || '').replace('image/', '').toUpperCase() || '?';
@@ -81,6 +88,21 @@ export async function scanImages(onProgress = () => {}) {
     }
   }
 
+  // Directory images (city photos, agent / RM photos, developer logos) are stored as public
+  // URLs only, in residential-media/directory/… (see entity-form.js).
+  const marker = '/storage/v1/object/public/';
+  for (const src of DIRECTORY_SOURCES) {
+    const { data, error } = await sb.from(src.table).select('*').not(src.url, 'is', null);
+    if (error) throw new Error(`${src.table}: ${error.message}`);
+    for (const row of data || []) {
+      const i = String(row[src.url]).indexOf(marker);
+      if (i < 0) continue;
+      const key = decodeURIComponent(row[src.url].slice(i + marker.length).split(/[?#]/)[0]);   // bucket/path
+      if (!refs.has(key)) refs.set(key, []);
+      refs.get(key).push({ src, row, project: src.name(row) });
+    }
+  }
+
   // All blog and newsletter HTML, to tell which inline images are still used.
   const htmlParts = [];
   for (const k of KIND_KEYS) {
@@ -134,12 +156,12 @@ export async function convertImage(item, existingPaths) {
   const oldUrl = publicUrl(bucket, path);
   const done = [];
   for (const ref of item.refs) {
-    const patch = { [ref.src.path]: newPath };
+    const patch = ref.src.path ? { [ref.src.path]: newPath } : {};
     if (ref.src.url in ref.row && ref.row[ref.src.url]) patch[ref.src.url] = newUrl || ref.row[ref.src.url].replace(path, newPath);
     const { error } = await sb.from(ref.src.table).update(patch).eq('id', ref.row.id);
     if (error) {
       // Put back what was already repointed, drop the new file, keep the original.
-      for (const d of done) await sb.from(d.src.table).update({ [d.src.path]: path, ...(d.src.url in d.row ? { [d.src.url]: d.row[d.src.url] } : {}) }).eq('id', d.row.id);
+      for (const d of done) await sb.from(d.src.table).update({ ...(d.src.path ? { [d.src.path]: path } : {}), ...(d.src.url in d.row ? { [d.src.url]: d.row[d.src.url] } : {}) }).eq('id', d.row.id);
       await sb.storage.from(bucket).remove([newPath]);
       return { ok: false, error: `Couldn't update ${ref.src.table}: ${error.message}` };
     }

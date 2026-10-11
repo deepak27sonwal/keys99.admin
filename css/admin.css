@@ -781,3 +781,22 @@ tr:last-child td{border-bottom:0}
   .feat-until{grid-column:2 / -1}
   .feat-actions{grid-column:2 / -1}
 }
+
+/* ---------- Image fields in the entity forms (js/entity-form.js) + list thumbnails ---------- */
+.img-field-empty{min-height:96px}
+.img-field-box{display:flex;align-items:center;gap:14px;border:1px solid var(--line);border-radius:12px;padding:10px;background:var(--bg)}
+.img-field-box.busy{justify-content:center;gap:10px;min-height:96px;font-size:13px;color:var(--ink-soft)}
+.img-field-box img{display:block;flex:none;background:var(--white);object-fit:cover}
+.img-field-box.round img{width:84px;height:84px;border-radius:50%}
+.img-field-box.logo img{width:120px;height:84px;object-fit:contain;border-radius:8px;border:1px solid var(--line);padding:6px}
+.img-field-box.wide img{width:160px;aspect-ratio:16/9;height:auto;border-radius:8px}
+.img-field-actions{display:flex;gap:8px;flex-wrap:wrap}
+.img-field-actions label.btn-outline{cursor:pointer;position:relative;overflow:hidden}
+.img-field-actions input[type=file]{position:absolute;inset:0;opacity:0;cursor:pointer}
+.name-img{display:flex;align-items:center;gap:10px;min-width:0}
+.name-img-pic{position:relative;flex:none;width:36px;height:36px;display:flex;align-items:center;justify-content:center;background:var(--green-tint);color:var(--green);font-size:12px;font-weight:800;overflow:hidden;border-radius:50%}
+.name-img-pic.logo{border-radius:8px;width:44px;background:var(--white);border:1px solid var(--line)}
+.name-img-pic.wide{border-radius:8px;width:56px}
+.name-img-pic img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.name-img-pic.logo img{object-fit:contain;padding:3px;background:var(--white)}
+@media (max-width:480px){ .img-field-box{flex-direction:column;align-items:flex-start} }

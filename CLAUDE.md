@@ -1,6 +1,7 @@
 # Keys99 Admin — working rules
 
-- **Every image upload must be compressed to 100 KB or less before it is uploaded.**
+- **Every image upload must be compressed before it is uploaded: WebP, as small as it can be
+  without visible loss (fixed quality ~75%, max 1920px), and never over 100 KB.**
   Route all image uploads (project media, floor plans, documents/litigation images,
   construction updates, blog covers, and any new upload added later) through
   `prepareImageForUpload()` in `js/image-compress.js`. Never upload an image as the
