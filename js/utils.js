@@ -150,11 +150,14 @@ const ENTITY_KINDS = ['developer', 'agent', 'city', 'relationship_manager'];
 
 // projectKind ('residential' | 'commercial') only applies to kind === 'project' — it's
 // carried on the buttons so bindStubs() can hand it back to the edit/archive callbacks.
-export function rowActions(kind, id, name, canDelete = true, projectKind = 'residential') {
+// featured: true/false adds the ★ Featured toggle (project list pages); omit it elsewhere.
+export function rowActions(kind, id, name, canDelete = true, projectKind = 'residential', featured) {
   if (kind === 'project') {
     const pk = `data-project-kind="${escapeHtml(projectKind)}"`;
     const del = canDelete ? `<button class="icon-btn danger" data-delete-project="${id}" ${pk} data-project-name="${escapeHtml(name || '')}">${icon('trash', 13)}</button>` : '';
+    const star = featured === undefined ? '' : `<button class="icon-btn star-btn${featured ? ' on' : ''}" data-feature-project="${id}" title="${featured ? 'Remove from featured' : 'Feature this listing'}" aria-pressed="${featured ? 'true' : 'false'}">${featured ? '★' : '☆'}</button>`;
     return `<div class="row-actions">
+      ${star}
       <button class="icon-btn" data-edit-project="${id}" ${pk}>${icon('edit', 13)}</button>
       <button class="icon-btn" data-edit-project="${id}" ${pk}>${icon('eye', 13)}</button>
       ${del}

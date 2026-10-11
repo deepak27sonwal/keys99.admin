@@ -134,8 +134,8 @@ input,select,textarea{font:inherit}
 .kpi .trend.flat{color:var(--warn)}
 .kpi .trend span{color:var(--muted);font-weight:500}
 
-.body-grid{display:grid;grid-template-columns:1fr 300px;gap:18px;align-items:start}
-.left-col,.right-col{display:flex;flex-direction:column;gap:18px}
+.body-grid{display:grid;grid-template-columns:minmax(0,1fr) 300px;gap:18px;align-items:start}
+.left-col,.right-col{display:flex;flex-direction:column;gap:18px;min-width:0}
 
 .chart-row{display:grid;grid-template-columns:1.5fr 1fr 1fr;gap:16px;align-items:stretch}
 .donut-panel{display:flex;flex-direction:column}
@@ -755,3 +755,29 @@ tr:last-child td{border-bottom:0}
 .img-result{min-width:120px}
 .img-ok{color:var(--green);font-weight:700}
 .btn-outline.danger{color:var(--danger);border-color:#f3c4c4}
+
+/* ---------- Featured listings (js/residential-projects.js) ---------- */
+.feat-badge{display:inline-block;margin-left:6px;font-size:10px;font-weight:700;padding:3px 8px;border-radius:12px;background:#fff4dc;color:#a06a00;white-space:nowrap;vertical-align:middle}
+.feat-badge.expired{background:#f1f3f4;color:var(--muted)}
+.star-btn{font-size:15px;line-height:1;color:#b8c3c1}
+.star-btn.on{color:#e0a100;background:#fff4dc}
+.star-btn:hover{color:#e0a100}
+.feat-manage-btn{display:inline-flex;align-items:center;gap:6px}
+.feat-manage-btn .filters-badge{background:#e0a100}
+.feat-item{display:grid;grid-template-columns:26px auto minmax(0,1fr) auto auto;gap:12px;align-items:center;padding:12px 0;border-bottom:1px solid var(--line)}
+.feat-item:last-child{border-bottom:0}
+.feat-pos{width:26px;height:26px;border-radius:50%;background:var(--green-tint);color:var(--green);font-weight:800;font-size:12px;display:flex;align-items:center;justify-content:center}
+.feat-main{min-width:0}
+.feat-main .proj-code .pill{margin-left:2px}
+.feat-warn{display:block;font-size:11.5px;color:var(--warn);margin-top:3px}
+.feat-until{display:flex;flex-direction:column;gap:3px;font-size:10.5px;font-weight:700;text-transform:uppercase;letter-spacing:.04em;color:var(--muted)}
+.feat-until-row{display:flex;align-items:center;gap:4px}
+.feat-until input{padding:6px 8px;border:1px solid var(--line);border-radius:7px;font:inherit;font-size:12.5px;color:var(--ink);text-transform:none;letter-spacing:0;font-weight:500}
+.feat-actions{display:flex;gap:4px}
+.feat-actions .icon-btn:disabled{opacity:.35;cursor:default}
+.feat-actions .icon-btn.danger{color:#e0a100;font-size:14px}
+@media (max-width:640px){
+  .feat-item{grid-template-columns:26px auto minmax(0,1fr);row-gap:8px}
+  .feat-until{grid-column:2 / -1}
+  .feat-actions{grid-column:2 / -1}
+}
