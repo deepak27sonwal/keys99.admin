@@ -1,5 +1,5 @@
 import { sb } from './supabase-client.js';
-import { pageHead, tablePanel, emptyRow, escapeHtml, fmtDate, toast, customConfirm, icon, pill } from './utils.js';
+import { pageHead, tablePanel, emptyRow, escapeHtml, fmtDate, toast, customConfirm, icon, pill, uploadBoxHead } from './utils.js';
 import { enhanceSelects } from './custom-select.js';
 import { KIND_KEYS, projectKind, queryAllKinds, kindPill } from './project-kinds.js';
 import { prepareImageForUpload } from './image-compress.js';
@@ -11,7 +11,7 @@ import { loadEditor, createEditor, sanitizeHtml, htmlForEditor, textToHtml, html
 // mechanics of entity-form.js, but needs its own form since a blog post has a cover-image
 // upload and a rich-text body that the generic entity form doesn't support.
 
-const COVER_LIMITS = { maxBytes: 10 * 1024 * 1024, mimeTypes: ['image/jpeg', 'image/png', 'image/webp', 'image/avif', 'image/gif'], label: 'JPG, PNG, WEBP, AVIF or GIF · compressed to 100 KB WebP' };
+const COVER_LIMITS = { maxBytes: 10 * 1024 * 1024, mimeTypes: ['image/jpeg', 'image/png', 'image/webp', 'image/avif', 'image/gif'], label: 'JPG, PNG, WEBP, AVIF or GIF · auto-compressed to WebP (max 100 KB)' };
 
 function slugify(text) {
   return String(text || '').toLowerCase().trim()
@@ -308,7 +308,7 @@ async function openBlogForm({ currentUser, projects, existingId, existingKind, o
       coverSlot.innerHTML = `<div class="blog-cover"><img src="${escapeHtml(cover.url)}" alt=""><button type="button" data-remove-cover title="Remove cover">✕</button></div>`;
       coverSlot.querySelector('[data-remove-cover]').addEventListener('click', () => { cover = { path: null, url: null }; renderCoverSlot(); });
     } else {
-      coverSlot.innerHTML = `<label class="upload-box">🖼️ Upload cover image<input type="file" accept="image/*"><span class="hint">${COVER_LIMITS.label} · 16:9 looks best</span></label>`;
+      coverSlot.innerHTML = `<label class="upload-box">${uploadBoxHead('image', 'Upload cover image')}<input type="file" accept="image/*"><span class="hint">${COVER_LIMITS.label} · 16:9 looks best</span></label>`;
       coverSlot.querySelector('input[type=file]').addEventListener('change', async (e) => {
         const file = e.target.files[0];
         if (!file) return;

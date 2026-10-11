@@ -491,7 +491,7 @@ async function developersPage() {
 
 const DEVELOPER_FIELDS = [
   { key: 'name', label: 'Developer Name', req: true, full: true },
-  { key: 'logo_url', label: 'Developer Logo', type: 'image', folder: 'developers', shape: 'logo', cta: 'Upload logo', hint: 'Square or wide logo on a plain background · compressed to 100 KB WebP' },
+  { key: 'logo_url', label: 'Developer Logo', type: 'image', folder: 'developers', shape: 'logo', cta: 'Upload logo', hint: 'Square or wide logo on a plain background · auto-compressed to WebP (max 100 KB)' },
   { key: 'rera_id', label: 'RERA ID' },
   { key: 'website', label: 'Website', type: 'url' },
   { key: 'contact_email', label: 'Contact Email', type: 'email' },
@@ -546,7 +546,7 @@ const CITY_FIELDS = [
   { key: 'name', label: 'City Name', req: true },
   { key: 'state', label: 'State', req: true },
   { key: 'is_active', label: 'Active', type: 'checkbox', full: true, default: true },
-  { key: 'city_image', label: 'City Photo', type: 'image', folder: 'cities', shape: 'wide', cta: 'Upload city photo', hint: 'A landmark or skyline · 16:9 works best · compressed to 100 KB WebP' }
+  { key: 'city_image', label: 'City Photo', type: 'image', folder: 'cities', shape: 'wide', cta: 'Upload city photo', hint: 'A landmark or skyline · 16:9 works best · auto-compressed to WebP (max 100 KB)' }
 ];
 
 function openCityForm(id) {
@@ -662,7 +662,7 @@ async function agentsPage() {
 
 const AGENT_FIELDS = [
   { key: 'full_name', label: 'Full Name', req: true, full: true },
-  { key: 'photo_url', label: 'Photo', type: 'image', folder: 'agents', shape: 'round', cta: 'Upload photo', hint: 'Clear face photo · compressed to 100 KB WebP' },
+  { key: 'photo_url', label: 'Photo', type: 'image', folder: 'agents', shape: 'round', cta: 'Upload photo', hint: 'Clear face photo · auto-compressed to WebP (max 100 KB)' },
   { key: 'company_name', label: 'Company Name' },
   { key: 'rera_id', label: 'RERA ID' },
   { key: 'email', label: 'Email', type: 'email' },
@@ -717,7 +717,7 @@ async function relationshipManagersPage() {
 
 const RM_FIELDS = [
   { key: 'full_name', label: 'Full Name', req: true, full: true },
-  { key: 'photo_url', label: 'Photo', type: 'image', folder: 'relationship-managers', shape: 'round', cta: 'Upload photo', hint: 'Clear face photo · compressed to 100 KB WebP' },
+  { key: 'photo_url', label: 'Photo', type: 'image', folder: 'relationship-managers', shape: 'round', cta: 'Upload photo', hint: 'Clear face photo · auto-compressed to WebP (max 100 KB)' },
   { key: 'company_name', label: 'Company Name' },
   { key: 'email', label: 'Email', type: 'email' },
   { key: 'phone', label: 'Phone', type: 'tel' },

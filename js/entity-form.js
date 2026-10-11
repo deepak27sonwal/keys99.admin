@@ -1,5 +1,5 @@
 import { sb } from './supabase-client.js';
-import { escapeHtml, toast, customConfirm } from './utils.js';
+import { escapeHtml, toast, customConfirm, uploadBoxHead } from './utils.js';
 import { enhanceSelects } from './custom-select.js';
 import { prepareImageForUpload } from './image-compress.js';
 
@@ -32,9 +32,9 @@ function imageBoxHtml(spec, url, busy) {
       </div>
     </div>`;
   }
-  return `<label class="upload-box img-field-empty ${spec.shape || 'wide'}">🖼️ ${escapeHtml(spec.cta || 'Upload image')}
+  return `<label class="upload-box img-field-empty ${spec.shape || 'wide'}">${uploadBoxHead(spec.shape === 'round' ? 'camera' : 'image', spec.cta || 'Upload image')}
     <input type="file" accept="image/*" data-image-input="${spec.key}">
-    <span class="hint">${escapeHtml(spec.hint || 'JPG, PNG or WEBP · compressed to 100 KB WebP')}</span></label>`;
+    <span class="hint">${escapeHtml(spec.hint || 'JPG, PNG or WEBP · auto-compressed to WebP (max 100 KB)')}</span></label>`;
 }
 
 // A small generic modal for the simple, single-table add/edit forms (Developers, Agents,
