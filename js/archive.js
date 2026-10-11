@@ -72,6 +72,17 @@ export async function archivePage(content, navigate, isSuperAdmin) {
 // unless removed explicitly, and removing them has to happen *before* the cascade deletes the
 // rows that record their paths. Best-effort throughout: a failed storage delete here (a stale
 // path, a network blip) should never block the person from actually deleting the project.
+// Storage paths of images inside rich-text HTML that live in `bucket` (public object URLs).
+export function inlineImagePaths(html, bucket) {
+  const marker = `/storage/v1/object/public/${bucket}/`;
+  const paths = [];
+  for (const m of String(html || '').matchAll(/<img[^>]+src="([^"]+)"/gi)) {
+    const i = m[1].indexOf(marker);
+    if (i >= 0) paths.push(decodeURIComponent(m[1].slice(i + marker.length).split(/[?#]/)[0]));
+  }
+  return paths;
+}
+
 async function deleteProjectStorageFiles(projectId, kind) {
   const { tables: T, buckets } = projectKind(kind);
   const [media, documents, litigation, updates, blogs, floorPlans] = await Promise.all([
@@ -79,7 +90,7 @@ async function deleteProjectStorageFiles(projectId, kind) {
     sb.from(T.documents).select('file_path').eq('project_id', projectId),
     sb.from(T.litigation).select('supporting_document_path').eq('project_id', projectId),
     sb.from(T.updates).select('id').eq('project_id', projectId),
-    sb.from(T.blogs).select('cover_image_path').eq('project_id', projectId),
+    sb.from(T.blogs).select('cover_image_path,body_html').eq('project_id', projectId),
     T.floorPlans ? sb.from(T.floorPlans).select('image_path').eq('project_id', projectId) : { data: [] }
   ]);
 
@@ -92,6 +103,8 @@ async function deleteProjectStorageFiles(projectId, kind) {
     ...(media.data || []).map(r => r.media_path),
     ...(updateMedia.data || []).map(r => r.media_path),
     ...(blogs.data || []).map(r => r.cover_image_path),
+    // Images placed inside a post's text are referenced only by URL in body_html.
+    ...(blogs.data || []).flatMap(r => inlineImagePaths(r.body_html, buckets.media)),
     ...(floorPlans.data || []).map(r => r.image_path)
   ].filter(Boolean);
   const documentPaths = [

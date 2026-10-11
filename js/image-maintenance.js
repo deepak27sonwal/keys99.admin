@@ -14,9 +14,9 @@ import { prepareImageForUpload, IMAGE_TARGET_BYTES } from './image-compress.js';
 //     replaced images and permanently deleted projects).
 
 const MEDIA_LABELS = { main_image: 'Main image', master_plan: 'Master plan', gallery: 'Gallery photo' };
-// Inline images in blog / newsletter bodies are referenced from HTML, not a path column —
-// never offered for deletion.
-const PROTECTED_PREFIXES = ['blog/inline/', 'newsletter/'];
+// Inline images in blog / newsletter bodies are referenced from HTML, not a path column: one
+// counts as used while any blog or newsletter HTML still contains its path.
+const INLINE_PREFIXES = ['blog/inline/', 'newsletter/'];
 
 const isImage = mime => /^image\//.test(mime || '') && mime !== 'image/svg+xml';
 const fmtKb = n => (n >= 1024 * 1024 ? `${(n / 1024 / 1024).toFixed(1)} MB` : `${Math.round(n / 1024)} KB`);
@@ -81,6 +81,18 @@ export async function scanImages(onProgress = () => {}) {
     }
   }
 
+  // All blog and newsletter HTML, to tell which inline images are still used.
+  const htmlParts = [];
+  for (const k of KIND_KEYS) {
+    const { data, error } = await sb.from(PROJECT_KINDS[k].tables.blogs).select('body_html');
+    if (error) throw new Error(`${PROJECT_KINDS[k].tables.blogs}: ${error.message}`);
+    htmlParts.push(...(data || []).map(b => b.body_html || ''));
+  }
+  const { data: campaigns, error: cErr } = await sb.from('newsletter_campaigns').select('body_html,content_html');
+  if (cErr) throw new Error(`newsletter_campaigns: ${cErr.message}`);
+  htmlParts.push(...(campaigns || []).map(c => `${c.body_html || ''} ${c.content_html || ''}`));
+  const allHtml = htmlParts.join('\n');
+
   const needs = [], unused = [], inline = [];
   const bad = f => f.mime !== 'image/webp' || f.size > IMAGE_TARGET_BYTES;
   for (const f of files) {
@@ -88,7 +100,7 @@ export async function scanImages(onProgress = () => {}) {
     const used = refs.get(`${f.bucket}/${f.path}`);
     if (used) {
       if (bad(f)) needs.push({ ...f, refs: used });
-    } else if (PROTECTED_PREFIXES.some(p => f.path.startsWith(p))) {
+    } else if (INLINE_PREFIXES.some(p => f.path.startsWith(p)) && allHtml.includes(f.path)) {
       if (bad(f)) inline.push(f);   // inside blog / newsletter text — fix by re-inserting in the editor
     } else {
       unused.push(f);
