@@ -1,6 +1,6 @@
 import { openProjectForm, isWizardOpen, handleWizardPopState } from './project-form.js';
 import { sb } from './supabase-client.js';
-import { residentialProjectsPage, commercialProjectsPage } from './residential-projects.js';
+import { residentialProjectsPage, commercialProjectsPage, featuredBadge } from './residential-projects.js';
 import { PROJECT_KINDS, KIND_KEYS, projectKind, queryAllKinds, localityEmbed, kindPill } from './project-kinds.js';
 import { attachProjectThumbs, projectThumbHtml, bindThumbFallbacks } from './project-thumbs.js';
 import { attachListFilters, dateRangeOptions } from './list-filters.js';
@@ -271,7 +271,7 @@ async function dashboardPage() {
     sumKinds('project', q => q.is('deleted_at', null).in('moderation_status', ['pending_verification', 'under_review', 'changes_required', 'resubmitted'])),
     Promise.all(MOD_STATUSES.map(s => sumKinds('project', q => q.is('deleted_at', null).eq('moderation_status', s)))),
     count(PROJECT_KINDS.residential.tables.project, q => q.is('deleted_at', null).eq('moderation_status', 'draft')),
-    queryAllKinds(K => sb.from(K.tables.project).select(`id,project_code,project_name,project_type,status,moderation_status,starting_price,price_on_request,updated_at,cities(name),${localityEmbed(K.key)}`).is('deleted_at', null).order('updated_at', { ascending: false }).limit(4)),
+    queryAllKinds(K => sb.from(K.tables.project).select(`id,project_code,project_name,project_type,status,moderation_status,starting_price,price_on_request,updated_at,is_featured,featured_until,cities(name),${localityEmbed(K.key)}`).is('deleted_at', null).order('updated_at', { ascending: false }).limit(4)),
     queryAllKinds(K => sb.from(K.tables.enquiries).select(`id,contact_person,phone,enquiry_type,status,created_at,project:${K.tables.project}(project_name)`).order('created_at', { ascending: false }).limit(4)),
     queryAllKinds(K => sb.from(K.tables.history).select(`id,to_status,action,changed_at,project:${K.tables.project}(project_name)`).order('changed_at', { ascending: false }).limit(5))
   ]);
@@ -357,7 +357,7 @@ async function dashboardPage() {
             <thead><tr><th>Project</th><th>Type</th><th>Location</th><th>Starting Price</th><th>Status</th><th>Moderation</th><th>Actions</th></tr></thead>
             <tbody>${(recentProjects.data || []).length ? recentProjects.data.map(p => `
               <tr>
-                <td><div class="proj-cell"><span class="proj-thumb">${projectThumbHtml(p._thumb, p._kind === 'commercial' ? 'building' : 'home')}</span><div><div class="proj-name">${escapeHtml(p.project_name)}</div><div class="proj-code">${escapeHtml(p.project_code)}</div></div></div></td>
+                <td><div class="proj-cell"><span class="proj-thumb">${projectThumbHtml(p._thumb, p._kind === 'commercial' ? 'building' : 'home')}</span><div><div class="proj-name">${escapeHtml(p.project_name)}${featuredBadge(p)}</div><div class="proj-code">${escapeHtml(p.project_code)}</div></div></div></td>
                 <td>${kindPill(p._kind)} ${escapeHtml((p.project_type || '—').replace(/_/g, ' '))}</td>
                 <td>${escapeHtml(p.localities?.name || '—')}${p.cities?.name ? ', ' + escapeHtml(p.cities.name) : ''}</td>
                 <td>${fmtPrice(p.starting_price, p.price_on_request)}</td>

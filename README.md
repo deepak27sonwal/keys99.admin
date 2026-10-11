@@ -137,6 +137,21 @@ Setup checklist:
 3. Run `supabase/manual/newsletter_admin_policies.sql` once in the SQL editor so
    super admins (not only admins) can use the Newsletter page.
 
+## Featured listings
+
+Residential and Commercial project lists have a ☆ / ★ button on each row to feature a
+project, and a **★ Featured** button that opens the manager (display order, optional
+"featured until" date, remove). Columns on both project tables: `is_featured`,
+`featured_order`, `featured_until`, `featured_at`.
+
+The website should show a project as featured when:
+
+```sql
+is_featured and moderation_status = 'published' and deleted_at is null
+  and (featured_until is null or featured_until >= current_date)
+order by featured_order nulls last, featured_at desc
+```
+
 ## Stored images
 
 Every image upload is converted to WebP ≤ 100 KB (see CLAUDE.md). Photos stored before that
