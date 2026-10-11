@@ -737,6 +737,52 @@ function openRelationshipManagerForm(id) {
   });
 }
 
+/* ---------------- Advertisements ---------------- */
+
+async function advertisementsPage() {
+  content.innerHTML = pageHead('Advertisements', 'Banner images promoting residential or commercial projects') + `<div class="empty">Loading…</div>`;
+  const { data, error } = await sb.from('advertisements').select('id,title,category,image_url,link_url,is_active').order('created_at', { ascending: false }).limit(200);
+
+  const toolbar = `<div class="toolbar"><button class="btn-primary" id="add-advertisement">+ Add Advertisement</button></div>`;
+  const rows = error
+    ? emptyRow(5, error.message)
+    : (data.length ? data.map(a => `
+      <tr>
+        <td>${nameWithImage(a.title, a.image_url, 'wide')}</td>
+        <td>${escapeHtml(a.category === 'commercial' ? 'Commercial' : 'Residential')}</td>
+        <td>${a.link_url ? `<a href="${escapeHtml(a.link_url)}" target="_blank" rel="noopener">${escapeHtml(a.link_url)}</a>` : '—'}</td>
+        <td>${a.is_active ? pill('active') : pill('inactive')}</td>
+        <td>${rowActions('advertisement', a.id)}</td>
+      </tr>`).join('') : emptyRow(5, 'No advertisements added yet.'));
+
+  content.innerHTML = pageHead('Advertisements', 'Banner images promoting residential or commercial projects') +
+    tablePanel('All Advertisements', toolbar, ['Advertisement', 'Category', 'Link', 'Status', 'Actions'], rows);
+
+  $('#add-advertisement')?.addEventListener('click', () => openAdvertisementForm(null));
+  bindStubs(content, {
+    onEditEntity: (kind, id) => kind === 'advertisement' && openAdvertisementForm(id),
+    onDeleteEntity: (kind, id) => kind === 'advertisement' && confirmDeleteEntity('advertisements', id, 'this advertisement', advertisementsPage)
+  });
+}
+
+const ADVERTISEMENT_FIELDS = [
+  { key: 'title', label: 'Title', req: true, full: true },
+  { key: 'image_url', label: 'Advertisement Image', type: 'image', folder: 'advertisements', shape: 'wide', cta: 'Upload advertisement image', hint: '16:9 works best · auto-compressed to WebP (max 100 KB)' },
+  { key: 'category', label: 'Category', type: 'select', options: [{ value: 'residential', label: 'Residential' }, { value: 'commercial', label: 'Commercial' }], default: 'residential' },
+  { key: 'link_url', label: 'Link URL', type: 'url', placeholder: 'Where this ad should lead when clicked' },
+  { key: 'is_active', label: 'Active', type: 'checkbox', full: true, default: true }
+];
+
+function openAdvertisementForm(id) {
+  openEntityForm({
+    title: id ? 'Edit Advertisement' : 'Add Advertisement',
+    table: 'advertisements',
+    fields: ADVERTISEMENT_FIELDS,
+    existingId: id,
+    onSaved: advertisementsPage
+  });
+}
+
 /* ---------------- Enquiries ---------------- */
 
 const ENQUIRY_STATUSES = ['new', 'contacted', 'follow_up', 'site_visit_scheduled', 'converted', 'closed', 'spam'];
@@ -1100,6 +1146,7 @@ const PAGES = {
   'report-moderation': () => reportsPage(content, navigate, 'moderation'),
   admins: () => adminsPage(content, navigate, isSuperAdmin),
   blog: () => blogPage(content, currentUser),
+  advertisements: advertisementsPage,
   newsletter: () => newsletterPage(content, currentUser),
   settings: () => settingsPage(content, currentUser, isSuperAdmin),
   profile: profilePage
