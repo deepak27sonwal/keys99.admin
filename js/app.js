@@ -438,16 +438,24 @@ function buildActivity(historyRows, enquiryRows) {
 
 /* ---------------- Developers ---------------- */
 
+// Name cell with the record's image (developer logo, city photo, agent / RM photo), or its
+// initials when there's none.
+function nameWithImage(name, url, shape) {
+  const initials = String(name || '?').trim().split(/\s+/).slice(0, 2).map(w => w[0] || '').join('').toUpperCase();
+  const img = url ? `<img src="${escapeHtml(url)}" alt="" loading="lazy" onerror="this.remove()">` : '';
+  return `<div class="name-img"><span class="name-img-pic ${shape}">${escapeHtml(initials)}${img}</span><strong>${escapeHtml(name || '—')}</strong></div>`;
+}
+
 async function developersPage() {
   content.innerHTML = pageHead('Developers', 'Builder and developer master data') + `<div class="empty">Loading…</div>`;
-  const { data, error } = await sb.from('developers').select('id,name,rera_id,contact_email,contact_phone,verified,status,created_at').order('created_at', { ascending: false }).limit(200);
+  const { data, error } = await sb.from('developers').select('id,name,logo_url,rera_id,contact_email,contact_phone,verified,status,created_at').order('created_at', { ascending: false }).limit(200);
 
   const toolbar = `<div class="toolbar"><button class="btn-primary" id="add-developer">+ Add Developer</button></div>`;
   const rows = error
     ? emptyRow(6, error.message)
     : (data.length ? data.map(d => `
       <tr>
-        <td><strong>${escapeHtml(d.name)}</strong></td>
+        <td>${nameWithImage(d.name, d.logo_url, 'logo')}</td>
         <td>${escapeHtml(d.rera_id || '—')}</td>
         <td>${escapeHtml(d.contact_email || '—')}</td>
         <td>${escapeHtml(d.contact_phone || '—')}</td>
@@ -483,6 +491,7 @@ async function developersPage() {
 
 const DEVELOPER_FIELDS = [
   { key: 'name', label: 'Developer Name', req: true, full: true },
+  { key: 'logo_url', label: 'Developer Logo', type: 'image', folder: 'developers', shape: 'logo', cta: 'Upload logo', hint: 'Square or wide logo on a plain background · compressed to 100 KB WebP' },
   { key: 'rera_id', label: 'RERA ID' },
   { key: 'website', label: 'Website', type: 'url' },
   { key: 'contact_email', label: 'Contact Email', type: 'email' },
@@ -506,14 +515,14 @@ function openDeveloperForm(id) {
 
 async function citiesPage() {
   content.innerHTML = pageHead('Cities & Localities', 'Coverage areas for project listings') + `<div class="empty">Loading…</div>`;
-  const { data, error } = await sb.from('cities').select('id,name,state,is_active,localities(id)').order('name', { ascending: true }).limit(200);
+  const { data, error } = await sb.from('cities').select('id,name,state,is_active,city_image,localities(id)').order('name', { ascending: true }).limit(200);
 
   const toolbar = `<div class="toolbar"><button class="btn-primary" id="add-city">+ Add City</button></div>`;
   const rows = error
     ? emptyRow(5, error.message)
     : (data.length ? data.map(c => `
       <tr>
-        <td><strong>${escapeHtml(c.name)}</strong></td>
+        <td>${nameWithImage(c.name, c.city_image, 'wide')}</td>
         <td>${escapeHtml(c.state || '—')}</td>
         <td><button class="link-btn" data-localities="${c.id}">${(c.localities || []).length} localities</button></td>
         <td>${c.is_active ? pill('active') : pill('inactive')}</td>
@@ -536,7 +545,8 @@ async function citiesPage() {
 const CITY_FIELDS = [
   { key: 'name', label: 'City Name', req: true },
   { key: 'state', label: 'State', req: true },
-  { key: 'is_active', label: 'Active', type: 'checkbox', full: true, default: true }
+  { key: 'is_active', label: 'Active', type: 'checkbox', full: true, default: true },
+  { key: 'city_image', label: 'City Photo', type: 'image', folder: 'cities', shape: 'wide', cta: 'Upload city photo', hint: 'A landmark or skyline · 16:9 works best · compressed to 100 KB WebP' }
 ];
 
 function openCityForm(id) {
@@ -612,14 +622,14 @@ async function manageLocalities(cityId, cityName) {
 
 async function agentsPage() {
   content.innerHTML = pageHead('Agents', 'Agent profiles and verification') + `<div class="empty">Loading…</div>`;
-  const { data, error } = await sb.from('agents').select('id,full_name,company_name,email,phone,verified,status,created_at').order('created_at', { ascending: false }).limit(200);
+  const { data, error } = await sb.from('agents').select('id,full_name,photo_url,company_name,email,phone,verified,status,created_at').order('created_at', { ascending: false }).limit(200);
 
   const toolbar = `<div class="toolbar"><button class="btn-primary" id="add-agent">+ Add Agent</button></div>`;
   const rows = error
     ? emptyRow(6, error.message)
     : (data.length ? data.map(a => `
       <tr>
-        <td><strong>${escapeHtml(a.full_name)}</strong></td>
+        <td>${nameWithImage(a.full_name, a.photo_url, 'round')}</td>
         <td>${escapeHtml(a.company_name || '—')}</td>
         <td>${escapeHtml(a.email || '—')}</td>
         <td>${escapeHtml(a.phone || '—')}</td>
@@ -652,6 +662,7 @@ async function agentsPage() {
 
 const AGENT_FIELDS = [
   { key: 'full_name', label: 'Full Name', req: true, full: true },
+  { key: 'photo_url', label: 'Photo', type: 'image', folder: 'agents', shape: 'round', cta: 'Upload photo', hint: 'Clear face photo · compressed to 100 KB WebP' },
   { key: 'company_name', label: 'Company Name' },
   { key: 'rera_id', label: 'RERA ID' },
   { key: 'email', label: 'Email', type: 'email' },
@@ -679,14 +690,14 @@ function openAgentForm(id) {
 // its own unique rm_code (K99-###AAA) generated by a DB trigger on insert, never typed in here.
 async function relationshipManagersPage() {
   content.innerHTML = pageHead('Relationship Managers', 'Internal relationship managers assigned to projects') + `<div class="empty">Loading…</div>`;
-  const { data, error } = await sb.from('relationship_managers').select('id,rm_code,full_name,company_name,email,phone,status').order('created_at', { ascending: false }).limit(200);
+  const { data, error } = await sb.from('relationship_managers').select('id,rm_code,full_name,photo_url,company_name,email,phone,status').order('created_at', { ascending: false }).limit(200);
 
   const toolbar = `<div class="toolbar"><button class="btn-primary" id="add-rm">+ Add Relationship Manager</button></div>`;
   const rows = error
     ? emptyRow(6, error.message)
     : (data.length ? data.map(r => `
       <tr>
-        <td><strong>${escapeHtml(r.full_name)}</strong></td>
+        <td>${nameWithImage(r.full_name, r.photo_url, 'round')}</td>
         <td>${escapeHtml(r.rm_code)}</td>
         <td>${escapeHtml(r.company_name || '—')}</td>
         <td>${escapeHtml(r.email || '—')}</td>
@@ -706,6 +717,7 @@ async function relationshipManagersPage() {
 
 const RM_FIELDS = [
   { key: 'full_name', label: 'Full Name', req: true, full: true },
+  { key: 'photo_url', label: 'Photo', type: 'image', folder: 'relationship-managers', shape: 'round', cta: 'Upload photo', hint: 'Clear face photo · compressed to 100 KB WebP' },
   { key: 'company_name', label: 'Company Name' },
   { key: 'email', label: 'Email', type: 'email' },
   { key: 'phone', label: 'Phone', type: 'tel' },
