@@ -1,4 +1,5 @@
 import { sb } from './supabase-client.js';
+import { imageMaintenancePanel, bindImageMaintenance } from './image-maintenance.js';
 import { pageHead, escapeHtml, fmtDate, timeAgo, toast, customConfirm, icon } from './utils.js';
 import { enhanceSelects } from './custom-select.js';
 import { LOOKUP_LISTS } from './project-form.js';
@@ -29,10 +30,12 @@ export async function settingsPage(content, currentUser, isSuperAdmin) {
       ${defaultsPanel(settingsRes, citiesRes.data || [], isSuperAdmin)}
       <div class="panel" id="lookup-panel"></div>
       ${securityPanel(currentUser)}
+      ${imageMaintenancePanel(isSuperAdmin)}
     </div>`;
 
   bindDefaults(content, currentUser, isSuperAdmin);
   bindSecurity(content);
+  bindImageMaintenance(content, isSuperAdmin);
   enhanceSelects(content.querySelector('#settings-defaults'));
   await renderLookupPanel(content.querySelector('#lookup-panel'), isSuperAdmin);
 }

@@ -137,6 +137,14 @@ Setup checklist:
 3. Run `supabase/manual/newsletter_admin_policies.sql` once in the SQL editor so
    super admins (not only admins) can use the Newsletter page.
 
+## Stored images
+
+Every image upload is converted to WebP ≤ 100 KB (see CLAUDE.md). Photos stored before that
+rule can be fixed from **Settings → Image Optimization** (super admins): *Scan* lists in-use
+images that are not WebP or are over 100 KB, *Convert* re-encodes them in the browser and
+repoints every project / floor plan / blog / document row at the new file before deleting the
+original, and *Delete unused* removes images nothing refers to.
+
 ## Releasing
 
 The admin has no build step, so browsers and CDNs can keep serving an old copy of a JS
