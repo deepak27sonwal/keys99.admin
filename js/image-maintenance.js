@@ -22,7 +22,8 @@ const DIRECTORY_SOURCES = [
   { table: 'cities', url: 'city_image', where: () => 'City photo', name: r => r.name },
   { table: 'developers', url: 'logo_url', where: () => 'Developer logo', name: r => r.name },
   { table: 'agents', url: 'photo_url', where: () => 'Agent photo', name: r => r.full_name },
-  { table: 'relationship_managers', url: 'photo_url', where: () => 'Relationship manager photo', name: r => r.full_name }
+  { table: 'relationship_managers', url: 'photo_url', where: () => 'Relationship manager photo', name: r => r.full_name },
+  { table: 'advertisements', url: 'image_url', where: () => 'Advertisement banner', name: r => r.title }
 ];
 
 const isImage = mime => /^image\//.test(mime || '') && mime !== 'image/svg+xml';
