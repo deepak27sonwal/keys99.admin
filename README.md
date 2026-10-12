@@ -81,6 +81,11 @@ the same 18-step skeleton with a per-kind config.
 
 All current public tables have RLS enabled.
 
+`carpet_area` in `residential_configurations` and `commercial_units` is **text**: either a
+single size (`"720"`) or a range of two sizes (`"650-720"`), always written with a plain
+hyphen and no spaces or units (a check constraint enforces the format). The public site
+should display it as-is, e.g. "650–720 sq ft", rather than parsing it as a number.
+
 ## Admin workflow
 
 Authentication → role check → dashboard → residential project management → moderation → publish.
