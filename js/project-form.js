@@ -580,7 +580,11 @@ function renderFieldWithUnit(valueSpec, unitSpec, values, bindPrefix) {
   const value = values[valueSpec.key];
   const unitValue = values[unitSpec.key];
   const opts = typeof unitSpec.options === 'function' ? unitSpec.options() : unitSpec.options;
-  const input = `<input data-bind="${bindPrefix}.${valueSpec.key}" type="number" min="0" step="any" value="${value == null ? '' : esc(String(value))}" placeholder="${esc(valueSpec.placeholder || '')}">`;
+  // area_range (Carpet Area): free text so a range like "650-720" can be typed; checked by
+  // checkNumberFields() and normalised by areaText() on save.
+  const input = valueSpec.type === 'area_range'
+    ? `<input data-bind="${bindPrefix}.${valueSpec.key}" type="text" inputmode="decimal" data-area-range="1" value="${value == null ? '' : esc(String(value))}" placeholder="${esc(valueSpec.placeholder || '')}">`
+    : `<input data-bind="${bindPrefix}.${valueSpec.key}" type="number" min="0" step="any" value="${value == null ? '' : esc(String(value))}" placeholder="${esc(valueSpec.placeholder || '')}">`;
   const select = `<select data-bind="${bindPrefix}.${unitSpec.key}">${opts.map(o => `<option value="${esc(o.value)}"${String(unitValue ?? '') === String(o.value) ? ' selected' : ''}>${esc(o.label)}</option>`).join('')}</select>`;
   return `<div class="field"><label>${esc(valueSpec.label)}</label><div class="field-unit-group">${input}${select}</div></div>`;
 }
@@ -1113,7 +1117,7 @@ const CONFIG_FIELDS = [
   // area_unit is rendered attached to Carpet Area's right edge (see extraHtmlBefore below),
   // not as its own field — customRender keeps it out of the generic field grid.
   { key: 'area_unit', label: 'Area Unit', type: 'select', options: AREA_UNIT_OPTIONS, customRender: true },
-  { key: 'carpet_area', label: 'Carpet Area', type: 'number', customRender: true },
+  { key: 'carpet_area', label: 'Carpet Area', type: 'area_range', placeholder: 'e.g. 650 or 650-720', customRender: true },
   { key: 'built_up_area', label: 'Built-up Area', type: 'number', unit: c => areaUnitLabel(c?.area_unit) },
   { key: 'super_built_up_area', label: 'Super Built-up Area', type: 'number', unit: c => areaUnitLabel(c?.area_unit) },
   { key: 'starting_price', label: 'Starting Price', type: 'number', unit: '₹', req: true, showWords: true },
@@ -1131,7 +1135,7 @@ function renderConfigurations() {
     // "2 BHK" variants at 850 and 950 sq ft) — each is its own record, so the title has to
     // show the area alongside the BHK type or the cards are indistinguishable at a glance.
     titleOf: (c, i) => c.bhk_type
-      ? `${c.bhk_type}${c.carpet_area ? ` · ${c.carpet_area} ${areaUnitLabel(c.area_unit)}` : ''}`
+      ? `${c.bhk_type}${c.carpet_area ? ` · ${fmtCarpet(c.carpet_area)} ${areaUnitLabel(c.area_unit)}` : ''}`
       : `BHK Configuration ${i + 1}`,
     extraHtmlBefore: (c, i) => bhkTypeChipsHtml(c.bhk_type, i)
       + renderFieldWithUnit(CONFIG_FIELDS_BY_KEY.carpet_area, CONFIG_FIELDS_BY_KEY.area_unit, c, `configurations.${i}`),
@@ -1478,7 +1482,7 @@ const COMMERCIAL_DOC_TYPES = enumOpts(['rera_certificate', 'project_brochure', '
 const COMMERCIAL_UNIT_FIELDS = [
   { key: 'unit_type', label: 'Unit Type', req: true, customRender: true },
   { key: 'area_unit', label: 'Area Unit', type: 'select', options: AREA_UNIT_OPTIONS, customRender: true },
-  { key: 'carpet_area', label: 'Carpet Area', type: 'number', customRender: true },
+  { key: 'carpet_area', label: 'Carpet Area', type: 'area_range', placeholder: 'e.g. 650 or 650-720', customRender: true },
   { key: 'variant_name', label: 'Unit / Variant Name', placeholder: 'e.g. Ground floor retail' },
   { key: 'floor_level', label: 'Floor / Level', placeholder: 'e.g. G+1 or 5th–8th' },
   { key: 'transaction_type', label: 'Available For', type: 'select', options: TRANSACTION_TYPE_OPTIONS },
@@ -1506,7 +1510,7 @@ function renderCommercialUnits() {
   const units = renderRepeatStep('configurations', COMMERCIAL_UNIT_FIELDS, {
     singular: 'Unit', emptyText: 'No units added yet.', addLabel: 'Add Unit',
     titleOf: (c, i) => c.unit_type
-      ? `${c.unit_type}${c.variant_name ? ` · ${c.variant_name}` : ''}${c.carpet_area ? ` · ${c.carpet_area} ${areaUnitLabel(c.area_unit)}` : ''}`
+      ? `${c.unit_type}${c.variant_name ? ` · ${c.variant_name}` : ''}${c.carpet_area ? ` · ${fmtCarpet(c.carpet_area)} ${areaUnitLabel(c.area_unit)}` : ''}`
       : `Unit ${i + 1}`,
     extraHtmlBefore: (c, i) => bhkTypeChipsHtml(c.unit_type, i)
       + renderFieldWithUnit(CONFIG_FIELDS_BY_KEY.carpet_area, CONFIG_FIELDS_BY_KEY.area_unit, c, `configurations.${i}`),
@@ -1522,7 +1526,7 @@ function renderCommercialUnits() {
 function residentialUnitRow(c, idx) {
   return {
     bhk_type: c.bhk_type, area_unit: c.area_unit,
-    carpet_area: num(c.carpet_area), built_up_area: num(c.built_up_area), super_built_up_area: num(c.super_built_up_area),
+    carpet_area: areaText(c.carpet_area), built_up_area: num(c.built_up_area), super_built_up_area: num(c.super_built_up_area),
     starting_price: num(c.starting_price), maximum_price: num(c.maximum_price), price_type: c.price_type,
     price_on_request: !!c.price_on_request, availability: c.availability, number_of_units: num(c.number_of_units),
     parking_included: c.parking_included, parking_type: c.parking_type?.length ? c.parking_type : null,
@@ -1534,7 +1538,7 @@ function commercialUnitRow(c, idx) {
   return {
     unit_type: c.unit_type, variant_name: str(c.variant_name ?? ''), floor_level: str(c.floor_level ?? ''),
     transaction_type: c.transaction_type || 'sale', area_unit: c.area_unit || 'sq_ft',
-    carpet_area: num(c.carpet_area), built_up_area: num(c.built_up_area), super_built_up_area: num(c.super_built_up_area),
+    carpet_area: areaText(c.carpet_area), built_up_area: num(c.built_up_area), super_built_up_area: num(c.super_built_up_area),
     starting_price: num(c.starting_price), maximum_price: num(c.maximum_price), price_type: c.price_type || 'total_price',
     expected_rent: num(c.expected_rent), price_on_request: !!c.price_on_request, availability: c.availability || 'available',
     number_of_units: num(c.number_of_units), furnishing: str(c.furnishing ?? ''), washroom: str(c.washroom ?? ''), pantry: !!c.pantry,
@@ -1704,9 +1708,14 @@ const fpConfigFor = f => (f.config_key ? state.configurations.find(c => c._k ===
 const bhkRank = b => { const order = bhkPresets(); return order.includes(b) ? order.indexOf(b) : order.length; };
 
 function configSizeLabel(c) {
-  if (c.carpet_area !== '' && c.carpet_area != null) return `${Number(c.carpet_area).toLocaleString('en-IN')} ${areaUnitLabel(c.area_unit)} carpet`;
+  if (c.carpet_area !== '' && c.carpet_area != null) return `${fmtCarpet(c.carpet_area)} ${areaUnitLabel(c.area_unit)} carpet`;
   const sameBhk = state.configurations.filter(x => x.bhk_type === c.bhk_type);
   return sameBhk.length > 1 ? `Option ${sameBhk.indexOf(c) + 1}` : '';
+}
+// "1,056" for a single size, "650–720" for a range.
+function fmtCarpet(v) {
+  const t = areaText(v) || String(v);
+  return t.split('-').map(n => (Number.isFinite(Number(n)) ? Number(n).toLocaleString('en-IN') : n)).join('–');
 }
 function configTitle(c) {
   return [c.bhk_type || 'Configuration', configSizeLabel(c)].filter(Boolean).join(' · ');
@@ -1717,7 +1726,7 @@ function floorPlanSections() {
     .filter(c => c.bhk_type)
     .map(c => ({ key: c._k, bhk: c.bhk_type, config: c, title: configTitle(c) }))
     .sort((a, b) => bhkRank(a.bhk) - bhkRank(b.bhk) || a.bhk.localeCompare(b.bhk) ||
-      (Number(a.config.carpet_area) || 0) - (Number(b.config.carpet_area) || 0));
+      (parseFloat(a.config.carpet_area) || 0) - (parseFloat(b.config.carpet_area) || 0));
   const looseBhks = new Set([
     ...state.floorPlans.filter(f => !fpConfigFor(f)).map(f => f.bhk_type),
     ...state.floorPlanBhks
@@ -1892,6 +1901,15 @@ function checkNumberFields() {
   const bad = [...$('#pf-panel-body').querySelectorAll('input[type="number"][min="0"]')]
     .filter(el => el.validity.badInput || (el.value !== '' && Number(el.value) < 0));
   $('#pf-panel-body').querySelectorAll('.field.invalid').forEach(f => f.classList.remove('invalid'));
+  const badRange = [...$('#pf-panel-body').querySelectorAll('input[data-area-range]')]
+    .filter(el => el.value.trim() !== '' && !areaText(el.value));
+  if (badRange.length) {
+    badRange.forEach(el => el.closest('.field')?.classList.add('invalid'));
+    toast('Carpet Area: use a number like 650 or a range like 650-720.', true);
+    badRange[0].scrollIntoView({ block: 'center', behavior: 'smooth' });
+    badRange[0].focus({ preventScroll: true });
+    return false;
+  }
   if (!bad.length) return true;
   bad.forEach(el => el.closest('.field')?.classList.add('invalid'));
   const names = [...new Set(bad.map(el => el.closest('.field')?.querySelector('label')?.textContent.replace('*', '').trim() || 'This field'))];
@@ -2263,6 +2281,14 @@ function projectPayload() {
 }
 
 const num = v => (v === '' || v === null || v === undefined ? null : Number(v));
+// Carpet area is text: a size ("720") or a range ("650-720"). areaText() normalises what was
+// typed ("650 – 720", "650 to 720" → "650-720"); null when empty or not a valid size/range.
+const AREA_RANGE_RE = /^\s*(\d+(?:\.\d+)?)\s*(?:(?:-|–|—|to)\s*(\d+(?:\.\d+)?)\s*)?$/i;
+function areaText(v) {
+  const m = AREA_RANGE_RE.exec(String(v ?? ''));
+  if (!m) return null;
+  return m[2] && m[2] !== m[1] ? `${m[1]}-${m[2]}` : m[1];
+}
 const str = v => (v === '' ? null : v);
 
 function residentialPayload(p) {
