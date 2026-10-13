@@ -518,6 +518,11 @@ tr:last-child td{border-bottom:0}
 .settings-ro-note{margin:14px 0 0;line-height:1.6}
 .settings-facts{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}
 .settings-facts div{display:flex;flex-direction:column;gap:3px;font-size:13px;min-width:0;overflow-wrap:anywhere}
+.session-list{border:1px solid var(--line);border-radius:10px;overflow:hidden;margin-top:6px}
+.session-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:10px 14px;border-bottom:1px solid var(--line);font-size:13px}
+.session-row:last-child{border-bottom:0}
+.session-row.current{background:var(--green-tint)}
+.session-row .pill{margin-left:6px;vertical-align:middle}
 .lookup-group{max-width:320px;margin-bottom:14px}
 .lookup-list{border:1px solid var(--line);border-radius:10px;overflow:hidden}
 .lookup-list .empty{padding:24px 16px}
