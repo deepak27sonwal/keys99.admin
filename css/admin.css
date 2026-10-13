@@ -138,6 +138,8 @@ input,select,textarea{font:inherit}
 .left-col,.right-col{display:flex;flex-direction:column;gap:18px;min-width:0}
 
 .chart-row{display:grid;grid-template-columns:1.5fr 1fr 1fr;gap:16px;align-items:stretch}
+.analytics-grid{display:grid;grid-template-columns:1fr 1fr;gap:16px;align-items:start;margin-bottom:16px}
+@media(max-width:860px){.analytics-grid{grid-template-columns:1fr}}
 .donut-panel{display:flex;flex-direction:column}
 .panel{background:var(--white);border:1px solid var(--line);border-radius:var(--radius-lg);overflow:hidden}
 .panel-head{display:flex;align-items:center;justify-content:space-between;padding:16px 20px;border-bottom:1px solid var(--line);gap:10px;flex-wrap:wrap}
