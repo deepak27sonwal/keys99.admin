@@ -1,12 +1,13 @@
 import { sb } from './supabase-client.js';
-import { pageHead, tablePanel, emptyRow, escapeHtml, fmtDate, toast, customConfirm, icon } from './utils.js';
+import { pageHead, tablePanel, emptyRow, escapeHtml, fmtDate, timeAgo, toast, customConfirm, icon } from './utils.js';
 
-// Super-admin-only: create/list/remove the panel's other admin accounts. All the actual
+// Super-admin-only: create/list/remove the panel's other admin accounts, and see each one's
+// live sign-in status (how many devices they're currently signed in on). All the actual
 // authority lives server-side — the "manage-admins" Edge Function re-checks the caller is a
 // super_admin itself (using a service-role client) before doing anything, and it's the only
-// path that can create a Supabase Auth login, since that needs the service-role key, which
-// never belongs in the browser. This page (and the sidebar link to it) is just UI gating on
-// top of that; it's not the security boundary.
+// path that can create a Supabase Auth login or read session data, since both need the
+// service-role key, which never belongs in the browser. This page (and the sidebar link to
+// it) is just UI gating on top of that; it's not the security boundary.
 export async function adminsPage(content, navigate, isSuperAdmin) {
   if (!isSuperAdmin) {
     content.innerHTML = pageHead('Admins', 'Manage who can access this admin panel') +
@@ -22,25 +23,36 @@ export async function adminsPage(content, navigate, isSuperAdmin) {
     return;
   }
 
-  const rows = admins.map(a => `
+  // A device is only counted while its auth.sessions row still exists, which Supabase drops
+  // once the session's refresh token is revoked or fully expires — so "Signed in" here means
+  // "has at least one still-valid session right now", the closest thing to real-time presence
+  // this stack can show without a dedicated presence channel.
+  const rows = admins.map(a => {
+    const online = (a.session_count || 0) > 0;
+    const status = online
+      ? `<span class="pill verified">Signed in</span> <span class="hint">${a.session_count} device${a.session_count === 1 ? '' : 's'}${a.last_active ? ` · active ${escapeHtml(timeAgo(a.last_active))}` : ''}</span>`
+      : `<span class="pill unverified">Signed out</span>${a.last_sign_in_at ? ` <span class="hint">last seen ${escapeHtml(timeAgo(a.last_sign_in_at))}</span>` : ''}`;
+    return `
     <tr>
       <td>${escapeHtml(a.email || '—')}</td>
       <td><span class="pill ${a.role}">${a.role === 'super_admin' ? 'Super Admin' : 'Admin'}</span></td>
+      <td>${status}</td>
       <td>${fmtDate(a.created_at)}</td>
       <td>${a.role === 'admin' ? `<div class="row-actions"><button class="icon-btn danger" data-remove-admin="${a.user_id}" data-email="${escapeHtml(a.email || '')}">${icon('trash', 13)}</button></div>` : a.is_self ? '<span class="hint">You</span>' : ''}</td>
-    </tr>`).join('');
+    </tr>`;
+  }).join('');
 
   const toolbar = `<button type="button" class="btn-primary" id="add-admin-btn">+ Add Admin</button>`;
 
   content.innerHTML = pageHead('Admins', 'Manage who can access this admin panel') +
-    tablePanel('Admin Accounts', toolbar, ['Email', 'Role', 'Added', 'Actions'], rows.length ? rows : emptyRow(4, 'No admins yet.'));
+    tablePanel('Admin Accounts', toolbar, ['Email', 'Role', 'Session', 'Added', 'Actions'], rows.length ? rows : emptyRow(5, 'No admins yet.'));
 
   content.querySelector('#add-admin-btn').addEventListener('click', () => openAddAdminForm(() => adminsPage(content, navigate, isSuperAdmin)));
   content.querySelectorAll('[data-remove-admin]').forEach(btn => btn.addEventListener('click', () =>
     removeAdmin(btn.dataset.removeAdmin, btn.dataset.email, () => adminsPage(content, navigate, isSuperAdmin))));
 }
 
-async function callManageAdmins(body) {
+export async function callManageAdmins(body) {
   const { data, error } = await sb.functions.invoke('manage-admins', { body });
   if (error) {
     // supabase-js only exposes the HTTP status on invoke() errors, not the JSON body — pull

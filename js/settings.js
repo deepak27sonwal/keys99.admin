@@ -3,6 +3,7 @@ import { imageMaintenancePanel, bindImageMaintenance } from './image-maintenance
 import { pageHead, escapeHtml, fmtDate, timeAgo, toast, customConfirm, icon } from './utils.js';
 import { enhanceSelects } from './custom-select.js';
 import { LOOKUP_LISTS } from './project-form.js';
+import { callManageAdmins } from './admins.js';
 
 // Settings page: site/contact defaults (app_settings), the project form's editable preset
 // lists (lookup_options) and the signed-in admin's session controls. Editing defaults and
@@ -38,6 +39,7 @@ export async function settingsPage(content, currentUser, isSuperAdmin) {
   bindImageMaintenance(content, isSuperAdmin);
   enhanceSelects(content.querySelector('#settings-defaults'));
   await renderLookupPanel(content.querySelector('#lookup-panel'), isSuperAdmin);
+  renderMySessions(content.querySelector('#my-sessions'));
 }
 
 /* ---------------- site & contact defaults ---------------- */
@@ -197,6 +199,7 @@ function securityPanel(user) {
         <div><span class="hint">Sign-in method</span><strong>${escapeHtml(provider.replace(/^\w/, c => c.toUpperCase()))}</strong></div>
         <div><span class="hint">Last sign-in</span><strong>${lastSignIn ? `${escapeHtml(fmtDate(lastSignIn))} · ${escapeHtml(timeAgo(lastSignIn))}` : '—'}</strong></div>
       </div>
+      <div id="my-sessions"><div class="hint">Loading your active sessions…</div></div>
       <div class="settings-actions">
         <button type="button" class="btn-outline" id="signout-others">Sign out other devices</button>
         <button type="button" class="btn-primary danger" id="signout-all">Sign out everywhere</button>
@@ -204,6 +207,30 @@ function securityPanel(user) {
       <p class="hint settings-ro-note">Authentication and authorization are controlled by Supabase Auth and the <code>user_roles</code> table. No service-role key is stored in this frontend — access is enforced by database row-level security.</p>
     </div>
   </div>`;
+}
+
+// Fetches and renders the signed-in admin's own active sessions (one per device/browser
+// they're currently logged in on) via the manage-admins Edge Function's "my_sessions" action
+// — the only path that can read auth.sessions, since that table isn't exposed to the browser.
+async function renderMySessions(el) {
+  if (!el) return;
+  const { session_count, devices, error } = await callManageAdmins({ action: 'my_sessions' });
+  if (error) { el.innerHTML = `<p class="hint">Couldn't load active sessions: ${escapeHtml(error)}</p>`; return; }
+
+  // devices[] is already ordered most-recently-active first (see admin_user_sessions SQL) —
+  // that's the closest signal we have to "this device", since Supabase doesn't expose a
+  // stable session id the browser can compare against its own current session.
+  const rows = (devices || []).map((d, i) => `
+    <div class="session-row${i === 0 ? ' current' : ''}">
+      <div>
+        <strong>${escapeHtml(d.label || 'Unknown device')}</strong>${i === 0 ? ' <span class="pill verified">Most recently active</span>' : ''}
+        <div class="hint">${d.ip ? escapeHtml(d.ip) + ' · ' : ''}Active ${escapeHtml(timeAgo(d.last_active || d.created_at))}</div>
+      </div>
+    </div>`).join('');
+
+  el.innerHTML = `
+    <p class="hint"><strong>${session_count ?? 0}</strong> device${session_count === 1 ? '' : 's'} currently signed in to this account.</p>
+    <div class="session-list">${rows || '<p class="hint">No active sessions found.</p>'}</div>`;
 }
 
 function bindSecurity(content) {
