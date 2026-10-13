@@ -94,9 +94,20 @@ function bindImageFields(box, fields, state) {
       try {
         const out = await prepareImageForUpload(file);   // ≤ 100 KB WebP (CLAUDE.md)
         if (out.error) { toast(out.error, true); return; }
+        // A long-idle form can outlive the access token — getSession() refreshes it if it's
+        // still refreshable, so we don't send an unauthenticated upload that Storage rejects
+        // with a cryptic "row-level security policy" error instead of "please sign in again".
+        const { data: sessionData } = await sb.auth.getSession();
+        if (!sessionData?.session) { toast('Your session has expired — please sign in again, then retry this upload.', true); return; }
         const path = `directory/${spec.folder}/${Date.now()}-${out.file.name.replace(/[^a-zA-Z0-9.\-_]/g, '_')}`;
         const { error } = await sb.storage.from(IMAGE_BUCKET).upload(path, out.file, { upsert: false, contentType: out.file.type });
-        if (error) { toast(error.message, true); return; }
+        if (error) {
+          const friendly = /row-level security/i.test(error.message)
+            ? 'Upload was blocked by a permissions check. Please sign out and back in, then try again.'
+            : error.message;
+          toast(friendly, true);
+          return;
+        }
         hidden.value = sb.storage.from(IMAGE_BUCKET).getPublicUrl(path).data.publicUrl;
         state.uploaded.push(hidden.value);
         toast(`Image uploaded${out.note}`);
