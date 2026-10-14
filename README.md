@@ -165,6 +165,23 @@ images that are not WebP or are over 100 KB, *Convert* re-encodes them in the br
 repoints every project / floor plan / blog / document row at the new file before deleting the
 original, and *Delete unused* removes images nothing refers to.
 
+## Security notes
+
+- **Third-party code.** supabase-js is self-hosted at an exact version
+  (`assets/vendor/supabase-js-2.117.3/`, checked against npm's integrity hash) rather than
+  loaded as a floating `@2` from a CDN, so a new upstream release can't change code that sees
+  admin sessions. Upgrade by replacing the folder and updating the `<script>` in `index.html`
+  and `login.html`.
+- **Links.** Admin-entered links (ad link, developer website, canonical URL, video URLs) must
+  be http(s) web addresses; a bare domain gets `https://` added. Check constraints
+  (`*_safe_chk`) block `javascript:` / `data:` links in the database as well.
+- **Headers.** `_headers` stops the admin being framed by other sites and sets
+  `nosniff` / `Referrer-Policy`.
+- **Edge functions.** The source of every deployed function lives under `supabase/functions/`.
+  `sync-brevo-contact` only lets a user change their own Brevo contact (admins may pass any
+  email). `subscribe-newsletter` never overwrites an existing subscriber's details.
+- **Supabase dashboard.** Turn on Authentication → Passwords → *Leaked password protection*.
+
 ## Releasing
 
 The admin has no build step, so browsers and CDNs can keep serving an old copy of a JS

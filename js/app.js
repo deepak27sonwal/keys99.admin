@@ -9,7 +9,7 @@ import { enhanceSelects } from './custom-select.js';
 import {
   escapeHtml, pill, fmtPrice, fmtDate, timeAgo, count, initials,
   pageHead, tablePanel, emptyRow, icon, rowActions, bindStubs, toast, customConfirm,
-  confirmArchiveProject, chooseProjectKind
+  confirmArchiveProject, chooseProjectKind, safeUrl
 } from './utils.js';
 import { archivePage } from './archive.js';
 import { reportsPage } from './reports.js';
@@ -750,7 +750,7 @@ async function advertisementsPage() {
       <tr>
         <td>${nameWithImage(a.title, a.image_url, 'wide')}</td>
         <td>${escapeHtml(a.category === 'commercial' ? 'Commercial' : 'Residential')}</td>
-        <td>${a.link_url ? `<a href="${escapeHtml(a.link_url)}" target="_blank" rel="noopener">${escapeHtml(a.link_url)}</a>` : '—'}</td>
+        <td>${safeUrl(a.link_url) ? `<a href="${escapeHtml(safeUrl(a.link_url))}" target="_blank" rel="noopener noreferrer">${escapeHtml(a.link_url)}</a>` : escapeHtml(a.link_url || '—')}</td>
         <td>${a.is_active ? pill('active') : pill('inactive')}</td>
         <td>${rowActions('advertisement', a.id)}</td>
       </tr>`).join('') : emptyRow(5, 'No advertisements added yet.'));
@@ -1247,7 +1247,9 @@ async function runGlobalSearch(q) {
   results.hidden = false;
   results.innerHTML = `<div class="sr-empty">Searching…</div>`;
 
-  const like = `%${q}%`;
+  // Commas and brackets would add clauses to the .or() filter below; they never appear in
+  // project names or codes worth matching, so drop them.
+  const like = `%${q.replace(/[,()]/g, ' ').trim()}%`;
   const [residentialProjects, commercialProjects, developers, enquiries] = await Promise.all([
     sb.from(PROJECT_KINDS.residential.tables.project).select('id,project_name,project_code').is('deleted_at', null).or(`project_name.ilike.${like},project_code.ilike.${like}`).limit(5),
     sb.from(PROJECT_KINDS.commercial.tables.project).select('id,project_name,project_code').is('deleted_at', null).or(`project_name.ilike.${like},project_code.ilike.${like}`).limit(5),

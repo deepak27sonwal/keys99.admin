@@ -25,7 +25,7 @@ export async function adminsPage(content, navigate, isSuperAdmin) {
   const rows = admins.map(a => `
     <tr>
       <td>${escapeHtml(a.email || '—')}</td>
-      <td><span class="pill ${a.role}">${a.role === 'super_admin' ? 'Super Admin' : 'Admin'}</span></td>
+      <td><span class="pill ${escapeHtml(a.role)}">${a.role === 'super_admin' ? 'Super Admin' : 'Admin'}</span></td>
       <td>${fmtDate(a.created_at)}</td>
       <td>${a.role === 'admin' ? `<div class="row-actions"><button class="icon-btn danger" data-remove-admin="${a.user_id}" data-email="${escapeHtml(a.email || '')}">${icon('trash', 13)}</button></div>` : a.is_self ? '<span class="hint">You</span>' : ''}</td>
     </tr>`).join('');

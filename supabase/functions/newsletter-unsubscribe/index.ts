@@ -34,7 +34,8 @@ Deno.serve(async (req) => {
   if (req.method === "POST") {
     if (sub.is_subscribed) {
       const now = new Date().toISOString();
-      await admin.from("newsletter_subscribers").update({ is_subscribed: false, unsubscribed_at: now, updated_at: now }).eq("id", sub.id);
+      const { error } = await admin.from("newsletter_subscribers").update({ is_subscribed: false, unsubscribed_at: now, updated_at: now }).eq("id", sub.id);
+      if (error) return json({ error: "We couldn't unsubscribe you just now. Please try again." }, 500);
     }
     return json({ email: sub.email, is_subscribed: false });
   }

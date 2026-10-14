@@ -1,5 +1,5 @@
 import { sb } from './supabase-client.js';
-import { toast, fmtPriceWords, uploadBoxHead } from './utils.js';
+import { toast, fmtPriceWords, uploadBoxHead, normalizeUrl } from './utils.js';
 import { enhanceSelects } from './custom-select.js';
 import { PROJECT_KINDS, KIND_KEYS, projectPageUrl } from './project-kinds.js';
 import { prepareImageForUpload, isCompressibleImage } from './image-compress.js';
@@ -1584,7 +1584,7 @@ function commercialPayload(p) {
     hvac: str(p.hvac), power_load_backup: str(p.power_load_backup), fire_safety: str(p.fire_safety), floor_to_ceiling_height: str(p.floor_to_ceiling_height),
     washrooms_pantry: str(p.washrooms_pantry), loading_docks: str(p.loading_docks), other_specifications: str(p.other_specifications),
     agent_id: str(p.agent_id), relationship_manager_id: str(p.relationship_manager_id),
-    seo_title: str(p.seo_title), seo_description: str(p.seo_description), canonical_url: str(p.canonical_url)
+    seo_title: str(p.seo_title), seo_description: str(p.seo_description), canonical_url: str(normalizeUrl(p.canonical_url) || '')
   };
 }
 
@@ -1901,6 +1901,17 @@ function checkNumberFields() {
   const bad = [...$('#pf-panel-body').querySelectorAll('input[type="number"][min="0"]')]
     .filter(el => el.validity.badInput || (el.value !== '' && Number(el.value) < 0));
   $('#pf-panel-body').querySelectorAll('.field.invalid').forEach(f => f.classList.remove('invalid'));
+  // Links must be plain web addresses: javascript: / data: links would run script when
+  // clicked here or on the public site.
+  const badUrl = [...$('#pf-panel-body').querySelectorAll('input[data-bind="project.canonical_url"], input[data-bind^="media.videos."][data-bind$=".media_url"]')]
+    .filter(el => normalizeUrl(el.value) === null);
+  if (badUrl.length) {
+    badUrl.forEach(el => el.closest('.field')?.classList.add('invalid'));
+    toast('Enter a web address like https://example.com — other kinds of links aren\'t allowed.', true);
+    badUrl[0].scrollIntoView({ block: 'center', behavior: 'smooth' });
+    badUrl[0].focus({ preventScroll: true });
+    return false;
+  }
   const badRange = [...$('#pf-panel-body').querySelectorAll('input[data-area-range]')]
     .filter(el => el.value.trim() !== '' && !areaText(el.value));
   if (badRange.length) {
@@ -2311,7 +2322,7 @@ function residentialPayload(p) {
     flooring: str(p.flooring), doors: str(p.doors), windows: str(p.windows), kitchen: str(p.kitchen), bathroom: str(p.bathroom),
     electrical: str(p.electrical), walls_paint: str(p.walls_paint), balcony: str(p.balcony), other_specifications: str(p.other_specifications),
     agent_id: str(p.agent_id), relationship_manager_id: str(p.relationship_manager_id),
-    seo_title: str(p.seo_title), seo_description: str(p.seo_description), canonical_url: str(p.canonical_url)
+    seo_title: str(p.seo_title), seo_description: str(p.seo_description), canonical_url: str(normalizeUrl(p.canonical_url) || '')
   };
 }
 
@@ -2489,7 +2500,7 @@ function mediaRows() {
   if (state.media.main.media_path) rows.push({ media_type: 'main_image', media_path: state.media.main.media_path, media_url: state.media.main.media_url, storage_bucket: K.buckets.media, is_primary: true, display_order: 0 });
   if (state.media.masterPlan.media_path) rows.push({ media_type: 'master_plan', media_path: state.media.masterPlan.media_path, media_url: state.media.masterPlan.media_url, storage_bucket: K.buckets.media, is_primary: false, display_order: 0 });
   state.media.gallery.forEach((g, i) => rows.push({ media_type: 'gallery', category: g.category || 'exterior', media_path: g.media_path, media_url: g.media_url, storage_bucket: K.buckets.media, alt_text: g.alt_text || null, is_primary: false, display_order: i }));
-  state.media.videos.forEach((v, i) => rows.push({ media_type: v.media_type || 'video', platform: v.platform, title: v.title || null, media_url: v.media_url, is_primary: false, display_order: i }));
+  state.media.videos.forEach((v, i) => rows.push({ media_type: v.media_type || 'video', platform: v.platform, title: v.title || null, media_url: normalizeUrl(v.media_url) ?? '', is_primary: false, display_order: i }));
   return rows;
 }
 

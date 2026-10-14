@@ -10,8 +10,26 @@ export function escapeHtml(v) {
   return String(v ?? '').replace(/[&<>"']/g, c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
 
+// Links typed by admins (ad links, websites, canonical / video URLs). A bare domain gets
+// https:// in front; any other scheme (javascript:, data:, …) is refused, since it would run
+// script when the link is clicked here or on the public site. Returns '' for empty input and
+// null when the value isn't allowed.
+export function normalizeUrl(v) {
+  const s = String(v ?? '').trim();
+  if (!s) return '';
+  if (/^https?:\/\/[^\s]+$/i.test(s)) return s;
+  if (/^[a-z][a-z0-9+.-]*:/i.test(s) || /\s/.test(s) || s.startsWith('/')) return null;
+  return `https://${s}`;
+}
+
+// The URL if it's a plain http(s) link, else null — use before putting stored URLs in href.
+export function safeUrl(v) {
+  const s = String(v ?? '').trim();
+  return /^https?:\/\//i.test(s) ? s : null;
+}
+
 export function pill(status) {
-  const cls = String(status || '').toLowerCase();
+  const cls = String(status || '').toLowerCase().replace(/[^a-z0-9_-]/g, '');
   const label = status ? String(status).replace(/_/g, ' ') : '—';
   return `<span class="pill ${cls}">${escapeHtml(label)}</span>`;
 }

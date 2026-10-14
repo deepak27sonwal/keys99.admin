@@ -215,7 +215,10 @@ async function loadModerationReport() {
 
 function toCSV(headers, rows) {
   const esc = v => {
-    const s = String(v ?? '');
+    // A leading = + - @ makes Excel / Sheets run the cell as a formula; visitor-entered
+    // names and messages are exported here, so neutralise it with a leading apostrophe.
+    let s = String(v ?? '');
+    if (/^[=+\-@\t\r]/.test(s) && !/^[+-]?[\d\s.,-]+$/.test(s)) s = `'${s}`;   // plain numbers / phones stay as they are
     return /[",\n]/.test(s) ? '"' + s.replace(/"/g, '""') + '"' : s;
   };
   return [headers, ...rows].map(r => r.map(esc).join(',')).join('\n');
