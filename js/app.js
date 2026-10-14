@@ -13,6 +13,7 @@ import {
 } from './utils.js';
 import { archivePage } from './archive.js';
 import { reportsPage } from './reports.js';
+import { analyticsPage } from './analytics.js';
 import { adminsPage } from './admins.js';
 import { blogPage } from './blog.js';
 import { newsletterPage } from './newsletter.js';
@@ -1139,6 +1140,7 @@ const PAGES = {
   enquiries: (openId) => enquiriesPage(openId),
   moderation: moderationPage,
   archive: () => archivePage(content, navigate, isSuperAdmin),
+  analytics: () => analyticsPage(content),
   'report-projects': () => reportsPage(content, navigate, 'projects'),
   'report-enquiries': () => reportsPage(content, navigate, 'enquiries'),
   'report-developers': () => reportsPage(content, navigate, 'developers'),

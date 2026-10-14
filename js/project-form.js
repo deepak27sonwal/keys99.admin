@@ -114,6 +114,10 @@ const FIRST_SAVE_AFTER_STEP = 4;
 const CONSTRUCTION_STAGE_OPTIONS = enumOpts(['pre_launch', 'excavation', 'foundation', 'structure', 'brickwork', 'finishing', 'final_completion', 'ready_to_move', 'other']);
 // Must match the DB's residential_projects_possession_status_check constraint exactly.
 const POSSESSION_STATUS_OPTIONS = enumOpts(['new_launch', 'under_construction', 'nearing_possession', 'possession_started', 'ready_to_move', 'completed']);
+// Must match the DB's residential_towers_possession_status_check constraint exactly — this is
+// a narrower, differently-named set than the project-level one above (e.g. 'not_started'
+// instead of 'new_launch'/'nearing_possession'), so it can't reuse POSSESSION_STATUS_OPTIONS.
+const TOWER_POSSESSION_STATUS_OPTIONS = enumOpts(['not_started', 'under_construction', 'possession_started', 'ready_to_move', 'completed']);
 const AREA_UNIT_OPTIONS = enumOpts(['sq_ft', 'sq_m']);
 // Project-level built-up area can be quoted in acres for large projects — kept separate
 // from AREA_UNIT_OPTIONS since that one's also used for per-configuration carpet/built-up
@@ -1153,7 +1157,7 @@ const TOWER_FIELDS = [
   { key: 'number_of_units', label: 'Number of Units', type: 'number' },
   { key: 'tower_status', label: 'Tower Status', type: 'select', options: enumOpts(['upcoming', 'under_construction', 'ready_to_move', 'completed', 'other']) },
   { key: 'construction_stage', label: 'Construction Stage', type: 'select', options: CONSTRUCTION_STAGE_OPTIONS },
-  { key: 'possession_status', label: 'Possession Status', type: 'select', options: POSSESSION_STATUS_OPTIONS },
+  { key: 'possession_status', label: 'Possession Status', type: 'select', options: TOWER_POSSESSION_STATUS_OPTIONS },
   { key: 'construction_start_date', label: 'RERA Possession Date', type: 'date' },
   { key: 'expected_completion_date', label: 'Builder Possession Date', type: 'date' },
   { key: 'construction_details', label: 'Construction Details', type: 'textarea', full: true }
@@ -2235,13 +2239,28 @@ async function handleUpload(file, bucket, folder, key, cb) {
   uploads[key] = { name: file.name, size: file.size };
   renderStepBody();
 
+  // On a long-running wizard session the access token backing `sb` can have expired by the
+  // time someone reaches this step — getSession() transparently refreshes it if it's still
+  // refreshable. Without this check, an expired token makes the upload go out unauthenticated
+  // and Storage rejects it with a "row-level security policy" error that looks like a
+  // permissions bug but is really just "please sign in again".
+  const { data: sessionData } = await sb.auth.getSession();
+  if (!sessionData?.session) {
+    uploads[key] = { error: 'Your session has expired — please sign in again, then retry this upload.', name: file.name };
+    renderStepBody();
+    return;
+  }
+
   const safeName = file.name.replace(/[^a-zA-Z0-9.\-_]/g, '_');
   const path = `${projectId}/${folder}/${Date.now()}-${safeName}`;
   const { error } = await sb.storage.from(bucket).upload(path, file, { upsert: true });
   if (error) {
-    uploads[key] = { error: error.message, name: file.name };
+    const friendly = /row-level security/i.test(error.message)
+      ? 'Upload was blocked by a permissions check. Please sign out and back in, then try again.'
+      : error.message;
+    uploads[key] = { error: friendly, name: file.name };
     renderStepBody();
-    toast(error.message, true);
+    toast(friendly, true);
     return;
   }
 

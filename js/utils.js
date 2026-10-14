@@ -177,7 +177,7 @@ export function icon(name, size = 16) {
   return `<svg width="${size}" height="${size}" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">${ICONS[name] || ''}</svg>`;
 }
 
-const ENTITY_KINDS = ['developer', 'agent', 'city', 'relationship_manager'];
+const ENTITY_KINDS = ['developer', 'agent', 'city', 'relationship_manager', 'advertisement'];
 
 // projectKind ('residential' | 'commercial') only applies to kind === 'project' — it's
 // carried on the buttons so bindStubs() can hand it back to the edit/archive callbacks.
