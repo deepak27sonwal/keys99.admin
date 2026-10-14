@@ -30,7 +30,7 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
 
 type Recipient = { email: string; full_name?: string | null; unsubscribe_token?: string | null };
 
-const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
+const esc = (s: string) => s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&#39;");
 
 function personalise(html: string, r: Recipient, unsubscribeUrl: string) {
   const name = (r.full_name || "").trim();
@@ -45,7 +45,7 @@ function personalise(html: string, r: Recipient, unsubscribeUrl: string) {
 }
 
 async function sendOne(apiKey: string, subject: string, html: string, r: Recipient, unsubscribeUrl: string, oneClickUrl: string) {
-  const subj = personalise(subject, r, unsubscribeUrl).replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"');
+  const subj = personalise(subject, r, unsubscribeUrl).replace(/&amp;/g, "&").replace(/&lt;/g, "<").replace(/&gt;/g, ">").replace(/&quot;/g, '"').replace(/&#39;/g, "'");
   const res = await fetch("https://api.brevo.com/v3/smtp/email", {
     method: "POST",
     headers: { accept: "application/json", "content-type": "application/json", "api-key": apiKey },
@@ -104,7 +104,12 @@ Deno.serve(async (req) => {
   // as Supabase can't serve HTML pages); mail apps' one-click unsubscribe POSTs straight to the
   // newsletter-unsubscribe function.
   const oneClickBase = `${url}/functions/v1/newsletter-unsubscribe`;
-  const pageBase = /^https:\/\/[^\s"'<>]+$/.test(String(body.unsubscribe_page || "")) ? String(body.unsubscribe_page) : oneClickBase;
+  // Only accept an unsubscribe page on the admin site that made this request (its Origin), so
+  // subscribers' tokens can't be sent to some other host.
+  const origin = req.headers.get("origin") || "";
+  const requestedPage = String(body.unsubscribe_page || "");
+  const pageBase = /^https:\/\/[^\s"'<>]+$/.test(requestedPage) && /^https:\/\/[^/]+$/.test(origin) && requestedPage.startsWith(origin + "/")
+    ? requestedPage : oneClickBase;
   const links = (token: string) => ({ page: `${pageBase}?t=${token}`, oneClick: `${oneClickBase}?t=${token}` });
 
   if (action === "sync_users") {

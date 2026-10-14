@@ -1,5 +1,5 @@
 import { sb } from './supabase-client.js';
-import { escapeHtml, toast, customConfirm, uploadBoxHead } from './utils.js';
+import { escapeHtml, toast, customConfirm, uploadBoxHead, normalizeUrl } from './utils.js';
 import { enhanceSelects } from './custom-select.js';
 import { prepareImageForUpload } from './image-compress.js';
 
@@ -71,6 +71,7 @@ function readForm(box, fields) {
   for (const f of fields) {
     const el = box.querySelector(`[data-field="${f.key}"]`);
     if (f.type === 'checkbox') payload[f.key] = el.checked;
+    else if (f.type === 'url') { const u = normalizeUrl(el.value); payload[f.key] = u === null ? undefined : (u || null); }
     else payload[f.key] = el.value.trim() === '' ? null : el.value.trim();
   }
   return payload;
@@ -172,6 +173,8 @@ export async function openEntityForm({ title, subtitle, table, fields, existingI
     const payload = readForm(box, fields);
     const missing = fields.filter(f => f.req && (payload[f.key] === null || payload[f.key] === undefined || payload[f.key] === ''));
     if (missing.length) { toast(`Please fill: ${missing.map(f => f.label).join(', ')}`, true); return; }
+    const badUrl = fields.find(f => f.type === 'url' && payload[f.key] === undefined);
+    if (badUrl) { toast(`${badUrl.label}: enter a web address like https://example.com`, true); return; }
 
     const saveBtn = overlay.querySelector('[data-save]');
     saveBtn.disabled = true;

@@ -2,5 +2,12 @@
 # Everything the admin loads is revalidated on each visit (a cheap 304 when unchanged), so a
 # deploy is picked up immediately. scripts/stamp-build.sh additionally versions every JS/CSS
 # URL, which covers hosts and CDNs that don't honour this file.
+#
+# Security headers: the admin can't be framed by another site (clickjacking), the browser
+# won't guess content types, and full admin URLs aren't sent to other sites as the Referer.
 /*
   Cache-Control: no-cache
+  X-Frame-Options: DENY
+  Content-Security-Policy: frame-ancestors 'none'; object-src 'none'; base-uri 'self'
+  X-Content-Type-Options: nosniff
+  Referrer-Policy: same-origin
