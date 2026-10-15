@@ -265,7 +265,15 @@ async function openReview(listing, currentUser, after) {
   const bodyEl = overlay.querySelector('#rental-review-body');
   const p = pRes.data;
   if (pRes.error || !p) { bodyEl.innerHTML = `<div class="empty">${escapeHtml(pRes.error?.message || 'Listing not found.')}</div>`; return; }
-  const { data: owner } = p.owner_id ? await sb.from('profiles').select('full_name,phone').eq('id', p.owner_id).maybeSingle() : { data: null };
+  const [{ data: owner }, { data: contact }] = await Promise.all([
+    p.owner_id ? sb.from('profiles').select('full_name,phone').eq('id', p.owner_id).maybeSingle() : { data: null },
+    // The number tenants reach through Call / WhatsApp on the listing page (private; see
+    // keys99.com supabase/27-rental-contacts.sql). Missing table or row → shown as not set.
+    sb.from('rental_listing_contacts').select('phone,whatsapp').eq('listing_id', id).maybeSingle()
+  ]);
+  const contactText = contact?.phone
+    ? `+91 ${contact.phone}${contact.whatsapp && contact.whatsapp !== contact.phone ? ` · WhatsApp +91 ${contact.whatsapp}` : ' (calls & WhatsApp)'}`
+    : 'Not set — falls back to the profile phone';
   const d = dRes.data || {};
   const images = imgRes.data || [];
   const docs = docRes.data || [];
@@ -335,7 +343,8 @@ async function openReview(listing, currentUser, after) {
     ${p.status === 'rejected' && p.rejection_reason ? `<div class="notice danger"><b>Rejected:</b> ${escapeHtml(p.rejection_reason)}</div>` : ''}
     <h3 class="rental-h">Photos (${images.length})</h3>${gallery}
     <h3 class="rental-h">Owner</h3>
-    <div class="detail-grid">${kv('Name', owner?.full_name || '—')}${kv('Phone', owner?.phone || '—')}
+    <div class="detail-grid">${kv('Name', owner?.full_name || '—')}${kv('Profile phone', owner?.phone || '—')}
+      ${kv('Contact for tenants', contactText)}
       ${kv('Owner declaration', p.owner_declaration ? 'Confirmed' : 'Not confirmed')}${kv('Submitted', fmtDate(p.created_at))}</div>
     <h3 class="rental-h">Property</h3><div class="detail-grid">${basics}</div>
     ${specifics ? `<h3 class="rental-h">${listing.property_category === 'commercial' ? 'Commercial details' : 'Home details'}</h3><div class="detail-grid">${specifics}</div>` : ''}

@@ -176,6 +176,9 @@ documents in the private `rental-property-documents` bucket). **Rental Listings*
   and the bell count listings waiting in `pending`.
 - **Review** shows photos, owner, every detail, amenities, history and the ownership documents.
   Documents open through a 10-minute signed link and can be marked verified or rejected.
+  It also shows the owner's **contact for tenants** (`rental_listing_contacts`, set on the
+  website's posting form): the number visitors reach with the listing page's Call / WhatsApp
+  buttons after leaving their name and mobile (keys99.com `supabase/27-rental-contacts.sql`).
 - Actions: pending → **Approve** / **Reject** (the reason is saved in `rejection_reason`, which
   the owner sees and can fix and resubmit); approved → **Mark Rented** / **Deactivate**;
   rented / expired / inactive → **Reactivate**. Each one is logged in
