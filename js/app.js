@@ -14,6 +14,7 @@ import {
 import { archivePage } from './archive.js';
 import { reportsPage } from './reports.js';
 import { analyticsPage } from './analytics.js';
+import { rentalsPage, pendingRentalCount } from './rentals.js';
 import { adminsPage } from './admins.js';
 import { blogPage } from './blog.js';
 import { newsletterPage } from './newsletter.js';
@@ -84,11 +85,12 @@ if (buildEl) buildEl.textContent = `Build ${document.querySelector('meta[name="b
 async function loadSidebarCounts() {
   const T = k => PROJECT_KINDS[k].tables;
   const sum = arr => arr.reduce((a, b) => a + b, 0);
-  const [residential, commercial, enquiriesByKind, moderationByKind] = await Promise.all([
+  const [residential, commercial, enquiriesByKind, moderationByKind, rentalsPending] = await Promise.all([
     count(T('residential').project, q => q.is('deleted_at', null).eq('moderation_status', 'published')),
     count(T('commercial').project, q => q.is('deleted_at', null).eq('moderation_status', 'published')),
     Promise.all(KIND_KEYS.map(k => count(T(k).enquiries, q => q.in('status', ['new', 'contacted', 'follow_up'])))),
-    Promise.all(KIND_KEYS.map(k => count(T(k).project, q => q.is('deleted_at', null).in('moderation_status', ['pending_verification', 'under_review', 'changes_required', 'resubmitted']))))
+    Promise.all(KIND_KEYS.map(k => count(T(k).project, q => q.is('deleted_at', null).in('moderation_status', ['pending_verification', 'under_review', 'changes_required', 'resubmitted'])))),
+    pendingRentalCount()
   ]);
   const enquiriesOpen = sum(enquiriesByKind);
   const moderationPending = sum(moderationByKind);
@@ -96,7 +98,8 @@ async function loadSidebarCounts() {
   $('#count-commercial').textContent = commercial;
   $('#count-enquiries').textContent = enquiriesOpen;
   $('#count-moderation').textContent = moderationPending;
-  $('#notif-dot').hidden = moderationPending === 0;
+  $('#count-rentals').textContent = rentalsPending;
+  $('#notif-dot').hidden = moderationPending + rentalsPending === 0;
 }
 
 /* ---------------- chart helpers ---------------- */
@@ -1139,6 +1142,7 @@ const PAGES = {
   'relationship-managers': relationshipManagersPage,
   enquiries: (openId) => enquiriesPage(openId),
   moderation: moderationPage,
+  rentals: () => rentalsPage(content, { currentUser, onCountChange: loadSidebarCounts }),
   archive: () => archivePage(content, navigate, isSuperAdmin),
   analytics: () => analyticsPage(content),
   'report-projects': () => reportsPage(content, navigate, 'projects'),
@@ -1314,12 +1318,13 @@ async function loadNotifPanel() {
   const panel = $('#notif-panel');
   panel.innerHTML = `<div class="notif-panel-head">Notifications</div><div class="notif-empty">Loading…</div>`;
 
-  const [{ data: pendingAll }, { data: newEnquiriesAll }] = await Promise.all([
+  const [{ data: pendingAll }, { data: newEnquiriesAll }, { data: pendingRentals }] = await Promise.all([
     queryAllKinds(K => sb.from(K.tables.project).select('id,project_name,moderation_status,updated_at')
       .is('deleted_at', null)
       .in('moderation_status', ['pending_verification', 'under_review', 'resubmitted', 'changes_required'])
       .order('updated_at', { ascending: false }).limit(5)),
-    queryAllKinds(K => sb.from(K.tables.enquiries).select('id,contact_person,phone,created_at').eq('status', 'new').order('created_at', { ascending: false }).limit(5))
+    queryAllKinds(K => sb.from(K.tables.enquiries).select('id,contact_person,phone,created_at').eq('status', 'new').order('created_at', { ascending: false }).limit(5)),
+    sb.from('rental_properties').select('id,listing_title,property_category,updated_at').eq('status', 'pending').order('updated_at', { ascending: false }).limit(5)
   ]);
   const pending = pendingAll.sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at)).slice(0, 5);
   const newEnquiries = newEnquiriesAll.sort((a, b) => new Date(b.created_at) - new Date(a.created_at)).slice(0, 5);
@@ -1327,6 +1332,9 @@ async function loadNotifPanel() {
   const sections = [];
   if (pending?.length) sections.push(`<div class="notif-section"><div class="notif-section-label">Pending Moderation</div>${
     pending.map(p => notifItem('moderation', null, 'var(--gold)', p.project_name, `${projectKind(p._kind).label} · ${(p.moderation_status || '').replace(/_/g, ' ')} · ${timeAgo(p.updated_at)}`)).join('')
+  }</div>`);
+  if (pendingRentals?.length) sections.push(`<div class="notif-section"><div class="notif-section-label">Rentals Awaiting Approval</div>${
+    pendingRentals.map(r => notifItem('rentals', null, 'var(--gold)', r.listing_title, `${r.property_category === 'commercial' ? 'Commercial' : 'Residential'} rental · ${timeAgo(r.updated_at)}`)).join('')
   }</div>`);
   if (newEnquiries?.length) sections.push(`<div class="notif-section"><div class="notif-section-label">New Enquiries</div>${
     newEnquiries.map(e => notifItem('enquiries', e.id, 'var(--blue)', e.contact_person, `${e.phone} · ${timeAgo(e.created_at)}`)).join('')

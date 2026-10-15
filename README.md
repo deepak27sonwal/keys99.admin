@@ -165,6 +165,25 @@ images that are not WebP or are over 100 KB, *Convert* re-encodes them in the br
 repoints every project / floor plan / blog / document row at the new file before deleting the
 original, and *Delete unused* removes images nothing refers to.
 
+## Rental listings
+
+Owners post rentals on keys99.com (`rental_properties` plus `rental_residential_details` /
+`rental_commercial_details`, photos in the public `rental-property-media` bucket, ownership
+documents in the private `rental-property-documents` bucket). **Rental Listings** in the admin
+(`js/rentals.js`) is their approval queue:
+
+- Tabs: Pending Approval, Approved, Rejected, Rented / Expired / Inactive, All. The sidebar badge
+  and the bell count listings waiting in `pending`.
+- **Review** shows photos, owner, every detail, amenities, history and the ownership documents.
+  Documents open through a 10-minute signed link and can be marked verified or rejected.
+- Actions: pending → **Approve** / **Reject** (the reason is saved in `rejection_reason`, which
+  the owner sees and can fix and resubmit); approved → **Mark Rented** / **Deactivate**;
+  rented / expired / inactive → **Reactivate**. Each one is logged in
+  `rental_property_moderation_history`.
+- The database enforces the rules: owners can only move a listing between draft and pending,
+  and only with at least one photo and one document, and they can't set approval fields.
+  Approving queues a site rebuild.
+
 ## Security notes
 
 - **Third-party code.** supabase-js is self-hosted at an exact version

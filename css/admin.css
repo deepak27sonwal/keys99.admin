@@ -815,3 +815,27 @@ tr:last-child td{border-bottom:0}
 .field label.upload-box .hint{font-weight:500}
 /* Stacked full-width sections in a wizard step (e.g. Project Media) need breathing room. */
 #pf-panel-body > .field + .field{margin-top:22px}
+
+/* ---------- Rental Listings (approval queue) ---------- */
+.pill.rented,.pill.verified{background:var(--green-tint);color:var(--green)}
+.pill.expired,.pill.inactive,.pill.unverified{background:#f1f3f4;color:var(--muted)}
+.confirm-message{white-space:pre-line}
+.modal-box.rental-review{max-width:760px}
+.rental-h{font-size:12px;font-weight:800;letter-spacing:.4px;text-transform:uppercase;color:var(--muted);margin:22px 0 10px}
+.rental-review .modal-body > .rental-h:first-child,.rental-review .modal-body > .notice + .rental-h{margin-top:0}
+.rental-gallery{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px}
+.rental-photo{position:relative;padding:0;border:1px solid var(--line);border-radius:9px;overflow:hidden;aspect-ratio:4/3;background:var(--green-tint);cursor:zoom-in}
+.rental-photo img{width:100%;height:100%;object-fit:cover;display:block}
+.rental-photo .pill{position:absolute;left:6px;top:6px}
+.rental-desc{margin:0;font-size:13px;line-height:1.6;color:var(--ink-soft);white-space:pre-line;overflow-wrap:anywhere}
+.rental-review .notice.danger{background:#fdeaea;color:var(--danger);border-radius:9px;margin-bottom:16px}
+.rental-doc .row-actions{flex:none}
+.btn-outline.btn-sm{padding:6px 10px;font-size:12px;display:inline-flex;align-items:center;gap:5px}
+.btn-outline.danger{color:var(--danger);border-color:#f3c6c6}
+.rental-lightbox{position:fixed;inset:0;z-index:1200;background:rgba(2,20,18,.88);display:flex;flex-direction:column;align-items:center;justify-content:center;gap:10px;padding:16px;cursor:zoom-out;color:#fff;font-size:13px}
+.rental-lightbox img{max-width:100%;max-height:85vh;border-radius:10px;object-fit:contain}
+@media(max-width:520px){
+  .rental-review .detail-grid{grid-template-columns:1fr}
+  .rental-doc{flex-direction:column;align-items:flex-start}
+  .rental-review .modal-footer{flex-wrap:wrap}
+}
