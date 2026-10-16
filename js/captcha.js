@@ -37,11 +37,13 @@ export function createCaptcha(el) {
   let id = null;
   let current = null;
   let failed = false;
+  let errorCode = null;
 
   async function render() {
     if (!captchaEnabled() || !el) return;
     current = null;
     failed = false;
+    errorCode = null;
     const ts = await load();
     if (id != null) { try { ts.remove(id); } catch (_) {} }
     el.innerHTML = '';
@@ -51,19 +53,23 @@ export function createCaptcha(el) {
       callback: t => { current = t; failed = false; },
       'expired-callback': () => { current = null; },
       'timeout-callback': () => { current = null; },
-      'error-callback': () => { current = null; failed = true; }
+      // Cloudflare's error code, e.g. 110200 = this website's address isn't allowed for the
+      // widget (Cloudflare > Turnstile > Hostname management). Returning true stops it retrying.
+      'error-callback': code => { current = null; failed = true; errorCode = code || 'unknown'; return true; }
     });
   }
 
   function refresh() {
     current = null;
+    failed = false;
+    errorCode = null;
     if (id != null && window.turnstile) { try { window.turnstile.reset(id); return; } catch (_) {} }
     render().catch(() => {});
   }
 
   async function token(waitMs = 10000) {
     if (!captchaEnabled()) return null;
-    if (id == null) await render().catch(() => { failed = true; });
+    if (id == null) await render().catch(() => { failed = true; errorCode = 'script-blocked'; });
     for (let waited = 0; !current && !failed && waited < waitMs; waited += 250) {
       await new Promise(r => setTimeout(r, 250));
     }
@@ -72,6 +78,6 @@ export function createCaptcha(el) {
     return t;
   }
 
-  render().catch(() => { failed = true; });
-  return { token, refresh };
+  render().catch(() => { failed = true; errorCode = 'script-blocked'; });
+  return { token, refresh, error: () => errorCode };
 }
