@@ -195,6 +195,10 @@ Only the session made by that code is kept — the dashboard (`js/app.js`, via
 `js/session-check.js`) signs out any session whose token wasn't made with an email code. There is
 no "Forgot password" link: a super admin resets passwords from the Supabase dashboard. Both steps
 send a Cloudflare Turnstile token (`js/captcha.js`), which Supabase's CAPTCHA protection requires.
+The Supabase client (`js/supabase-client.js`, shared by login.html and the dashboard) uses the
+PKCE flow, as keys99.com does: a sign-in link from the code email returns a one-time `?code=` that
+only the browser which asked for it can swap for the session, so no access token ever appears in
+the page address (a link opened elsewhere shows "type the code instead").
 
 ## Security notes
 
