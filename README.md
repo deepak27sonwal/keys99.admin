@@ -200,6 +200,12 @@ PKCE flow, as keys99.com does: a sign-in link from the code email returns a one-
 only the browser which asked for it can swap for the session, so no access token ever appears in
 the page address (a link opened elsewhere shows "type the code instead").
 
+**Session timeout** (`js/session-timeout.js`): an admin is signed out after **1 hour with no
+activity** (clicks, keys, scrolling, touch in any admin tab; a banner with "Stay signed in"
+appears a minute before) and always **12 hours after the email-code sign-in**, however active.
+Both are checked again whenever the panel is opened, and the login page says why it signed you
+out. The limits are `IDLE_LIMIT_MS` / `MAX_SESSION_MS` in that file.
+
 ## Security notes
 
 - **Third-party code.** supabase-js is self-hosted at an exact version
