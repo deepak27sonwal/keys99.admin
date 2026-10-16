@@ -1,6 +1,7 @@
 import { sb } from './supabase-client.js';
-import { escapeHtml, pill, timeAgo, count, icon } from './utils.js';
-import { PROJECT_KINDS, KIND_KEYS, queryAllKinds, kindPill } from './project-kinds.js';
+import { escapeHtml, pill, timeAgo, fmtDate, fmtPrice, count, icon, rowActions } from './utils.js';
+import { PROJECT_KINDS, KIND_KEYS, queryAllKinds, kindPill, localityEmbed } from './project-kinds.js';
+import { featuredBadge } from './residential-projects.js';
 import { attachProjectThumbs, projectThumbHtml, bindThumbFallbacks } from './project-thumbs.js';
 import { bindLiveTile } from './live-visitors.js';
 import {
@@ -163,9 +164,9 @@ async function loadDashboard() {
     settle(fetchAll('site_visits', 'created_at,session_id,visitor_id', q => q.gte('created_at', new Date(yesterdayStart).toISOString()))),
     settle(Promise.all(ENQUIRY_SOURCES.map(s => fetchAll(s.table, 'created_at', q => q.gte('created_at', new Date(enquiryStart - 7 * DAY).toISOString()))
       .then(r => ({ ...r, rows: r.rows.map(x => ({ t: new Date(x.created_at).getTime(), kind: s.kind })) }))))),
-    settle(queryAllKinds(K => sb.from(K.tables.project).select('id,project_code,project_name,moderation_status,updated_at,cities(name)').is('deleted_at', null).order('updated_at', { ascending: false }).limit(5))),
-    settle(queryAllKinds(K => sb.from(K.tables.enquiries).select(`id,contact_person,status,enquiry_type,created_at,project:${K.tables.project}(project_name)`).order('created_at', { ascending: false }).limit(5))),
-    settle(sb.from('rental_property_enquiries').select('id,name,status,created_at,listing:rental_properties(listing_title)').order('created_at', { ascending: false }).limit(5)),
+    settle(queryAllKinds(K => sb.from(K.tables.project).select(`id,project_code,project_name,project_type,status,moderation_status,starting_price,price_on_request,is_featured,featured_until,updated_at,cities(name),${localityEmbed(K.key)}`).is('deleted_at', null).order('updated_at', { ascending: false }).limit(5))),
+    settle(queryAllKinds(K => sb.from(K.tables.enquiries).select(`id,contact_person,phone,status,enquiry_type,created_at,project:${K.tables.project}(project_name)`).order('created_at', { ascending: false }).limit(6))),
+    settle(sb.from('rental_property_enquiries').select('id,name,phone,status,created_at,listing:rental_properties(listing_title)').order('created_at', { ascending: false }).limit(6)),
     settle(queryAllKinds(K => sb.from(K.tables.history).select(`id,to_status,action,changed_at,project:${K.tables.project}(project_name)`).order('changed_at', { ascending: false }).limit(8))),
     count('developers'), count('agents'), count('agents', q => q.eq('verified', true)),
     count('relationship_managers'), count('cities'), count('localities'),
@@ -207,9 +208,9 @@ async function loadDashboard() {
 
   // Recent enquiries across all three kinds, newest first.
   const recentEnq = [
-    ...((recentEnquiries?.data) || []).map(e => ({ name: e.contact_person, subject: e.project?.project_name, kind: e._kind, type: e.enquiry_type, status: e.status, at: e.created_at })),
-    ...((recentRentalEnquiries?.data) || []).map(e => ({ name: e.name, subject: e.listing?.listing_title, kind: 'rental', type: null, status: e.status, at: e.created_at }))
-  ].sort((a, b) => new Date(b.at) - new Date(a.at)).slice(0, 5);
+    ...((recentEnquiries?.data) || []).map(e => ({ id: e.id, name: e.contact_person, phone: e.phone, subject: e.project?.project_name, kind: e._kind, type: e.enquiry_type, status: e.status, at: e.created_at })),
+    ...((recentRentalEnquiries?.data) || []).map(e => ({ id: e.id, name: e.name, phone: e.phone, subject: e.listing?.listing_title, kind: 'rental', type: null, status: e.status, at: e.created_at }))
+  ].sort((a, b) => new Date(b.at) - new Date(a.at)).slice(0, 6);
 
   const projects = ((recentProjects?.data) || []).sort((a, b) => new Date(b.updated_at) - new Date(a.updated_at)).slice(0, 5);
   await attachProjectThumbs(projects).catch(() => {});
@@ -281,28 +282,46 @@ function statusPanelHtml(d) {
     <div class="db-kind-split">${kinds}</div>`;
 }
 
-function recentEnquiriesHtml(list, error) {
-  if (!list.length) return `<div class="empty">${escapeHtml(error ? error.message : 'No enquiries yet.')}</div>`;
-  return `<ul class="db-list">${list.map(e => `
-    <li class="db-row" data-nav="enquiries">
-      <span class="db-avatar" aria-hidden="true">${escapeHtml(String(e.name || '?').trim().charAt(0).toUpperCase() || '?')}</span>
-      <span class="db-row-main"><span class="db-row-title">${escapeHtml(e.name || 'Someone')}</span>
-        <span class="db-row-sub">${escapeHtml(e.subject || (e.kind === 'rental' ? 'A rental listing' : 'A project'))}${e.type ? ` · ${escapeHtml(String(e.type).replace(/_/g, ' '))}` : ''}</span></span>
-      <span class="db-row-meta">${e.kind === 'rental' ? '<span class="pill kind-rental">Rental</span>' : kindPill(e.kind)}<span class="db-time">${escapeHtml(timeAgo(e.at))}</span></span>
-      <span class="db-row-status">${pill(e.status)}</span>
-    </li>`).join('')}</ul>`;
+const telHref = phone => `tel:${String(phone || '').replace(/[^\d+]/g, '')}`;
+
+function tableHtml(headers, rows, emptyText, cls = '') {
+  return `<div class="table-wrap db-table ${cls}"><table>
+    <thead><tr>${headers.map(h => `<th>${h}</th>`).join('')}</tr></thead>
+    <tbody>${rows || `<tr><td colspan="${headers.length}"><div class="empty">${escapeHtml(emptyText)}</div></td></tr>`}</tbody>
+  </table></div>`;
 }
 
-function recentProjectsHtml(list, error) {
-  if (!list.length) return `<div class="empty">${escapeHtml(error ? error.message : 'No projects yet.')}</div>`;
-  return `<ul class="db-list">${list.map(p => `
-    <li class="db-row" data-edit-project="${escapeHtml(p.id)}" data-kind="${escapeHtml(p._kind)}" role="button" tabindex="0" title="Open ${escapeHtml(p.project_name || 'project')}">
-      <span class="proj-thumb db-thumb">${projectThumbHtml(p._thumb, p._kind === 'commercial' ? 'building' : 'home')}</span>
-      <span class="db-row-main"><span class="db-row-title">${escapeHtml(p.project_name || 'Untitled')}</span>
-        <span class="db-row-sub">${escapeHtml(p.project_code || '')}${p.cities?.name ? ` · ${escapeHtml(p.cities.name)}` : ''}</span></span>
-      <span class="db-row-meta">${kindPill(p._kind)}<span class="db-time">${escapeHtml(timeAgo(p.updated_at))}</span></span>
-      <span class="db-row-status">${pill(p.moderation_status)}</span>
-    </li>`).join('')}</ul>`;
+// Name, phone (tap to call), project or listing, type, when, status, and a button that opens
+// the enquiry (project enquiries open in Enquiries; rental enquiries live under Rental Listings).
+function recentEnquiriesHtml(list, error) {
+  const rows = list.map(e => `
+    <tr>
+      <td><strong>${escapeHtml(e.name || '—')}</strong></td>
+      <td>${e.phone ? `<a class="db-phone" href="${escapeHtml(telHref(e.phone))}">${escapeHtml(e.phone)}</a>` : '—'}</td>
+      <td>${escapeHtml(e.subject || '—')}</td>
+      <td>${e.kind === 'rental' ? '<span class="pill kind-rental">Rental</span>' : kindPill(e.kind)}${e.type ? ` <span class="db-sub-inline">${escapeHtml(String(e.type).replace(/_/g, ' '))}</span>` : ''}</td>
+      <td><span class="db-nowrap">${escapeHtml(fmtDate(e.at))}</span><div class="db-time">${escapeHtml(timeAgo(e.at))}</div></td>
+      <td>${pill(e.status)}</td>
+      <td><div class="row-actions"><button type="button" class="icon-btn" ${e.kind === 'rental' ? 'data-nav="rentals"' : `data-open-enquiry="${escapeHtml(e.id)}"`} title="View enquiry" aria-label="View enquiry from ${escapeHtml(e.name || 'this person')}">${icon('eye', 13)}</button></div></td>
+    </tr>`).join('');
+  return tableHtml(['Name', 'Phone', 'Project / listing', 'Type', 'Received', 'Status', 'Actions'], rows, error ? error.message : 'No enquiries yet.');
+}
+
+// The old Dashboard's project table: thumbnail, name (with the featured badge) and code, type,
+// location, starting price, construction status, moderation, last update, and Edit / View /
+// Archive (archive for super admins), wired by the app's bindStubs().
+function recentProjectsHtml(list, error, isSuperAdmin) {
+  const rows = list.map(p => `
+    <tr>
+      <td><div class="proj-cell"><span class="proj-thumb">${projectThumbHtml(p._thumb, p._kind === 'commercial' ? 'building' : 'home')}</span><div><div class="proj-name">${escapeHtml(p.project_name || 'Untitled')}${featuredBadge(p)}</div><div class="proj-code">${escapeHtml(p.project_code || '')} · updated ${escapeHtml(timeAgo(p.updated_at))}</div></div></div></td>
+      <td>${kindPill(p._kind)} <span class="db-sub-inline">${escapeHtml((p.project_type || '—').replace(/_/g, ' '))}</span></td>
+      <td>${escapeHtml(p.localities?.name || '—')}${p.cities?.name ? ', ' + escapeHtml(p.cities.name) : ''}</td>
+      <td class="db-nowrap">${escapeHtml(fmtPrice(p.starting_price, p.price_on_request))}</td>
+      <td class="db-cap">${escapeHtml((p.status || '—').replace(/_/g, ' '))}</td>
+      <td>${pill(p.moderation_status)}</td>
+      <td>${rowActions('project', p.id, p.project_name, isSuperAdmin, p._kind)}</td>
+    </tr>`).join('');
+  return tableHtml(['Project', 'Type', 'Location', 'Starting price', 'Status', 'Moderation', 'Actions'], rows, error ? error.message : 'No projects yet.');
 }
 
 function activityHtml(history, enquiries) {
@@ -343,11 +362,17 @@ function panel(title, sub, body, action = '', cls = '') {
     <div class="an-body">${body}</div>
   </section>`;
 }
+function tablePanel(title, sub, table, action = '') {
+  return `<section class="panel an-panel db-table-panel">
+    <div class="panel-head"><div><h2>${escapeHtml(title)}</h2>${sub ? `<div class="an-sub">${escapeHtml(sub)}</div>` : ''}</div>${action}</div>
+    ${table}
+  </section>`;
+}
 const viewAll = (nav, label = 'View all') => `<button type="button" class="panel-link" data-nav="${nav}">${escapeHtml(label)} →</button>`;
 
 // ---------- page ----------
 
-export async function dashboardPage(content, { navigate, currentUser, onAddProject, onEditProject }) {
+export async function dashboardPage(content, { navigate, currentUser, isSuperAdmin, onAddProject, bindRowActions }) {
   content.innerHTML = '<div class="empty">Loading dashboard…</div>';
   const d = await loadDashboard();
   if (!content.isConnected) return;
@@ -427,10 +452,8 @@ export async function dashboardPage(content, { navigate, currentUser, onAddProje
 
     ${panel('Enquiries', e ? `${fmtInt(e.total30)} in the last 30 days · India time` : 'Last 30 days', e ? '<div id="db-enq-plot" class="an-plot db-enq"></div>' : '<div class="empty">Enquiries could not be loaded.</div>', viewAll('enquiries'), 'db-enq-panel')}
 
-    <div class="db-recent">
-      ${panel('Recent enquiries', 'Newest first, all listing types', recentEnquiriesHtml(d.recentEnq, d.errors.recentEnquiries), viewAll('enquiries'))}
-      ${panel('Recently updated projects', 'Click a project to open it', recentProjectsHtml(d.projects, d.errors.recentProjects), viewAll('residential'))}
-    </div>
+    ${tablePanel('Recent enquiries', 'Newest first, all listing types', recentEnquiriesHtml(d.recentEnq, d.errors.recentEnquiries), viewAll('enquiries'))}
+    ${tablePanel('Recent projects', 'Recently updated, residential and commercial', recentProjectsHtml(d.projects, d.errors.recentProjects, isSuperAdmin), viewAll('residential'))}
 
     ${panel('Recent activity', 'Moderation changes and enquiries', activityHtml(d.history, d.recentEnq), '', 'db-activity')}
 
@@ -446,11 +469,9 @@ export async function dashboardPage(content, { navigate, currentUser, onAddProje
     if (el.getAttribute('role') === 'link') el.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); go(el); } });
   });
   content.querySelector('#db-add-project').addEventListener('click', () => onAddProject());
-  content.querySelectorAll('[data-edit-project]').forEach(el => {
-    const open = () => onEditProject(el.dataset.editProject, el.dataset.kind);
-    el.addEventListener('click', open);
-    el.addEventListener('keydown', ev => { if (ev.key === 'Enter' || ev.key === ' ') { ev.preventDefault(); open(); } });
-  });
+  content.querySelectorAll('[data-open-enquiry]').forEach(el => el.addEventListener('click', () => navigate('enquiries', { openId: el.dataset.openEnquiry })));
+  // Edit / View / Archive on project rows: the app's shared handlers (bindStubs).
+  bindRowActions();
 
   // Tooltips: enquiry bars and the status bar.
   const tip = createTooltip(content.querySelector('#db-tip'));

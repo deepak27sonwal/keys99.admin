@@ -128,8 +128,9 @@ function dashboardPage() {
   return renderDashboard(content, {
     navigate,
     currentUser,
+    isSuperAdmin,
     onAddProject: () => addProjectFlow(),
-    onEditProject: (id, kind) => openProjectForm(content, currentUser, id, () => navigate('dashboard'), undefined, kind)
+    bindRowActions: () => bindPageStubs()
   });
 }
 

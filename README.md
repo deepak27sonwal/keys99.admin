@@ -225,8 +225,9 @@ The **Dashboard** (`js/dashboard.js`) is the short view; trends live on Analytic
   Last 5 Years, remembered per browser), with a hover read-out and a table view, beside **listings
   by status** (Published, In review, Changes required, Draft) as one bar.
 - **Enquiries per day** for 30 days.
-- **Recent enquiries**, **recently updated projects** (a click opens the project), **recent
-  activity**, and a strip of catalogue counts (developers, agents, managers, cities, localities).
+- **Recent enquiries** (name, phone to tap and call, project or listing, type, when, status, and a
+  button that opens the enquiry) and **recent projects** (type, location, starting price, construction
+  status, moderation, ★ featured badge, and Edit / View / Archive), then **recent activity** and a strip of catalogue counts (developers, agents, managers, cities, localities).
 
 Shared chart helpers are in `js/charts.js`.
 
