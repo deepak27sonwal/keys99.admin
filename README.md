@@ -221,8 +221,10 @@ The **Dashboard** (`js/dashboard.js`) is the short view; trends live on Analytic
   - enquiries this week vs last week, across residential, commercial and rental;
   - published listings, with how many were published this month;
   - live rentals, with how many are pending.
-- **Enquiries per day** for 30 days, and **listings by status** (Published, In review, Changes
-  required, Draft) as one bar.
+- **Listings overview:** live residential vs commercial projects over a chosen period (Today …
+  Last 5 Years, remembered per browser), with a hover read-out and a table view, beside **listings
+  by status** (Published, In review, Changes required, Draft) as one bar.
+- **Enquiries per day** for 30 days.
 - **Recent enquiries**, **recently updated projects** (a click opens the project), **recent
   activity**, and a strip of catalogue counts (developers, agents, managers, cities, localities).
 

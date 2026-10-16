@@ -24,9 +24,10 @@ import {
 
 const IN_REVIEW = ['pending_verification', 'under_review', 'resubmitted'];
 const PENDING_MODERATION = [...IN_REVIEW, 'changes_required'];
+// Status colours (good / warning / critical / neutral), always shown with their labels.
 const STATUS_SEGMENTS = [
-  { key: 'published', label: 'Published', color: C.blue, statuses: ['published'] },
-  { key: 'review', label: 'In review', color: C.orange, statuses: IN_REVIEW },
+  { key: 'published', label: 'Published', color: '#0ca30c', statuses: ['published'] },
+  { key: 'review', label: 'In review', color: '#f0ab1c', statuses: IN_REVIEW },
   { key: 'changes', label: 'Changes required', color: '#d03b3b', statuses: ['changes_required'] },
   { key: 'draft', label: 'Draft', color: '#b9c6c4', statuses: ['draft'] }
 ];
@@ -35,6 +36,98 @@ const ENQUIRY_SOURCES = [
   { kind: 'commercial', label: 'Commercial', table: PROJECT_KINDS.commercial.tables.enquiries },
   { kind: 'rental', label: 'Rental', table: 'rental_property_enquiries' }
 ];
+
+// "Listings overview": how many residential and commercial projects were live (published,
+// not archived) at evenly spaced points across the chosen period. Counted in the browser from
+// each published project's published_at, so changing the period needs no new query.
+const OVERVIEW_KEY = 'k99-dashboard-period';
+const OVERVIEW_POINTS = 12;
+const OVERVIEW_PERIODS = ['Today', 'Yesterday', 'Last Week', 'Last 15 Days', 'Last 30 Days', 'Last 3 Months', 'Last 6 Months', 'Last 1 Year', 'Last 3 Years', 'Last 5 Years'];
+const KIND_COLORS = { residential: C.blue, commercial: C.orange };
+
+function overviewBuckets(period, now) {
+  const todayStart = istMidnight(now);
+  const monthsAgo = m => { const d = new Date(now + 19800000); d.setUTCMonth(d.getUTCMonth() - m); return d.getTime() - 19800000; };
+  let start = monthsAgo(6), end = now;
+  switch (period) {
+    case 'Today': start = todayStart; break;
+    case 'Yesterday': start = todayStart - DAY; end = todayStart; break;
+    case 'Last Week': start = now - 7 * DAY; break;
+    case 'Last 15 Days': start = now - 15 * DAY; break;
+    case 'Last 30 Days': start = now - 30 * DAY; break;
+    case 'Last 3 Months': start = monthsAgo(3); break;
+    case 'Last 1 Year': start = monthsAgo(12); break;
+    case 'Last 3 Years': start = monthsAgo(36); break;
+    case 'Last 5 Years': start = monthsAgo(60); break;
+  }
+  const span = end - start;
+  const opts = { timeZone: 'Asia/Kolkata' };
+  const fmt = span <= 2 * DAY
+    ? t => new Date(t).toLocaleTimeString('en-IN', { ...opts, hour: 'numeric', minute: '2-digit' })
+    : span <= 400 * DAY
+      ? t => new Date(t).toLocaleDateString('en-IN', { ...opts, day: 'numeric', month: 'short' })
+      : t => new Date(t).toLocaleDateString('en-IN', { ...opts, month: 'short', year: '2-digit' });
+  const long = span <= 2 * DAY
+    ? t => new Date(t).toLocaleString('en-IN', { ...opts, day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit' })
+    : t => new Date(t).toLocaleDateString('en-IN', { ...opts, day: 'numeric', month: 'short', year: 'numeric' });
+  return Array.from({ length: OVERVIEW_POINTS }, (_, i) => {
+    const t = start + (span * (i + 1)) / OVERVIEW_POINTS;
+    return { t, label: fmt(t), long: long(t) };
+  });
+}
+
+function overviewSeries(published, period, now) {
+  const buckets = overviewBuckets(period, now);
+  const series = KIND_KEYS.map(k => {
+    const times = published.filter(p => p.kind === k).map(p => p.t).sort((a, b) => a - b);
+    let j = 0;
+    const values = buckets.map(b => { while (j < times.length && times[j] <= b.t) j++; return j; });
+    return { kind: k, name: PROJECT_KINDS[k].label, color: KIND_COLORS[k] || C.aqua, values };
+  });
+  return { buckets, series };
+}
+
+function overviewChartSvg(o, width) {
+  const H = 240, padL = 34, padR = 14, padT = 16, padB = 28;
+  const w = Math.max(260, width);
+  const n = o.buckets.length;
+  const plotW = w - padL - padR, plotH = H - padT - padB;
+  const max = countMax(Math.max(...o.series.flatMap(s => s.values)));
+  const x = i => padL + (n > 1 ? (i / (n - 1)) * plotW : plotW / 2);
+  const y = v => padT + plotH - (v / max) * plotH;
+  const line = vals => vals.map((v, i) => `${i ? 'L' : 'M'}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join('');
+  const grid = [0, 0.25, 0.5, 0.75, 1].map(f => max * f)
+    .map(t => `<line x1="${padL}" x2="${w - padR}" y1="${y(t)}" y2="${y(t)}" class="an-gl${t === 0 ? ' an-base' : ''}"/><text x="${padL - 8}" y="${y(t) + 3.5}" class="an-axis" text-anchor="end">${fmtCompact(t)}</text>`).join('');
+  const every = Math.max(1, Math.ceil(n / Math.max(2, Math.floor(plotW / 72))));
+  const xl = o.buckets.map((b, i) => (i === n - 1 || (i % every === 0 && n - 1 - i >= every))
+    ? `<text x="${x(i)}" y="${H - 8}" class="an-axis" text-anchor="${i === 0 ? 'start' : i === n - 1 ? 'end' : 'middle'}">${escapeHtml(b.label)}</text>` : '').join('');
+  const first = o.series[0];
+  const area = `${line(first.values)}L${x(n - 1)},${y(0)}L${x(0)},${y(0)}Z`;
+  const ends = o.series.map(s => `<circle cx="${x(n - 1)}" cy="${y(s.values[n - 1])}" r="4" fill="${s.color}" stroke="#fff" stroke-width="2"/>`).join('');
+  return `<svg class="an-svg" width="${w}" height="${H}" viewBox="0 0 ${w} ${H}" role="img" aria-label="Live residential and commercial listings over time">
+    ${grid}
+    <path d="${area}" fill="${first.color}" fill-opacity=".1"/>
+    ${o.series.map(s => `<path d="${line(s.values)}" fill="none" stroke="${s.color}" stroke-width="2" stroke-linejoin="round"/>`).join('')}
+    ${ends}${xl}
+    <g class="an-cross" style="display:none"><line class="an-cross-line" y1="${padT}" y2="${padT + plotH}"/>${o.series.map((s, i) => `<circle class="an-cross-${i}" r="4" fill="${s.color}" stroke="#fff" stroke-width="2"/>`).join('')}</g>
+    <rect class="an-overlay" x="${padL}" y="${padT}" width="${plotW}" height="${plotH}" fill="transparent" data-max="${max}"/>
+  </svg>`;
+}
+
+function overviewTableHtml(o) {
+  return `<div class="table-wrap an-table"><table><thead><tr><th>As of</th>${o.series.map(s => `<th class="num">${escapeHtml(s.name)}</th>`).join('')}<th class="num">Total</th></tr></thead><tbody>${
+    o.buckets.map((b, i) => `<tr><td>${escapeHtml(b.long)}</td>${o.series.map(s => `<td class="num">${fmtInt(s.values[i])}</td>`).join('')}<td class="num">${fmtInt(o.series.reduce((t, s) => t + s.values[i], 0))}</td></tr>`).join('')
+  }</tbody></table></div>`;
+}
+
+function readPeriod() {
+  try { const v = localStorage.getItem(OVERVIEW_KEY); if (OVERVIEW_PERIODS.includes(v)) return v; } catch (_) {}
+  return 'Last 6 Months';
+}
+
+// Axis top for whole-number counts: small counts round up to a multiple of 4 so the quarter and
+// half gridlines land on whole numbers.
+const countMax = v => (v <= 20 ? Math.max(4, Math.ceil(v / 4) * 4) : niceMax(v));
 
 function greeting(now) {
   const h = istHour(now);
@@ -56,7 +149,7 @@ async function loadDashboard() {
   const [
     statusCounts, residentialDrafts, publishedThisMonth, newEnquiries, rentalsPending, rentalsLive,
     visits, enquiryRows, recentProjects, recentEnquiries, recentRentalEnquiries, recentHistory,
-    developers, agents, agentsVerified, managers, cities, localities
+    developers, agents, agentsVerified, managers, cities, localities, publishedTimes
   ] = await Promise.all([
     Promise.all(STATUS_SEGMENTS.map(s => Promise.all(KIND_KEYS.map(k => count(PROJECT_KINDS[k].tables.project, q => live(q).in('moderation_status', s.statuses)))))),
     count(PROJECT_KINDS.residential.tables.project, q => live(q).eq('moderation_status', 'draft')),
@@ -75,7 +168,9 @@ async function loadDashboard() {
     settle(sb.from('rental_property_enquiries').select('id,name,status,created_at,listing:rental_properties(listing_title)').order('created_at', { ascending: false }).limit(5)),
     settle(queryAllKinds(K => sb.from(K.tables.history).select(`id,to_status,action,changed_at,project:${K.tables.project}(project_name)`).order('changed_at', { ascending: false }).limit(8))),
     count('developers'), count('agents'), count('agents', q => q.eq('verified', true)),
-    count('relationship_managers'), count('cities'), count('localities')
+    count('relationship_managers'), count('cities'), count('localities'),
+    settle(Promise.all(KIND_KEYS.map(k => sb.from(PROJECT_KINDS[k].tables.project).select('published_at').is('deleted_at', null).eq('moderation_status', 'published').not('published_at', 'is', null).limit(5000)
+      .then(r => { if (r.error) throw r.error; return (r.data || []).map(p => ({ kind: k, t: new Date(p.published_at).getTime() })); }))).then(a => a.flat()))
   ]);
 
   // Listings by status, per kind.
@@ -123,7 +218,7 @@ async function loadDashboard() {
     now, status, published, kindTotals, residentialDrafts, publishedThisMonth, newEnquiries, rentalsPending, rentalsLive,
     pendingModeration: status[1].value + status[2].value,
     drafts: status[3].value,
-    visitors, enquiries, recentEnq, projects,
+    visitors, enquiries, recentEnq, projects, publishedTimes,
     history: ((recentHistory?.data) || []),
     catalogue: { developers, agents, agentsVerified, managers, cities, localities },
     errors: { recentProjects: recentProjects?.error, recentEnquiries: recentEnquiries?.error }
@@ -157,7 +252,7 @@ function enquiriesChartSvg(days, width) {
   const H = 200, padL = 30, padR = 6, padT = 14, padB = 24;
   const w = Math.max(260, width);
   const plotW = w - padL - padR, plotH = H - padT - padB;
-  const max = niceMax(Math.max(...days.map(d => d.total)));
+  const max = countMax(Math.max(...days.map(d => d.total)));
   const slot = plotW / days.length;
   const bw = Math.min(24, Math.max(3, slot - 2));
   const grid = [0, 0.5, 1].map(f => { const y = padT + plotH - f * plotH; return `<line x1="${padL}" x2="${w - padR}" y1="${y}" y2="${y}" class="an-gl${f === 0 ? ' an-base' : ''}"/><text x="${padL - 6}" y="${y + 3.5}" class="an-axis" text-anchor="end">${fmtCompact(max * f)}</text>`; }).join('');
@@ -260,6 +355,8 @@ export async function dashboardPage(content, { navigate, currentUser, onAddProje
   const now = new Date(d.now);
   const name = (currentUser?.user_metadata?.full_name || (currentUser?.email || 'Admin').split('@')[0]).split(/\s+/)[0];
   const draftNav = d.residentialDrafts || !d.drafts ? 'residential' : 'commercial';
+  let period = readPeriod();
+  let ovTable = false;
 
   const v = d.visitors;
   const e = d.enquiries;
@@ -320,9 +417,15 @@ export async function dashboardPage(content, { navigate, currentUser, onAddProje
     <div class="an-kpis db-kpis">${kpis}</div>
 
     <div class="db-main">
-      ${panel('Enquiries', e ? `${fmtInt(e.total30)} in the last 30 days · India time` : 'Last 30 days', e ? '<div id="db-enq-plot" class="an-plot db-enq"></div>' : '<div class="empty">Enquiries could not be loaded.</div>', viewAll('enquiries'))}
+      ${panel('Listings overview', 'Live projects over time, by type', d.publishedTimes
+        ? `<ul class="an-legend" id="db-ov-legend"></ul><div id="db-ov-plot" class="an-plot"></div>`
+        : '<div class="empty">Listings could not be loaded.</div>',
+        `<div class="db-ov-controls"><label class="db-period"><span class="sr-only">Period</span><select id="db-period">${OVERVIEW_PERIODS.map(p => `<option${p === period ? ' selected' : ''}>${p}</option>`).join('')}</select></label>
+          <div class="an-seg-toggle" role="group" aria-label="Show as"><button type="button" data-ov-view="chart" aria-pressed="true">Chart</button><button type="button" data-ov-view="table" aria-pressed="false">Table</button></div></div>`)}
       ${panel('Listings by status', 'Residential and commercial projects', statusPanelHtml(d), viewAll('moderation', 'Moderation'))}
     </div>
+
+    ${panel('Enquiries', e ? `${fmtInt(e.total30)} in the last 30 days · India time` : 'Last 30 days', e ? '<div id="db-enq-plot" class="an-plot db-enq"></div>' : '<div class="empty">Enquiries could not be loaded.</div>', viewAll('enquiries'), 'db-enq-panel')}
 
     <div class="db-recent">
       ${panel('Recent enquiries', 'Newest first, all listing types', recentEnquiriesHtml(d.recentEnq, d.errors.recentEnquiries), viewAll('enquiries'))}
@@ -364,7 +467,7 @@ export async function dashboardPage(content, { navigate, currentUser, onAddProje
       ], ev.clientX, ev.clientY);
       return;
     }
-    tip.hide();
+    if (!ev.target.closest('.an-overlay')) tip.hide();
   });
   content.addEventListener('pointerleave', () => tip.hide());
 
@@ -376,5 +479,47 @@ export async function dashboardPage(content, { navigate, currentUser, onAddProje
     draw();
     const ro = new ResizeObserver(() => { if (!plot.isConnected) { ro.disconnect(); return; } draw(); });
     ro.observe(plot);
+  }
+
+  // Listings overview: period picker, chart / table, crosshair read-out.
+  const ovPlot = content.querySelector('#db-ov-plot');
+  if (ovPlot && d.publishedTimes) {
+    let ov = null, ovWidth = 0;
+    const drawOverview = (force) => {
+      if (!force && Math.abs(ovPlot.clientWidth - ovWidth) <= 4) return;
+      ovWidth = ovPlot.clientWidth;
+      ov = overviewSeries(d.publishedTimes, period, d.now);
+      const last = ov.buckets.length - 1;
+      content.querySelector('#db-ov-legend').innerHTML = ov.series.map(s => `<li><span class="an-swatch" style="background:${s.color}"></span>${escapeHtml(s.name)} <b>${fmtInt(s.values[last])}</b></li>`).join('');
+      ovPlot.innerHTML = ovTable ? overviewTableHtml(ov) : overviewChartSvg(ov, ovPlot.clientWidth);
+    };
+    drawOverview(true);
+    new ResizeObserver((_, obs) => { if (!ovPlot.isConnected) { obs.disconnect(); return; } drawOverview(false); }).observe(ovPlot);
+    content.querySelector('#db-period').addEventListener('change', ev => {
+      period = ev.target.value;
+      try { localStorage.setItem(OVERVIEW_KEY, period); } catch (_) {}
+      drawOverview(true);
+    });
+    content.querySelectorAll('[data-ov-view]').forEach(b => b.addEventListener('click', () => {
+      ovTable = b.dataset.ovView === 'table';
+      content.querySelectorAll('[data-ov-view]').forEach(x => x.setAttribute('aria-pressed', String(x === b)));
+      drawOverview(true);
+    }));
+    ovPlot.addEventListener('pointermove', ev => {
+      const overlay = ev.target.closest('.an-overlay');
+      if (!overlay || !ov) return;
+      const n = ov.buckets.length;
+      const box = overlay.getBoundingClientRect();
+      const i = n > 1 ? Math.round(Math.min(1, Math.max(0, (ev.clientX - box.left) / box.width)) * (n - 1)) : 0;
+      const x0 = +overlay.getAttribute('x'), w = +overlay.getAttribute('width'), y0 = +overlay.getAttribute('y'), h = +overlay.getAttribute('height'), max = +overlay.dataset.max;
+      const cx = x0 + (n > 1 ? (i / (n - 1)) * w : w / 2);
+      const cross = ovPlot.querySelector('.an-cross');
+      cross.style.display = '';
+      cross.querySelector('.an-cross-line').setAttribute('x1', cx);
+      cross.querySelector('.an-cross-line').setAttribute('x2', cx);
+      ov.series.forEach((s, k) => { const c = cross.querySelector(`.an-cross-${k}`); c.setAttribute('cx', cx); c.setAttribute('cy', y0 + h - (s.values[i] / max) * h); });
+      tip.show([ov.buckets[i].long, ...ov.series.map(s => [s.color, s.name, fmtInt(s.values[i])])], ev.clientX, ev.clientY);
+    });
+    ovPlot.addEventListener('pointerleave', () => { const c = ovPlot.querySelector('.an-cross'); if (c) c.style.display = 'none'; tip.hide(); });
   }
 }

@@ -1054,3 +1054,10 @@ tr:last-child td{border-bottom:0}
   .db-row-meta{display:none}
   .db-spark-pad{height:38px}
 }
+.sr-only{position:absolute;width:1px;height:1px;padding:0;margin:-1px;overflow:hidden;clip:rect(0,0,0,0);white-space:nowrap;border:0}
+.db-ov-controls{display:flex;align-items:center;gap:8px;flex-wrap:nowrap;justify-content:flex-end;flex:none}
+.db-period select{appearance:none;-webkit-appearance:none;font:inherit;font-size:12.5px;font-weight:600;color:var(--ink-soft);background:var(--white) url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 24 24' fill='none' stroke='%233d5a58' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='m6 9 6 6 6-6'/%3E%3C/svg%3E") no-repeat right 10px center;border:1px solid var(--line);border-radius:10px;padding:8px 30px 8px 12px;cursor:pointer}
+.db-period select:hover{border-color:var(--green)}
+.db-period select:focus-visible{outline:2px solid var(--green);outline-offset:1px}
+.db-enq-panel{margin-bottom:16px}
+@media(max-width:600px){.db-main .panel-head{flex-wrap:wrap}.db-ov-controls{width:100%;justify-content:space-between}}
