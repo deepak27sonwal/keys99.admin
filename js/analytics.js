@@ -41,7 +41,8 @@ const ACTION_LABELS = {
   unsave_project: 'Removed a saved project',
   enquiry_submit: 'Submitted an enquiry',
   login: 'Signed in',
-  logout: 'Signed out'
+  logout: 'Signed out',
+  admin_password_changed: 'Changed an admin password'
 };
 
 function actionLabel(action) {
