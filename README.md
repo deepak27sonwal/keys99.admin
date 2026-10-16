@@ -187,6 +187,15 @@ documents in the private `rental-property-documents` bucket). **Rental Listings*
   and only with at least one photo and one document, and they can't set approval fields.
   Approving queues a site rebuild.
 
+## Admin sign-in
+
+Two steps (`login.html`): email + password, then a code Supabase emails to the admin (the same
+email-code sign-in keys99.com uses; Supabase > Authentication > Email templates sets its text).
+Only the session made by that code is kept — the dashboard (`js/app.js`, via
+`js/session-check.js`) signs out any session whose token wasn't made with an email code. There is
+no "Forgot password" link: a super admin resets passwords from the Supabase dashboard. Both steps
+send a Cloudflare Turnstile token (`js/captcha.js`), which Supabase's CAPTCHA protection requires.
+
 ## Security notes
 
 - **Third-party code.** supabase-js is self-hosted at an exact version
