@@ -130,7 +130,7 @@ async function removeAdmin(userId, email, onRemoved) {
 }
 
 // Same rule the manage-admins function enforces: 8–72 characters with a letter and a number.
-function passwordProblem(pw) {
+export function passwordProblem(pw) {
   if (pw.length < 8) return 'Password must be at least 8 characters.';
   if (new TextEncoder().encode(pw).length > 72) return 'Password must be at most 72 characters.';
   if (!/[A-Za-z]/.test(pw) || !/[0-9]/.test(pw)) return 'Password must contain at least one letter and one number.';
@@ -139,7 +139,7 @@ function passwordProblem(pw) {
 
 // 16 random characters from an unambiguous set (no 0/O, 1/l/I), always with a letter, a digit
 // and a symbol.
-function generatePassword() {
+export function generatePassword() {
   const sets = ['ABCDEFGHJKLMNPQRSTUVWXYZ', 'abcdefghijkmnpqrstuvwxyz', '23456789', '!@#$%&*?'];
   const all = sets.join('');
   const pick = (chars) => chars[crypto.getRandomValues(new Uint32Array(1))[0] % chars.length];

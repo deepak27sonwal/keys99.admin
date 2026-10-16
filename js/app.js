@@ -18,6 +18,7 @@ import { dashboardPage as renderDashboard } from './dashboard.js';
 import { signedInWithEmailCode } from './session-check.js';
 import { sessionExpiredReason, startSessionTimeout, clearActivity } from './session-timeout.js';
 import { adminsPage } from './admins.js';
+import { profilePage as renderProfile } from './profile.js';
 import { blogPage } from './blog.js';
 import { newsletterPage } from './newsletter.js';
 import { settingsPage } from './settings.js';
@@ -85,6 +86,12 @@ async function guard() {
   const roleLabel = isSuperAdmin ? 'super admin' : roleList.includes('admin') ? 'admin' : (roleList[0] || 'admin');
   $('#user-role').textContent = roleLabel.toUpperCase();
   $('#user-avatar').textContent = initials(label);
+  // Show the admin's own name (Profile → Edit profile) instead of the email once it's known.
+  sb.from('profiles').select('full_name').eq('id', session.user.id).maybeSingle().then(({ data }) => {
+    if (!data?.full_name) return;
+    $('#user-name').textContent = data.full_name;
+    $('#user-avatar').textContent = initials(data.full_name);
+  }, () => {});
   $('#sb-admins-section').hidden = !isSuperAdmin;
   $('#sb-admins-nav').hidden = !isSuperAdmin;
   $('#sb-archive-item').hidden = !isSuperAdmin;
@@ -812,16 +819,15 @@ async function moderationPage() {
 
 /* ---------------- Settings & Profile ---------------- */
 
-async function profilePage() {
-  const rolesText = currentRoles.length ? currentRoles.join(', ') : '—';
-  content.innerHTML = pageHead('Profile', 'Your account details') + `
-    <div class="panel"><div class="panel-head"><h2>Account</h2></div>
-      <div class="notice">
-        <strong>Email:</strong> ${escapeHtml(currentUser?.email || '—')}<br>
-        <strong>Roles:</strong> ${escapeHtml(rolesText)}<br>
-        <strong>User ID:</strong> ${escapeHtml(currentUser?.id || '—')}
-      </div>
-    </div>`;
+function profilePage() {
+  return renderProfile(content, {
+    currentUser,
+    currentRoles,
+    onProfileChange: ({ full_name }) => {
+      $('#user-name').textContent = full_name || currentUser.email || 'Admin';
+      $('#user-avatar').textContent = initials(full_name || currentUser.email || 'Admin');
+    }
+  });
 }
 
 /* ---------------- navigation ---------------- */

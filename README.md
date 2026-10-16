@@ -249,6 +249,18 @@ or 90 days, in India time; remembered per browser) that controls everything unde
 Everything is worked out in the browser from `site_visits` rows, fetched 1,000 at a time (up to
 60,000 per view).
 
+## Profile
+
+**Profile** (sidebar, `js/profile.js`) is each admin's own account page:
+
+- **Edit profile:** full name and phone, saved to their `profiles` row. The name also shows in the
+  sidebar.
+- **Change password:** confirmed with a one-time code emailed to the admin (Supabase
+  `auth.reauthenticate()`, then `auth.updateUser({ password, nonce })`); no current password is
+  needed. Same rules as elsewhere: 8–72 characters with a letter and a number, plus Supabase's own
+  password policy. The email text comes from Supabase > Authentication > Email templates >
+  *Reauthentication* (it must include `{{ .Token }}`).
+
 ## Admin accounts
 
 **Admins** (super admins only, `js/admins.js`) lists every admin with their sign-in status, adds and
