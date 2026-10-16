@@ -206,6 +206,24 @@ appears a minute before) and always **12 hours after the email-code sign-in**, h
 Both are checked again whenever the panel is opened, and the login page says why it signed you
 out. The limits are `IDLE_LIMIT_MS` / `MAX_SESSION_MS` in that file.
 
+## Analytics
+
+**Analytics** (`js/analytics.js`) opens with **Live now** (below), then a date range (Today, 7, 30
+or 90 days, in India time; remembered per browser) that controls everything under it:
+
+- **Key numbers.** Visitors (unique browsers), page views, pages per visitor, enquiries (residential
+  + commercial + rental) and conversion (enquiries ÷ visitors). Each shows the change against the
+  previous period of the same length (for Today, yesterday up to the same time) and a trend line.
+- **Traffic.** Page views and visitors per day (per hour for Today), with a hover read-out and a
+  table view.
+- **Top pages, traffic sources** (from the referrer or `utm_source` of each visitor's first page:
+  Google, WhatsApp, Facebook, AI assistants…; keys99.com itself counts as Direct), **devices**,
+  **page types** and **busiest hours**.
+- **Signed-in buyers** and the period's **recent activity**.
+
+Everything is worked out in the browser from `site_visits` rows, fetched 1,000 at a time (up to
+60,000 per view).
+
 ## Live visitors
 
 **Analytics → Live now** and the dashboard's **Live Visitors** tile show who is on keys99.com at
