@@ -16,6 +16,7 @@ import { reportsPage } from './reports.js';
 import { analyticsPage } from './analytics.js';
 import { rentalsPage, pendingRentalCount } from './rentals.js';
 import { signedInWithEmailCode } from './session-check.js';
+import { sessionExpiredReason, startSessionTimeout, clearActivity } from './session-timeout.js';
 import { adminsPage } from './admins.js';
 import { blogPage } from './blog.js';
 import { newsletterPage } from './newsletter.js';
@@ -25,6 +26,7 @@ const $ = s => document.querySelector(s);
 const content = $('#content');
 
 let currentUser = null;
+let currentSession = null;
 let currentRoles = [];
 let isSuperAdmin = false;
 
@@ -49,17 +51,24 @@ async function addProjectFlow(prefill, exitPage) {
 
 /* ---------------- auth guard ---------------- */
 
+// Signs out (never waiting more than 4s on the network) and returns to the login page, which
+// explains why when `reason` is 'idle' (1 hour inactive) or 'max' (12-hour limit).
+async function endSession(reason) {
+  clearActivity();
+  await Promise.race([sb.auth.signOut({ scope: 'local' }).catch(() => {}), new Promise(r => setTimeout(r, 4000))]);
+  location.replace(reason ? `./login.html?signed_out=${reason}` : './login.html');
+}
+
 async function guard() {
   const { data: { session } } = await sb.auth.getSession();
   if (!session) { location.replace('./login.html'); return false; }
   // Admin sign-in ends with the emailed code (login.html); a session from the password alone
   // isn't accepted here.
-  if (!signedInWithEmailCode(session)) {
-    // Don't let a slow sign-out call keep the admin on a blank page.
-    await Promise.race([sb.auth.signOut({ scope: 'local' }).catch(() => {}), new Promise(r => setTimeout(r, 4000))]);
-    location.replace('./login.html');
-    return false;
-  }
+  if (!signedInWithEmailCode(session)) { await endSession(); return false; }
+  // 1 hour idle / 12 hours since sign-in (js/session-timeout.js), checked again on every open.
+  const expired = sessionExpiredReason(session);
+  if (expired) { await endSession(expired); return false; }
+  currentSession = session;
 
   const { data: roles, error } = await sb.from('user_roles').select('role').eq('user_id', session.user.id);
   if (error) { console.error(error); }
@@ -1223,7 +1232,7 @@ document.querySelectorAll('.sb-item[data-page]').forEach(b => b.addEventListener
   if (b.dataset.add === '1') addProjectFlow();
   else navigate(b.dataset.page);
 }));
-$('#logout-btn').addEventListener('click', async () => { await sb.auth.signOut(); location.replace('./login.html'); });
+$('#logout-btn').addEventListener('click', () => endSession());
 $('#menu-btn').addEventListener('click', () => {
   $('#sidebar').classList.toggle('open');
   $('#sidebar-backdrop').classList.toggle('open');
@@ -1365,6 +1374,7 @@ async function loadNotifPanel() {
 /* ---------------- boot ---------------- */
 
 if (await guard()) {
+  startSessionTimeout(currentSession, endSession);
   initGlobalSearch();
   initNotifPanel();
   loadSidebarCounts();

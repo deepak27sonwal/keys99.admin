@@ -839,3 +839,10 @@ tr:last-child td{border-bottom:0}
   .rental-doc{flex-direction:column;align-items:flex-start}
   .rental-review .modal-footer{flex-wrap:wrap}
 }
+
+/* ---------- Session timeout warning (js/session-timeout.js) ---------- */
+.session-warning{position:fixed;left:50%;bottom:24px;transform:translateX(-50%);z-index:1300;display:flex;align-items:center;gap:14px;max-width:calc(100vw - 32px);padding:12px 14px 12px 18px;background:#0a2f2c;color:#fff;border-radius:12px;box-shadow:0 14px 40px rgba(2,20,18,.35);font-size:13px;font-weight:600;animation:session-warning-in .2s ease}
+@keyframes session-warning-in{from{opacity:0}to{opacity:1}}
+.session-warning .btn-primary{flex:none}
+.session-warning .btn-primary[hidden]{display:none}
+@media(max-width:520px){.session-warning{left:16px;right:16px;transform:none;max-width:none;flex-wrap:wrap}}

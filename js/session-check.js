@@ -24,3 +24,11 @@ export function signedInWithEmailCode(session) {
   const amr = tokenClaims(session?.access_token).amr;
   return Array.isArray(amr) && amr.some(a => EMAIL_CODE_METHODS.includes(a && a.method));
 }
+
+// When the email-code sign-in happened (ms since epoch), from the same `amr` claim - the start
+// of the 12-hour maximum in js/session-timeout.js. Refreshing the token keeps this time.
+export function emailCodeSignInTime(session) {
+  const amr = tokenClaims(session?.access_token).amr;
+  const entry = Array.isArray(amr) ? amr.find(a => a && EMAIL_CODE_METHODS.includes(a.method)) : null;
+  return entry && entry.timestamp ? entry.timestamp * 1000 : null;
+}
