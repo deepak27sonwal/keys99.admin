@@ -54,7 +54,12 @@ async function guard() {
   if (!session) { location.replace('./login.html'); return false; }
   // Admin sign-in ends with the emailed code (login.html); a session from the password alone
   // isn't accepted here.
-  if (!signedInWithEmailCode(session)) { await sb.auth.signOut({ scope: 'local' }); location.replace('./login.html'); return false; }
+  if (!signedInWithEmailCode(session)) {
+    // Don't let a slow sign-out call keep the admin on a blank page.
+    await Promise.race([sb.auth.signOut({ scope: 'local' }).catch(() => {}), new Promise(r => setTimeout(r, 4000))]);
+    location.replace('./login.html');
+    return false;
+  }
 
   const { data: roles, error } = await sb.from('user_roles').select('role').eq('user_id', session.user.id);
   if (error) { console.error(error); }
