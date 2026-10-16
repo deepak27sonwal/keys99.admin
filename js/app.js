@@ -15,6 +15,7 @@ import { archivePage } from './archive.js';
 import { reportsPage } from './reports.js';
 import { analyticsPage } from './analytics.js';
 import { rentalsPage, pendingRentalCount } from './rentals.js';
+import { signedInWithEmailCode } from './session-check.js';
 import { adminsPage } from './admins.js';
 import { blogPage } from './blog.js';
 import { newsletterPage } from './newsletter.js';
@@ -51,6 +52,9 @@ async function addProjectFlow(prefill, exitPage) {
 async function guard() {
   const { data: { session } } = await sb.auth.getSession();
   if (!session) { location.replace('./login.html'); return false; }
+  // Admin sign-in ends with the emailed code (login.html); a session from the password alone
+  // isn't accepted here.
+  if (!signedInWithEmailCode(session)) { await sb.auth.signOut({ scope: 'local' }); location.replace('./login.html'); return false; }
 
   const { data: roles, error } = await sb.from('user_roles').select('role').eq('user_id', session.user.id);
   if (error) { console.error(error); }

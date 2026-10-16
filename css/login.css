@@ -319,3 +319,15 @@ blockquote{
    the visitor to tick the box; then it appears centred above the Login button. */
 .login-captcha{display:flex;justify-content:center;margin:4px 0 10px}
 .login-captcha:empty{display:none}
+
+/* Step 2: the emailed sign-in code */
+.otp-form[hidden],.role-switch[hidden]{display:none}
+.otp-intro{margin:0 0 16px;font-size:13.5px;line-height:1.55;color:var(--muted);overflow-wrap:anywhere}
+.otp-intro b{color:var(--ink,#0a2f2c)}
+#otp-code{letter-spacing:.3em;font-weight:700}
+.otp-actions{display:flex;justify-content:space-between;gap:10px;margin-top:12px;flex-wrap:wrap}
+.otp-link{border:0;background:transparent;color:var(--green);font-weight:700;padding:0;font-size:13px;cursor:pointer}
+.otp-link:hover:not(:disabled){text-decoration:underline}
+.otp-link:disabled{color:var(--muted);cursor:default}
+.login-error.show.ok{color:var(--green);background:#e8f4f2;border-color:#cfe7e2}
+#otp-code::placeholder{letter-spacing:normal;font-weight:400}
