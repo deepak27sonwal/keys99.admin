@@ -193,7 +193,9 @@ Two steps (`login.html`): email + password, then a code Supabase emails to the a
 email-code sign-in keys99.com uses; Supabase > Authentication > Email templates sets its text).
 Only the session made by that code is kept — the dashboard (`js/app.js`, via
 `js/session-check.js`) signs out any session whose token wasn't made with an email code. There is
-no "Forgot password" link: a super admin resets passwords from the Supabase dashboard. Both steps
+no "Forgot password" link: a super admin sets a new password from **Admins → 🔑 Change password**
+(for any admin, or for themselves; another super admin's password can only be changed by its owner or
+from the Supabase dashboard). Both steps
 send a Cloudflare Turnstile token (`js/captcha.js`), which Supabase's CAPTCHA protection requires.
 The Supabase client (`js/supabase-client.js`, shared by login.html and the dashboard) uses the
 PKCE flow, as keys99.com does: a sign-in link from the code email returns a one-time `?code=` that
@@ -223,6 +225,16 @@ or 90 days, in India time; remembered per browser) that controls everything unde
 
 Everything is worked out in the browser from `site_visits` rows, fetched 1,000 at a time (up to
 60,000 per view).
+
+## Admin accounts
+
+**Admins** (super admins only, `js/admins.js`) lists every admin with their sign-in status, adds and
+removes admins, and changes passwords. **Change password** (key button) sets a new password for an
+admin, or for the super admin's own account. It needs 8–72 characters with a letter and a number,
+can generate a strong one to copy, and still requires the emailed code to sign in. All of it runs
+through the `manage-admins` Edge Function (`supabase/functions/manage-admins`), which checks the
+caller is a super admin with the service-role key and logs each change in `activity_log`
+(`admin_password_changed`, never the password).
 
 ## Live visitors
 
