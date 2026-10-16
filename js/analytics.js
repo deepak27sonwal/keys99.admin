@@ -1,6 +1,7 @@
 import { sb } from './supabase-client.js';
 import { pageHead, tablePanel, emptyRow, escapeHtml, timeAgo, fmtDate } from './utils.js';
 import { callManageAdmins } from './admins.js';
+import { liveCardHtml, bindLiveCard } from './live-visitors.js';
 
 // Site Analytics: visitor counts, currently-active buyers, and a recent activity feed, built
 // on top of the site_visits / activity_log tables keys99.com writes to (js/track.js there)
@@ -95,7 +96,9 @@ export async function analyticsPage(content) {
   const activityPanel = tablePanel('Recent Activity', '', ['Actor', 'Action', 'Detail', 'When'], activityRows);
 
   content.innerHTML = pageHead('Analytics', 'Visitor traffic, active buyers, and recent activity on keys99.com') +
+    liveCardHtml() +
     cardsHtml +
     `<div class="analytics-grid">${topPagesPanel}${buyersPanel}</div>` +
     activityPanel;
+  bindLiveCard(content);
 }

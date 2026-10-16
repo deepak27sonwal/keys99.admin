@@ -846,3 +846,16 @@ tr:last-child td{border-bottom:0}
 .session-warning .btn-primary{flex:none}
 .session-warning .btn-primary[hidden]{display:none}
 @media(max-width:520px){.session-warning{left:16px;right:16px;transform:none;max-width:none;flex-wrap:wrap}}
+
+/* ---------- Live visitors on keys99.com (js/live-visitors.js) ---------- */
+.live-dot{display:inline-block;width:10px;height:10px;border-radius:50%;background:#9aa8a6;flex:none}
+.is-live .live-dot,.kpi-live .live-dot{background:#16a34a;box-shadow:0 0 0 0 rgba(22,163,74,.5);animation:live-pulse 1.8s ease-out infinite}
+@keyframes live-pulse{0%{box-shadow:0 0 0 0 rgba(22,163,74,.55)}70%{box-shadow:0 0 0 9px rgba(22,163,74,0)}100%{box-shadow:0 0 0 0 rgba(22,163,74,0)}}
+.live-card{margin-bottom:20px}
+.live-head{display:flex;justify-content:space-between;align-items:center;gap:10px 20px;flex-wrap:wrap;padding:16px 18px;border-bottom:1px solid var(--line)}
+.live-count{display:flex;align-items:center;gap:10px;font-size:14px;color:var(--ink-soft)}
+.live-count strong{font-size:26px;line-height:1;color:var(--ink,#0a2f2c)}
+.live-meta{font-size:12.5px;color:var(--muted)}
+.live-path{font-size:11.5px;color:var(--muted);overflow-wrap:anywhere}
+.live-card td a{font-weight:600;color:var(--green);text-decoration:none}
+.live-card td a:hover{text-decoration:underline}

@@ -206,6 +206,18 @@ appears a minute before) and always **12 hours after the email-code sign-in**, h
 Both are checked again whenever the panel is opened, and the login page says why it signed you
 out. The limits are `IDLE_LIMIT_MS` / `MAX_SESSION_MS` in that file.
 
+## Live visitors
+
+**Analytics → Live now** and the dashboard's **Live Visitors** tile show who is on keys99.com at
+this moment and which page each is viewing, updating live (`js/live-visitors.js`). Every open
+keys99.com tab joins the Supabase Realtime channel `keys99-live` with presence (keys99.com
+`js/track.js`) and drops out when it closes, loses its connection, or sits in the background for
+5 minutes; the admin only listens. Nothing is stored in the database. Each tab shares only a
+random visitor id, the page path and title, the page type, the device type and whether someone is
+signed in. It is a public Realtime channel, so the numbers are indicative (anyone with the site's
+public key could listen or add made-up entries); links in the admin only ever point to
+keys99.com paths.
+
 ## Security notes
 
 - **Third-party code.** supabase-js is self-hosted at an exact version

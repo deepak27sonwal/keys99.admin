@@ -15,6 +15,7 @@ import { archivePage } from './archive.js';
 import { reportsPage } from './reports.js';
 import { analyticsPage } from './analytics.js';
 import { rentalsPage, pendingRentalCount } from './rentals.js';
+import { bindLiveTile } from './live-visitors.js';
 import { signedInWithEmailCode } from './session-check.js';
 import { sessionExpiredReason, startSessionTimeout, clearActivity } from './session-timeout.js';
 import { adminsPage } from './admins.js';
@@ -314,6 +315,7 @@ async function dashboardPage() {
     </div>
 
     <div class="kpi-row">
+      <div class="kpi kpi-link kpi-live" data-nav="analytics" id="kpi-live"><span class="kpi-icon green"><span class="live-dot" aria-hidden="true"></span></span><div class="value">–</div><div class="label">Live Visitors</div><div class="trend"><span>Connecting…</span></div></div>
       <div class="kpi kpi-link" data-nav="residential"><span class="kpi-icon green">${icon('home', 17)}</span><div class="value">${residentialTotal}</div><div class="label">Residential Projects</div><div class="trend"><span>All time</span></div></div>
       <div class="kpi kpi-link" data-nav="commercial"><span class="kpi-icon blue">${icon('building', 17)}</span><div class="value">${commercialTotal}</div><div class="label">Commercial Projects</div><div class="trend"><span>All time</span></div></div>
       <div class="kpi kpi-link" data-nav="developers"><span class="kpi-icon teal">${icon('developer', 17)}</span><div class="value">${developersTotal}</div><div class="label">Developers</div><div class="trend"><span>All time</span></div></div>
@@ -422,6 +424,7 @@ async function dashboardPage() {
   bindThumbFallbacks(content);
   enhanceSelects(content);
   content.querySelectorAll('[data-nav]').forEach(b => b.addEventListener('click', () => navigate(b.dataset.nav, { filter: b.dataset.filter })));
+  bindLiveTile(content.querySelector('#kpi-live'));
   content.querySelectorAll('.dash-tab').forEach(btn => btn.addEventListener('click', () => {
     const tab = btn.dataset.tab;
     content.querySelectorAll('.dash-tab').forEach(b => b.classList.toggle('active', b === btn));
