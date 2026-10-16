@@ -331,3 +331,7 @@ blockquote{
 .otp-link:disabled{color:var(--muted);cursor:default}
 .login-error.show.ok{color:var(--green);background:#e8f4f2;border-color:#cfe7e2}
 #otp-code::placeholder{letter-spacing:normal;font-weight:400}
+
+/* Breathing room between the last field and the Login / Verify button (the old "Remember me"
+   row used to provide it). */
+#login-form .login-submit,#otp-form .login-submit{margin-top:26px}
