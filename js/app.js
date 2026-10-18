@@ -7,7 +7,7 @@ import { attachListFilters, dateRangeOptions } from './list-filters.js';
 import { openEntityForm, confirmDeleteEntity } from './entity-form.js';
 import { enhanceSelects } from './custom-select.js';
 import {
-  escapeHtml, pill, fmtPrice, fmtDate, timeAgo, count, initials,
+  escapeHtml, pill, fmtPrice, fmtDate, fmtTime, fmtDateTime, timeAgo, count, initials,
   pageHead, tablePanel, emptyRow, icon, rowActions, bindStubs, toast, customConfirm,
   confirmArchiveProject, chooseProjectKind, safeUrl
 } from './utils.js';
@@ -403,13 +403,13 @@ async function dashboardPage() {
         <div class="panel dash-tab-panel" data-tab-panel="enquiries">
           <div class="panel-head"><h2>Recent Enquiries</h2><button class="panel-link" data-nav="enquiries">View All →</button></div>
           <div class="table-wrap"><table>
-            <thead><tr><th>Name</th><th>Phone</th><th>Project</th><th>Type</th><th>Date</th><th>Status</th><th>Actions</th></tr></thead>
+            <thead><tr><th>Name</th><th>Phone</th><th>Project</th><th>Type</th><th>Received</th><th>Status</th><th>Actions</th></tr></thead>
             <tbody>${(recentEnquiries.data || []).length ? recentEnquiries.data.map(e => `
               <tr>
                 <td>${escapeHtml(e.contact_person)}</td><td>${escapeHtml(e.phone)}</td>
                 <td>${escapeHtml(e.project?.project_name || '—')}</td>
                 <td>${escapeHtml((e.enquiry_type || '—').replace(/_/g, ' '))}</td>
-                <td>${fmtDate(e.created_at)}</td><td>${pill(e.status)}</td>
+                <td class="enq-when"><span>${fmtDate(e.created_at)}</span><small>${escapeHtml(fmtTime(e.created_at))}</small></td><td>${pill(e.status)}</td>
                 <td><button class="icon-btn" data-stub="view">${icon('eye', 13)}</button></td>
               </tr>`).join('') : emptyRow(7, 'No enquiries yet.')}
             </tbody>
@@ -839,13 +839,13 @@ async function enquiriesPage(openId) {
         <td>${escapeHtml(e.project?.project_name || '—')}</td>
         <td>${kindPill(e._kind)}</td>
         <td>${escapeHtml(e.agents?.full_name || 'Unassigned')}</td>
-        <td>${fmtDate(e.created_at)}</td>
+        <td class="enq-when"><span>${fmtDate(e.created_at)}</span><small>${escapeHtml(fmtTime(e.created_at))}</small></td>
         <td>${pill(e.status)}</td>
         <td><button type="button" class="icon-btn" data-view-enquiry="${e.id}">${icon('eye', 13)}</button></td>
       </tr>`).join('') : emptyRow(8, 'No enquiries yet.'));
 
   content.innerHTML = pageHead('Enquiries', 'Residential and commercial project leads') +
-    tablePanel('All Enquiries', '', ['Name', 'Phone', 'Project', 'Type', 'Assigned', 'Date', 'Status', 'Actions'], rows);
+    tablePanel('All Enquiries', '', ['Name', 'Phone', 'Project', 'Type', 'Assigned', 'Received', 'Status', 'Actions'], rows);
 
   if (!error) attachListFilters({
     panel: content.querySelector('.panel'), items: data, rows: [...content.querySelectorAll('tbody tr')],
@@ -889,7 +889,7 @@ function viewEnquiry(e, agentsList, onSaved) {
           <div><b>Preferred Contact</b><div>${escapeHtml((e.preferred_contact_method || '—').replace(/_/g, ' '))}</div></div>
           <div><b>Preferred Visit Date</b><div>${fmtDate(e.preferred_visit_date)}</div></div>
           <div><b>Source</b><div>${escapeHtml(e.source || '—')}</div></div>
-          <div><b>Received</b><div>${fmtDate(e.created_at)}</div></div>
+          <div><b>Received</b><div>${escapeHtml(fmtDateTime(e.created_at))} <span class="hint">(${escapeHtml(timeAgo(e.created_at))})</span></div></div>
         </div>
         ${e.message ? `<div class="field full" style="margin-bottom:16px"><label>Message</label><p class="confirm-message" style="background:var(--bg);padding:10px 12px;border-radius:9px">${escapeHtml(e.message)}</p></div>` : ''}
         <div class="form-grid">

@@ -1,5 +1,5 @@
 import { sb } from './supabase-client.js';
-import { pageHead, tablePanel, emptyRow, escapeHtml, fmtPrice, fmtDate, pill, toast } from './utils.js';
+import { pageHead, tablePanel, emptyRow, escapeHtml, fmtPrice, fmtDate, fmtTime, fmtDateTime, pill, toast } from './utils.js';
 import { KIND_KEYS, projectKind, queryAllKinds, localityEmbed, kindPill } from './project-kinds.js';
 
 // The Reports section of the sidebar. Each report loads its own data, renders summary
@@ -117,14 +117,14 @@ async function loadEnquiriesReport() {
     { label: 'Conversion Rate', value: rows.length ? Math.round(converted / rows.length * 100) + '%' : '0%' }
   ];
 
-  const headers = ['Contact', 'Phone', 'Email', 'Project', 'Kind', 'Type', 'Source', 'Status', 'Date'];
+  const headers = ['Contact', 'Phone', 'Email', 'Project', 'Kind', 'Type', 'Source', 'Status', 'Received'];
   const exportRows = rows.map(e => [
-    e.contact_person, e.phone, e.email || '', e.project?.project_name || '', typeLabel(e._kind), e.enquiry_type || '', e.source || '', e.status || '', fmtDate(e.created_at)
+    e.contact_person, e.phone, e.email || '', e.project?.project_name || '', typeLabel(e._kind), e.enquiry_type || '', e.source || '', e.status || '', fmtDateTime(e.created_at)
   ]);
   const rowsHtml = rows.map(e => `<tr>
     <td>${escapeHtml(e.contact_person)}</td><td>${escapeHtml(e.phone)}</td><td>${escapeHtml(e.email || '—')}</td>
     <td>${escapeHtml(e.project?.project_name || '—')}</td><td>${kindPill(e._kind)}</td><td>${escapeHtml((e.enquiry_type || '—').replace(/_/g, ' '))}</td>
-    <td>${escapeHtml(e.source || '—')}</td><td>${pill(e.status)}</td><td>${fmtDate(e.created_at)}</td>
+    <td>${escapeHtml(e.source || '—')}</td><td>${pill(e.status)}</td><td class="enq-when"><span>${fmtDate(e.created_at)}</span><small>${escapeHtml(fmtTime(e.created_at))}</small></td>
   </tr>`);
 
   return { cards, headers, exportRows, rowsHtml, emptyText: 'No enquiries yet.' };
