@@ -208,29 +208,6 @@ appears a minute before) and always **12 hours after the email-code sign-in**, h
 Both are checked again whenever the panel is opened, and the login page says why it signed you
 out. The limits are `IDLE_LIMIT_MS` / `MAX_SESSION_MS` in that file.
 
-## Dashboard
-
-The **Dashboard** (`js/dashboard.js`) is the short view; trends live on Analytics. From top to bottom:
-
-- Quick actions: **Review queue** and **Add Project**.
-- **Needs attention:** the moderation queue, new enquiries, rentals waiting for approval and draft
-  projects. Each card opens the matching page and shows "✓ All clear" at zero.
-- **Key numbers:**
-  - live visitors;
-  - visitors today vs yesterday up to the same time (India time);
-  - enquiries this week vs last week, across residential, commercial and rental;
-  - published listings, with how many were published this month;
-  - live rentals, with how many are pending.
-- **Listings overview:** live residential vs commercial projects over a chosen period (Today …
-  Last 5 Years, remembered per browser), with a hover read-out and a table view, beside **listings
-  by status** (Published, In review, Changes required, Draft) as one bar.
-- **Enquiries per day** for 30 days.
-- **Recent enquiries** (name, phone to tap and call, project or listing, type, when, status, and a
-  button that opens the enquiry) and **recent projects** (type, location, starting price, construction
-  status, moderation, ★ featured badge, and Edit / View / Archive), then **recent activity** and a strip of catalogue counts (developers, agents, managers, cities, localities).
-
-Shared chart helpers are in `js/charts.js`.
-
 ## Analytics
 
 **Analytics** (`js/analytics.js`) opens with **Live now** (below), then a date range (Today, 7, 30
