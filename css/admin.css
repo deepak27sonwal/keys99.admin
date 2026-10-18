@@ -991,3 +991,8 @@ tr:last-child td{border-bottom:0}
 .pf-steps li.is-done::before{content:"✓";background:#e7f6e7;border-color:#0ca30c;color:#0a7f0a}
 @media(max-width:860px){.pf-grid{grid-template-columns:1fr}}
 @media(max-width:600px){.pf-card{padding:18px 16px;gap:14px}.pf-avatar{width:52px;height:52px;font-size:18px}.pf-body{padding:16px}.pf-actions .btn-primary{flex:1;justify-content:center}}
+
+/* Enquiry "Received" cell: date with the time underneath (India time). */
+.enq-when{white-space:nowrap}
+.enq-when span{display:block}
+.enq-when small{display:block;font-size:11px;color:var(--muted);margin-top:1px}
