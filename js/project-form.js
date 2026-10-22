@@ -44,19 +44,6 @@ let state, projectId, stepIndex, isEdit;
 let originalModerationStatus = null;
 let lookups = { developers: [], cities: [], localities: [], agents: [], relationshipManagers: [], projects: [], presets: null, settings: null };
 let touched = false;
-// Auto-save (the header switch, remembered per browser): a few seconds after you stop editing,
-// every step you changed (dirtySteps) is saved, exactly as Update would. Saves never overlap:
-// Next / Update wait for one in progress, so child rows can't be inserted twice.
-const AUTOSAVE_KEY = 'k99-project-autosave';
-const AUTOSAVE_DELAY_MS = 3000;
-let dirtySteps = new Set();
-let dirtyVersion = 0;
-let autosaveTimer = null;
-let savePromise = null;
-let saveState = 'idle';        // idle | saving | error
-let saveErrorText = '';
-let lastSavedAt = null;
-let quietErrors = false;       // while auto-saving, errors go to the status line, not toasts
 let historyPushCount = 0;
 let intentionalExit = false;
 
@@ -309,11 +296,6 @@ export async function openProjectForm(rootEl, user, existingId, exitCb, prefill,
   isEdit = !!existingId;
   stepIndex = 1;
   touched = false;
-  dirtySteps = new Set();
-  clearTimeout(autosaveTimer);
-  savePromise = null;
-  saveState = 'idle';
-  lastSavedAt = null;
   historyPushCount = 0;
   intentionalExit = false;
   wizardOpen = true;
@@ -476,11 +458,6 @@ function renderShell() {
         <div><h1>${isEdit ? 'Edit' : 'Add'} ${K.label} Project</h1><p id="pf-step-label">Step ${stepIndex} of ${TOTAL_STEPS} · ${K.stepNames[stepIndex - 1]}</p></div>
       </div>
       <div class="form-head-right">
-        <span class="pf-save-status" id="pf-save-status" role="status" aria-live="polite"></span>
-        <label class="pf-autosave" title="Saves your changes automatically a few seconds after you stop editing">
-          <input type="checkbox" id="pf-autosave" role="switch"${autosaveEnabled() ? ' checked' : ''}>
-          <span class="pf-switch" aria-hidden="true"></span><span class="pf-autosave-text">Auto-save</span>
-        </label>
         <button type="button" class="pf-save-btn" id="pf-save-draft">
           <svg class="pf-save-icon" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M5 3h11l3 3v13a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2z"/><path d="M8 3v5h7V3"/><rect x="8" y="13" width="8" height="6" rx="1"/></svg>
           <span class="pf-save-label">${isEdit ? 'Update' : 'Save as Draft'}</span>
@@ -506,13 +483,6 @@ function renderShell() {
 
   $('#pf-close').addEventListener('click', () => history.back());
   $('#pf-save-draft').addEventListener('click', () => saveCurrentAndDraft());
-  $('#pf-autosave').addEventListener('change', e => {
-    try { localStorage.setItem(AUTOSAVE_KEY, e.target.checked ? 'on' : 'off'); } catch (_) {}
-    if (e.target.checked && dirtySteps.size) scheduleAutosave(400);
-    else clearTimeout(autosaveTimer);
-    updateSaveStatus();
-  });
-  updateSaveStatus();
   $('#pf-back').addEventListener('click', goBack);
   $('#pf-next').addEventListener('click', goNext);
   content.addEventListener('input', onFieldInput);
@@ -709,7 +679,7 @@ function onFieldChange(e) {
   else applyBind(el);
 }
 function applyBind(el) {
-  markDirty();
+  touched = true;
   const path = el.dataset.bind;
   let value;
   if (el.type === 'checkbox') value = el.checked;
@@ -761,12 +731,12 @@ function removeUploadedFile(key) {
     setPath(state, key + '_size', null);
   }
   deleteStorageFile(bucket, path);
-  markDirty();
+  touched = true;
   renderStepBody();
 }
 
 function addRepeatItem(key, arg) {
-  markDirty();
+  touched = true;
   const arr = getPath(state, key) || [];
   let item;
   if (key === 'amenities') item = DEFAULTS.amenity(arg, '');
@@ -782,7 +752,7 @@ function addRepeatItem(key, arg) {
   renderStepBody();
 }
 function removeRepeatItem(key, idx) {
-  markDirty();
+  touched = true;
   const arr = getPath(state, key) || [];
   const item = arr[idx];
   // Deleting the whole row (not just clearing its upload slot) still needs to release
@@ -803,13 +773,13 @@ function addChipValue(path, inputId) {
   const arr = getPath(state, path) || [];
   arr.push(v);
   setPath(state, path, arr);
-  markDirty();
+  touched = true;
   renderStepBody();
 }
 function removeChipValue(path, idx) {
   const arr = getPath(state, path) || [];
   arr.splice(idx, 1);
-  markDirty();
+  touched = true;
   renderStepBody();
 }
 
@@ -1090,8 +1060,8 @@ function renderSeo() {
   // Blank title/description get a suggestion built from the project's data; anything already
   // written (typed or previously suggested) is left alone — "Regenerate" replaces it on request.
   const suggestion = seoSuggestion();
-  if (!tidy(state.project.seo_title) && suggestion.title) { state.project.seo_title = suggestion.title; markDirty(); }
-  if (!tidy(state.project.seo_description) && suggestion.description) { state.project.seo_description = suggestion.description; markDirty(); }
+  if (!tidy(state.project.seo_title) && suggestion.title) { state.project.seo_title = suggestion.title; touched = true; }
+  if (!tidy(state.project.seo_description) && suggestion.description) { state.project.seo_description = suggestion.description; touched = true; }
 
   const p = state.project;
   const field = s => renderField(s, p[s.key], `data-bind="project.${s.key}"`);
@@ -2003,8 +1973,6 @@ function friendlyDbError(message) {
 
 async function goNext() {
   handleSpecialBindings();
-  clearTimeout(autosaveTimer);
-  if (savePromise) await savePromise.catch(() => {});
   const specs = stepFieldSpecs(stepIndex);
   if (specs) {
     const missing = validateFields(specs, state.project);
@@ -2031,12 +1999,6 @@ async function goNext() {
   try {
     const ok = await persistStep(stepIndex);
     if (!ok) return;
-    // persistStep() saved this step and the project row (steps 1-3 live on it).
-    if (stepIndex >= FIRST_SAVE_AFTER_STEP) {
-      [...dirtySteps].forEach(s => { if (s === stepIndex || s < FIRST_SAVE_AFTER_STEP) dirtySteps.delete(s); });
-      if (!dirtySteps.size) { touched = false; lastSavedAt = Date.now(); }
-      updateSaveStatus();
-    }
   } catch (e) {
     // Without this, an unexpected error here (a thrown exception rather than a returned
     // {error} — a network drop mid-request, a bug) left the wizard stuck on the current
@@ -2093,7 +2055,7 @@ function handleSpecialBindings() {
       const idx = arr.indexOf(val);
       if (idx >= 0) arr.splice(idx, 1); else arr.push(val);
       state.configurations[i].parking_type = arr;
-      markDirty();
+      touched = true;
       renderStepBody();
     };
   });
@@ -2101,7 +2063,7 @@ function handleSpecialBindings() {
     el.onclick = () => {
       const i = Number(el.dataset.setBhktype);
       state.configurations[i][K.unitKey] = el.dataset.val;
-      markDirty();
+      touched = true;
       renderStepBody();
     };
   });
@@ -2112,7 +2074,7 @@ function handleSpecialBindings() {
       const val = (input?.value || '').trim();
       if (!val) return;
       state.configurations[i][K.unitKey] = val;
-      markDirty();
+      touched = true;
       renderStepBody();
     };
   });
@@ -2123,14 +2085,14 @@ function handleSpecialBindings() {
       const idx = arr.indexOf(val);
       if (idx >= 0) arr.splice(idx, 1); else arr.push(val);
       setPath(state, path, arr);
-      markDirty();
+      touched = true;
       renderStepBody();
     };
   });
   content.querySelectorAll('[data-toggle-spec-chip]').forEach(el => {
     el.onclick = () => {
       toggleSpecChip(el.dataset.toggleSpecChip, el.dataset.val);
-      markDirty();
+      touched = true;
       renderStepBody();
     };
   });
@@ -2140,7 +2102,7 @@ function handleSpecialBindings() {
       const idx = state.amenities.findIndex(a => a.category === category && a.amenity_name === name);
       if (idx >= 0) state.amenities.splice(idx, 1);
       else state.amenities.push(DEFAULTS.amenity(category, name));
-      markDirty();
+      touched = true;
       renderStepBody();
     };
   });
@@ -2151,7 +2113,7 @@ function handleSpecialBindings() {
       const name = (input?.value || '').trim();
       if (!name) return;
       state.amenities.push(DEFAULTS.amenity(category, name));
-      markDirty();
+      touched = true;
       renderStepBody();
     };
   });
@@ -2160,7 +2122,7 @@ function handleSpecialBindings() {
       const idx = Number(el.dataset.removeGallery);
       deleteStorageFile(K.buckets.media, state.media.gallery[idx]?.media_path);
       state.media.gallery.splice(idx, 1);
-      markDirty();
+      touched = true;
       renderStepBody();
     };
   });
@@ -2173,7 +2135,7 @@ function handleSpecialBindings() {
       if (!next || next === current) { toast('Already matches the suggestion'); return; }
       if (current && !confirm(`Replace the current ${which} with a suggestion built from this project's details?\n\n${next}`)) return;
       state.project[key] = next;
-      markDirty();
+      touched = true;
       renderStepBody();
     };
   });
@@ -2205,7 +2167,7 @@ function handleSpecialBindings() {
       if (!plan || !cfg) return;
       plan.config_key = cfg._k;
       plan.bhk_type = cfg.bhk_type;
-      markDirty();
+      touched = true;
       renderStepBody();
     };
   });
@@ -2214,7 +2176,7 @@ function handleSpecialBindings() {
       const idx = Number(el.dataset.removeFloorplan);
       deleteStorageFile(K.buckets.media, state.floorPlans[idx]?.image_path);
       state.floorPlans.splice(idx, 1);
-      markDirty();
+      touched = true;
       renderStepBody();
     };
   });
@@ -2331,7 +2293,7 @@ async function handleUpload(file, bucket, folder, key, cb) {
   delete uploads[key];
   const url = bucket === K.buckets.docs ? null : sb.storage.from(bucket).getPublicUrl(path).data.publicUrl;
   cb({ media_path: path, media_url: url, file_name: file.name, file_size: file.size });
-  markDirty();
+  touched = true;
   renderStepBody();
   toast(`Uploaded${note}`);
 }
@@ -2478,7 +2440,7 @@ async function persistStep(i) {
   if (i < FIRST_SAVE_AFTER_STEP) return true;
 
   const { error: coreErr } = await saveProjectCore();
-  if (coreErr) { reportSaveError(friendlyDbError(coreErr)); return false; }
+  if (coreErr) { toast(friendlyDbError(coreErr), true); return false; }
 
   const T = K.tables;
   try {
@@ -2563,7 +2525,7 @@ async function persistStep(i) {
       if (err) throw new Error(err);
     }
   } catch (e) {
-    reportSaveError(friendlyDbError(e.message));
+    toast(friendlyDbError(e.message), true);
     return false;
   }
   return true;
@@ -2591,128 +2553,37 @@ function mediaRows() {
 
 async function saveCurrentAndDraft() {
   handleSpecialBindings();
-  clearTimeout(autosaveTimer);
+  const priceError = validateConfigPriceRange();
+  if (priceError) { toast(priceError, true); return; }
   const btn = $('#pf-save-draft');
   btn.disabled = true;
   btn.classList.add('is-saving');
-  let result;
+  let saved = false;
   try {
-    result = await saveDirty(false);
+    if (stepIndex < FIRST_SAVE_AFTER_STEP && !projectId) {
+      toast('Fill Basic Info, Location and Status & Construction to save — kept locally for now.');
+    } else if (stepIndex < FIRST_SAVE_AFTER_STEP) {
+      // Steps 1-3 of an existing project are the project row itself.
+      const { error } = await saveProjectCore();
+      if (error) toast(friendlyDbError(error), true); else saved = true;
+    } else {
+      // persistStep() already calls saveProjectCore() internally for any step from
+      // FIRST_SAVE_AFTER_STEP onward — calling it again here duplicated every draft save
+      // (harmless on its own, since the second call just re-updates the row it just created/
+      // updated, but it doubled the network round trips and made a slow connection or a
+      // transient error twice as likely to hit right on this step).
+      saved = (await persistStep(stepIndex)) !== false;
+    }
   } finally {
     btn.disabled = false;
     btn.classList.remove('is-saving');
   }
-  if (result === 'not-yet') {
-    toast('Fill Basic Info, Location and Status & Construction to save — kept locally for now.');
-  } else if (result === true) {
+  if (saved) {
     toast(isEdit ? 'Updated' : 'Saved as draft');
     btn.classList.add('is-saved');
     setTimeout(() => btn.classList.remove('is-saved'), 1600);
     renderStepBody();
   }
-}
-
-/* ============ auto-save ============ */
-
-function autosaveEnabled() {
-  try { return localStorage.getItem(AUTOSAVE_KEY) === 'on'; } catch (_) { return false; }
-}
-
-function markDirty() {
-  touched = true;
-  dirtySteps.add(stepIndex);
-  dirtyVersion += 1;
-  if (saveState === 'error') saveState = 'idle';
-  scheduleAutosave();
-  updateSaveStatus();
-}
-
-function scheduleAutosave(delay = AUTOSAVE_DELAY_MS) {
-  clearTimeout(autosaveTimer);
-  if (!autosaveEnabled() || !dirtySteps.size) return;
-  autosaveTimer = setTimeout(() => {
-    if (!wizardOpen || !$('#pf-save-draft')) return;
-    saveDirty(true);
-  }, delay);
-}
-
-function reportSaveError(msg) {
-  if (quietErrors) saveErrorText = msg;
-  else toast(msg, true);
-}
-
-// Saves every changed step (manual Update also always saves the step on screen). Returns true,
-// false (an error was shown), or 'not-yet' (a new project before Status & Construction, which
-// can't be saved until its core details exist).
-function saveDirty(auto) {
-  if (savePromise) return savePromise.then(() => saveDirty(auto));
-  savePromise = (async () => {
-    const steps = [...dirtySteps];
-    if (!auto && !steps.includes(stepIndex)) steps.push(stepIndex);
-    if (!steps.length) return true;
-    if (!projectId && Math.max(...steps) < FIRST_SAVE_AFTER_STEP) return 'not-yet';
-    const priceError = validateConfigPriceRange();
-    if (priceError) {
-      if (auto) { saveState = 'error'; saveErrorText = priceError; } else toast(priceError, true);
-      return false;
-    }
-    const version = dirtyVersion;
-    quietErrors = auto;
-    saveErrorText = '';
-    saveState = 'saving';
-    updateSaveStatus();
-    let ok = true;
-    try {
-      // Steps 1-3 have no rows of their own — they're the project row, which persistStep()
-      // saves first for any later step.
-      const rowSteps = steps.filter(n => n >= FIRST_SAVE_AFTER_STEP).sort((x, y) => x - y);
-      if (!rowSteps.length) {
-        const { error } = await saveProjectCore();
-        if (error) { reportSaveError(friendlyDbError(error)); ok = false; }
-      }
-      for (const n of rowSteps) {
-        if (!(await persistStep(n))) { ok = false; break; }
-      }
-    } catch (e) {
-      reportSaveError(friendlyDbError(e.message) || 'Could not save — please try again.');
-      ok = false;
-    } finally {
-      quietErrors = false;
-    }
-    if (ok) {
-      lastSavedAt = Date.now();
-      saveState = 'idle';
-      // Anything typed while this save ran stays dirty for the next one.
-      if (dirtyVersion === version) { dirtySteps.clear(); touched = false; }
-    } else {
-      saveState = 'error';
-      if (!saveErrorText) saveErrorText = 'Could not save';
-    }
-    return ok;
-  })().finally(() => {
-    savePromise = null;
-    updateSaveStatus();
-    if (saveState !== 'error') scheduleAutosave();
-  });
-  return savePromise;
-}
-
-function updateSaveStatus() {
-  const el = $('#pf-save-status');
-  if (!el) return;
-  const on = autosaveEnabled();
-  const time = lastSavedAt ? new Date(lastSavedAt).toLocaleTimeString('en-IN', { hour: 'numeric', minute: '2-digit', timeZone: 'Asia/Kolkata' }) : '';
-  let text = '', cls = '';
-  if (saveState === 'saving') { text = 'Saving…'; cls = 'saving'; }
-  else if (saveState === 'error') { text = `Not saved: ${saveErrorText}`; cls = 'error'; }
-  else if (dirtySteps.size) {
-    if (on && !projectId && Math.max(...dirtySteps) < FIRST_SAVE_AFTER_STEP) { text = 'Auto-save starts after Status & Construction'; cls = 'muted'; }
-    else { text = on ? 'Unsaved changes — saving shortly' : 'Unsaved changes'; cls = 'dirty'; }
-  }
-  else if (time) { text = `${on ? 'All changes saved' : 'Saved'} · ${time}`; cls = 'saved'; }
-  el.textContent = text;
-  el.title = text;
-  el.className = `pf-save-status ${cls}`;
 }
 
 async function submitForVerification() {
@@ -2789,7 +2660,6 @@ function showSubmitSuccess() {
 // history entry the wizard pushed in one go, so the back button lands on whatever page
 // was open before the wizard, not back inside the now-submitted form.
 function closeForm() {
-  clearTimeout(autosaveTimer);
   if (!historyPushCount) {
     content.removeEventListener('input', onFieldInput);
     content.removeEventListener('change', onFieldChange);

@@ -98,15 +98,6 @@ Authentication → role check → dashboard → residential project management �
 
 The residential project editor is being built around the finalized 20-section posting specification. Child records are stored in their dedicated tables rather than flattened into one JSON field.
 
-## Saving projects
-
-The project wizard's header has the **Update** (or **Save as Draft**) button, an **Auto-save** switch
-and a save status ("Unsaved changes", "Saving…", "All changes saved · 3:42 pm", or why a save failed).
-With Auto-save on (remembered per browser, off by default) every step you changed is saved three
-seconds after you stop editing, the same way Update saves it. Saves never overlap: Next and Update
-wait for an auto-save in progress. A new project can't be saved until Basic Info, Location and Status
-& Construction are filled in, so auto-save starts after that.
-
 ## Rendering blog posts (public site)
 
 Blog posts (`residential_project_blogs` / `commercial_project_blogs`) are written in a
