@@ -996,3 +996,16 @@ tr:last-child td{border-bottom:0}
 .enq-when{white-space:nowrap}
 .enq-when span{display:block}
 .enq-when small{display:block;font-size:11px;color:var(--muted);margin-top:1px}
+
+/* ---------- Project form: Update / Save as Draft button ---------- */
+.pf-save-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-width:132px;padding:10px 20px;border:0;border-radius:11px;font:inherit;font-size:13.5px;font-weight:700;letter-spacing:.2px;color:#fff;cursor:pointer;
+  background:linear-gradient(135deg,#0a8a78 0%,var(--green) 45%,var(--green-dark) 100%);box-shadow:0 6px 16px rgba(4,107,94,.28),inset 0 1px 0 rgba(255,255,255,.18);transition:transform .15s,box-shadow .15s,filter .15s}
+.pf-save-btn:hover{transform:translateY(-1px);box-shadow:0 10px 22px rgba(4,107,94,.34),inset 0 1px 0 rgba(255,255,255,.2);filter:brightness(1.05)}
+.pf-save-btn:active{transform:translateY(0);box-shadow:0 3px 10px rgba(4,107,94,.3)}
+.pf-save-btn:focus-visible{outline:3px solid rgba(240,171,28,.65);outline-offset:2px}
+.pf-save-btn:disabled{cursor:progress;filter:saturate(.7);transform:none}
+.pf-save-btn.is-saving .pf-save-icon{animation:pf-spin .9s linear infinite;border:2px solid rgba(255,255,255,.35);border-top-color:#fff;border-radius:50%;width:14px;height:14px}
+.pf-save-btn.is-saving .pf-save-icon path,.pf-save-btn.is-saving .pf-save-icon rect{display:none}
+.pf-save-btn.is-saved{background:linear-gradient(135deg,#12a36a,#0a7f4f)}
+@keyframes pf-spin{to{transform:rotate(360deg)}}
+@media(max-width:860px){.form-head-right .pf-save-btn{flex:1}}
