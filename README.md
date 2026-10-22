@@ -81,6 +81,11 @@ the same 18-step skeleton with a per-kind config.
 
 All current public tables have RLS enabled.
 
+Each residential BHK configuration can be marked **Price on request** (Step 5). Its prices are then
+hidden in the form and saved as empty, `residential_configurations.price_on_request` is true, and the
+project's price range comes only from the priced configurations. If every configuration is on
+request, the project's own `price_on_request` is saved as true too.
+
 `carpet_area` in `residential_configurations` and `commercial_units` is **text**: either a
 single size (`"720"`) or a range of two sizes (`"650-720"`), always written with a plain
 hyphen and no spaces or units (a check constraint enforces the format). The public site
