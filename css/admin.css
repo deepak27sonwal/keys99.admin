@@ -996,3 +996,41 @@ tr:last-child td{border-bottom:0}
 .enq-when{white-space:nowrap}
 .enq-when span{display:block}
 .enq-when small{display:block;font-size:11px;color:var(--muted);margin-top:1px}
+
+/* ---------- Project form: Update / Save button, Auto-save switch, save status ---------- */
+.form-head-right{flex-wrap:wrap;justify-content:flex-end}
+.pf-save-btn{display:inline-flex;align-items:center;justify-content:center;gap:8px;min-width:132px;padding:10px 20px;border:0;border-radius:11px;font:inherit;font-size:13.5px;font-weight:700;letter-spacing:.2px;color:#fff;cursor:pointer;
+  background:linear-gradient(135deg,#0a8a78 0%,var(--green) 45%,var(--green-dark) 100%);box-shadow:0 6px 16px rgba(4,107,94,.28),inset 0 1px 0 rgba(255,255,255,.18);transition:transform .15s,box-shadow .15s,filter .15s}
+.pf-save-btn:hover{transform:translateY(-1px);box-shadow:0 10px 22px rgba(4,107,94,.34),inset 0 1px 0 rgba(255,255,255,.2);filter:brightness(1.05)}
+.pf-save-btn:active{transform:translateY(0);box-shadow:0 3px 10px rgba(4,107,94,.3)}
+.pf-save-btn:focus-visible{outline:3px solid rgba(240,171,28,.65);outline-offset:2px}
+.pf-save-btn:disabled{cursor:progress;filter:saturate(.7);transform:none}
+.pf-save-btn.is-saving .pf-save-icon{animation:pf-spin .9s linear infinite}
+.pf-save-btn.is-saving .pf-save-icon path,.pf-save-btn.is-saving .pf-save-icon rect{display:none}
+.pf-save-btn.is-saving .pf-save-icon{border:2px solid rgba(255,255,255,.35);border-top-color:#fff;border-radius:50%;width:14px;height:14px}
+.pf-save-btn.is-saved{background:linear-gradient(135deg,#12a36a,#0a7f4f)}
+@keyframes pf-spin{to{transform:rotate(360deg)}}
+
+.pf-autosave{display:inline-flex;align-items:center;gap:8px;padding:7px 12px 7px 8px;border:1px solid var(--line);border-radius:999px;background:var(--white);font-size:12.5px;font-weight:700;color:var(--ink-soft);cursor:pointer;user-select:none;white-space:nowrap}
+.pf-autosave:hover{border-color:var(--green)}
+.pf-autosave input{position:absolute;opacity:0;width:1px;height:1px;pointer-events:none}
+.pf-switch{position:relative;width:34px;height:20px;border-radius:999px;background:#c9d6d4;transition:background .18s;flex:none}
+.pf-switch::after{content:"";position:absolute;top:2px;left:2px;width:16px;height:16px;border-radius:50%;background:#fff;box-shadow:0 1px 3px rgba(0,0,0,.25);transition:transform .18s}
+.pf-autosave input:checked+.pf-switch{background:var(--green)}
+.pf-autosave input:checked+.pf-switch::after{transform:translateX(14px)}
+.pf-autosave input:focus-visible+.pf-switch{outline:2px solid var(--green);outline-offset:2px}
+.pf-autosave input:checked~.pf-autosave-text{color:var(--green)}
+
+.pf-save-status{font-size:12px;font-weight:600;color:var(--muted);max-width:260px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.pf-save-status:empty{display:none}
+.pf-save-status.saving{color:var(--ink-soft)}
+.pf-save-status.saved{color:#0a7f0a}
+.pf-save-status.saved::before{content:"✓ "}
+.pf-save-status.dirty{color:#9a6a06}
+.pf-save-status.dirty::before{content:"● ";font-size:9px;vertical-align:1px}
+.pf-save-status.error{color:#c23030}
+@media(max-width:600px){
+  .form-head-right{justify-content:space-between}
+  .form-head-right .pf-save-btn{flex:1 1 auto}
+  .pf-save-status{order:3;flex-basis:100%;max-width:none;white-space:normal}
+}
