@@ -535,9 +535,14 @@ function renderStepBody() {
 
 /* ============ generic field rendering ============ */
 
+// A spec's `req` and `hint` may be functions of the item (e.g. a configuration's Starting
+// Price is only required when it isn't "Price on request").
+const isRequired = (spec, item) => (typeof spec.req === 'function' ? spec.req(item || {}) : !!spec.req);
+
 function renderField(spec, value, attr, item) {
-  const req = spec.req ? '<span class="req">*</span>' : '';
-  const hint = spec.hint ? `<span class="hint">${esc(spec.hint)}</span>` : '';
+  const req = isRequired(spec, item) ? '<span class="req">*</span>' : '';
+  const hintText = typeof spec.hint === 'function' ? spec.hint(item || {}) : spec.hint;
+  const hint = hintText ? `<span class="hint">${esc(hintText)}</span>` : '';
   const fullCls = (spec.full ? ' full' : '') + (spec.quickAdd ? ' field-quickadd-wrap' : '');
   const placeholder = typeof spec.placeholder === 'function' ? spec.placeholder(item) : spec.placeholder;
   if (spec.type === 'checkbox') {
@@ -610,7 +615,7 @@ function renderSizeScale() {
 function validateFields(specs, values) {
   const missing = [];
   for (const s of specs) {
-    if (!s.req) continue;
+    if (!isRequired(s, values)) continue;
     const v = values[s.key];
     if (v === null || v === undefined || v === '') missing.push(s.label);
   }
@@ -666,6 +671,8 @@ function onFieldChange(e) {
   // Built-up/Super Built-up Area show the selected unit (sq ft / sq m) as their suffix —
   // re-render so switching Area Unit updates those labels, not just Carpet Area's own select.
   else if (/^configurations\.\d+\.area_unit$/.test(el.dataset.bind) || el.dataset.bind === 'project.area_unit') { applyBind(el); renderStepBody(); }
+  // "Price on request" shows / hides that configuration's price fields.
+  else if (/^configurations\.\d+\.price_on_request$/.test(el.dataset.bind)) { applyBind(el); renderStepBody(); }
   else applyBind(el);
 }
 function applyBind(el) {
@@ -873,7 +880,8 @@ function renderBasic() {
 function priceRangeFromConfigs() {
   // A commercial unit priced as monthly rent isn't a sale price — keep it out of the
   // project's sale price range (its rent is shown separately via expected_rent).
-  const priced = state.configurations.filter(c => c.price_type !== 'monthly_rent');
+  // Configurations on "Price on request" don't count either.
+  const priced = state.configurations.filter(c => c.price_type !== 'monthly_rent' && !c.price_on_request);
   const starts = priced.map(c => Number(c.starting_price)).filter(n => n > 0);
   const maxes = priced.map(c => Number(c.maximum_price || c.starting_price)).filter(n => n > 0);
   if (!starts.length) return { min: null, max: null };
@@ -887,7 +895,7 @@ function priceRangeFromConfigs() {
 // rejects with a bare "violates check constraint residential_projects_price_range_chk" on
 // save. Called from both the Next button and Save as Draft, since either can trigger a save.
 function validateConfigPriceRange() {
-  const badIdx = state.configurations.findIndex(c =>
+  const badIdx = state.configurations.findIndex(c => !c.price_on_request &&
     c.maximum_price !== '' && c.maximum_price !== null && c.maximum_price !== undefined &&
     Number(c.maximum_price) < Number(c.starting_price));
   return badIdx >= 0 ? `Maximum Price must be greater than or equal to Starting Price (${K.unitSingular} #${badIdx + 1})` : null;
@@ -1085,7 +1093,8 @@ function renderRepeatStep(key, fields, opts) {
   const list = items.map((item, i) => {
     // customRender fields (e.g. configurations' bhk_type chip picker) are validated like any
     // other field but drawn by extraHtml instead of the generic input/select/textarea markup.
-    const fieldsHtml = fields.filter(s => !s.customRender).map(s => renderField(s, item[s.key], `data-bind="${key}.${i}.${s.key}"`, item)).join('');
+    // hideIf(item) drops a field from this one card (e.g. prices when "Price on request").
+    const fieldsHtml = fields.filter(s => !s.customRender && !(s.hideIf && s.hideIf(item))).map(s => renderField(s, item[s.key], `data-bind="${key}.${i}.${s.key}"`, item)).join('');
     const before = opts.extraHtmlBefore ? opts.extraHtmlBefore(item, i) : '';
     const extra = opts.extraHtml ? opts.extraHtml(item, i) : '';
     const title = (opts.titleOf && opts.titleOf(item, i)) || `${opts.singular} ${i + 1}`;
@@ -1124,9 +1133,14 @@ const CONFIG_FIELDS = [
   { key: 'carpet_area', label: 'Carpet Area', type: 'area_range', placeholder: 'e.g. 650 or 650-720', customRender: true },
   { key: 'built_up_area', label: 'Built-up Area', type: 'number', unit: c => areaUnitLabel(c?.area_unit) },
   { key: 'super_built_up_area', label: 'Super Built-up Area', type: 'number', unit: c => areaUnitLabel(c?.area_unit) },
-  { key: 'starting_price', label: 'Starting Price', type: 'number', unit: '₹', req: true, showWords: true },
-  { key: 'maximum_price', label: 'Maximum Price', type: 'number', unit: '₹', showWords: true },
-  { key: 'price_type', label: 'Price Type', type: 'select', options: enumOpts(['total_price', 'price_per_sq_ft', 'price_per_sq_m']) },
+  // Ticking "Price on request" hides this configuration's prices (kept in the form, saved as
+  // empty) and the listing shows "Price on request" for it instead (keys99.com reads
+  // residential_configurations.price_on_request).
+  { key: 'price_on_request', label: 'Price on request (don\'t show a price for this configuration)', type: 'checkbox', full: true,
+    hint: c => (c.price_on_request ? 'Visitors will see “Price on request” for this configuration. Untick to enter its price.' : '') },
+  { key: 'starting_price', label: 'Starting Price', type: 'number', unit: '₹', req: c => !c.price_on_request, hideIf: c => !!c.price_on_request, showWords: true },
+  { key: 'maximum_price', label: 'Maximum Price', type: 'number', unit: '₹', hideIf: c => !!c.price_on_request, showWords: true },
+  { key: 'price_type', label: 'Price Type', type: 'select', hideIf: c => !!c.price_on_request, options: enumOpts(['total_price', 'price_per_sq_ft', 'price_per_sq_m']) },
   { key: 'availability', label: 'Availability', type: 'select', options: enumOpts(['available', 'sold_out', 'on_request']) },
   { key: 'number_of_units', label: 'Number of Units', type: 'number', placeholder: 'e.g. 24' },
   { key: 'parking_included', label: 'Parking', type: 'select', options: enumOpts(['included', 'additional', 'not_available']) }
@@ -1138,9 +1152,9 @@ function renderConfigurations() {
     // Same BHK type can repeat across cards with a different carpet/built-up area (e.g. two
     // "2 BHK" variants at 850 and 950 sq ft) — each is its own record, so the title has to
     // show the area alongside the BHK type or the cards are indistinguishable at a glance.
-    titleOf: (c, i) => c.bhk_type
+    titleOf: (c, i) => (c.bhk_type
       ? `${c.bhk_type}${c.carpet_area ? ` · ${fmtCarpet(c.carpet_area)} ${areaUnitLabel(c.area_unit)}` : ''}`
-      : `BHK Configuration ${i + 1}`,
+      : `BHK Configuration ${i + 1}`) + (c.price_on_request ? ' · Price on request' : ''),
     extraHtmlBefore: (c, i) => bhkTypeChipsHtml(c.bhk_type, i)
       + renderFieldWithUnit(CONFIG_FIELDS_BY_KEY.carpet_area, CONFIG_FIELDS_BY_KEY.area_unit, c, `configurations.${i}`),
     extraHtml: (c, i) => {
@@ -1531,7 +1545,8 @@ function residentialUnitRow(c, idx) {
   return {
     bhk_type: c.bhk_type, area_unit: c.area_unit,
     carpet_area: areaText(c.carpet_area), built_up_area: num(c.built_up_area), super_built_up_area: num(c.super_built_up_area),
-    starting_price: num(c.starting_price), maximum_price: num(c.maximum_price), price_type: c.price_type,
+    // A configuration on "Price on request" stores no price, so nothing stale can show.
+    starting_price: c.price_on_request ? null : num(c.starting_price), maximum_price: c.price_on_request ? null : num(c.maximum_price), price_type: c.price_type,
     price_on_request: !!c.price_on_request, availability: c.availability, number_of_units: num(c.number_of_units),
     parking_included: c.parking_included, parking_type: c.parking_type?.length ? c.parking_type : null,
     description: c.description || null, display_order: idx
@@ -2011,7 +2026,7 @@ function validateRepeatStep(items, fields) {
   const missing = [];
   items.forEach((item, idx) => {
     for (const f of fields) {
-      if (f.req && (item[f.key] === null || item[f.key] === undefined || item[f.key] === '')) {
+      if (isRequired(f, item) && (item[f.key] === null || item[f.key] === undefined || item[f.key] === '')) {
         missing.push(`${f.label} (#${idx + 1})`);
       }
     }
@@ -2334,7 +2349,9 @@ function residentialPayload(p) {
     open_green_area_value: num(p.open_green_area_value), open_green_area_unit: str(p.open_green_area_unit),
     built_up_project_area: num(p.built_up_project_area), built_up_project_area_unit: str(p.built_up_project_area_unit),
     status: p.status,
-    starting_price: priceRangeFromConfigs().min, maximum_price: priceRangeFromConfigs().max, price_on_request: !!p.price_on_request,
+    // Every BHK configuration on "Price on request" means the whole project is.
+    starting_price: priceRangeFromConfigs().min, maximum_price: priceRangeFromConfigs().max,
+    price_on_request: !!p.price_on_request || (state.configurations.length > 0 && state.configurations.every(c => c.price_on_request)),
     base_price: num(p.base_price), floor_rise_charges: num(p.floor_rise_charges), parking_charges: num(p.parking_charges),
     clubhouse_charges: num(p.clubhouse_charges), maintenance_charges: num(p.maintenance_charges), other_charges: num(p.other_charges),
     gst_applicable: !!p.gst_applicable, price_disclaimer: str(p.price_disclaimer), registration_stamp_duty_disclaimer: str(p.registration_stamp_duty_disclaimer),
