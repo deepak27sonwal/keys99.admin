@@ -976,7 +976,7 @@ function seoSuggestion() {
     const tail = [{ text: units, drop: 2 }, { text: txn ? `for ${txn}` : '', drop: 1 }];
     let title = fitTitle(head, tail, SEO_LIMITS.title);
     if (title.length > SEO_LIMITS.title) title = fitTitle(headShort, tail, SEO_LIMITS.title);
-    const rents = state.configurations.map(c => Number(c.expected_rent)).filter(n => n > 0);
+    const rents = state.configurations.filter(c => !c.price_on_request).map(c => Number(c.expected_rent)).filter(n => n > 0);
     const area = Number(p.total_leasable_area) ? `${Number(p.total_leasable_area).toLocaleString('en-IN')} ${areaUnitLabel(p.area_unit)} leasable` : '';
     const pricing = [fromPrice && `from ${fromPrice}`, rents.length && `rent from ${shortPrice(Math.min(...rents))}/month`].filter(Boolean).join(' or ');
     const description = fitSentences([
@@ -1506,10 +1506,14 @@ const COMMERCIAL_UNIT_FIELDS = [
   { key: 'transaction_type', label: 'Available For', type: 'select', options: TRANSACTION_TYPE_OPTIONS },
   { key: 'built_up_area', label: 'Built-up Area', type: 'number', unit: c => areaUnitLabel(c?.area_unit) },
   { key: 'super_built_up_area', label: 'Super Built-up Area', type: 'number', unit: c => areaUnitLabel(c?.area_unit) },
-  { key: 'starting_price', label: 'Starting Price (Sale)', type: 'number', unit: '₹', showWords: true },
-  { key: 'maximum_price', label: 'Maximum Price (Sale)', type: 'number', unit: '₹', showWords: true },
-  { key: 'price_type', label: 'Price Type', type: 'select', options: enumOpts(['total_price', 'price_per_sq_ft', 'price_per_sq_m', 'monthly_rent']) },
-  { key: 'expected_rent', label: 'Expected Rent', type: 'number', unit: '₹/month', showWords: true },
+  // Same "Price on request" switch as residential configurations: hides this unit's sale
+  // price, price type and rent (kept in the form, saved as empty).
+  { key: 'price_on_request', label: 'Price on request (don\'t show a price or rent for this unit)', type: 'checkbox', full: true,
+    hint: c => (c.price_on_request ? 'Visitors will see “Price on request” for this unit. Untick to enter its price or rent.' : '') },
+  { key: 'starting_price', label: 'Starting Price (Sale)', type: 'number', unit: '₹', hideIf: c => !!c.price_on_request, showWords: true },
+  { key: 'maximum_price', label: 'Maximum Price (Sale)', type: 'number', unit: '₹', hideIf: c => !!c.price_on_request, showWords: true },
+  { key: 'price_type', label: 'Price Type', type: 'select', hideIf: c => !!c.price_on_request, options: enumOpts(['total_price', 'price_per_sq_ft', 'price_per_sq_m', 'monthly_rent']) },
+  { key: 'expected_rent', label: 'Expected Rent', type: 'number', unit: '₹/month', hideIf: c => !!c.price_on_request, showWords: true },
   { key: 'availability', label: 'Availability', type: 'select', options: enumOpts(['available', 'sold_out', 'leased_out', 'on_request']) },
   { key: 'number_of_units', label: 'Number of Units', type: 'number', placeholder: 'e.g. 12' },
   { key: 'furnishing', label: 'Furnishing', type: 'select', options: enumOpts(['bare_shell', 'warm_shell', 'semi_furnished', 'fully_furnished', 'plug_and_play']) },
@@ -1527,9 +1531,9 @@ function renderCommercialUnits() {
   const terms = renderFieldsGrid(COMMERCIAL_FIELDS.pricing, state.project, 'project');
   const units = renderRepeatStep('configurations', COMMERCIAL_UNIT_FIELDS, {
     singular: 'Unit', emptyText: 'No units added yet.', addLabel: 'Add Unit',
-    titleOf: (c, i) => c.unit_type
+    titleOf: (c, i) => (c.unit_type
       ? `${c.unit_type}${c.variant_name ? ` · ${c.variant_name}` : ''}${c.carpet_area ? ` · ${fmtCarpet(c.carpet_area)} ${areaUnitLabel(c.area_unit)}` : ''}`
-      : `Unit ${i + 1}`,
+      : `Unit ${i + 1}`) + (c.price_on_request ? ' · Price on request' : ''),
     extraHtmlBefore: (c, i) => bhkTypeChipsHtml(c.unit_type, i)
       + renderFieldWithUnit(CONFIG_FIELDS_BY_KEY.carpet_area, CONFIG_FIELDS_BY_KEY.area_unit, c, `configurations.${i}`),
     extraHtml: (c, i) => {
@@ -1558,8 +1562,9 @@ function commercialUnitRow(c, idx) {
     unit_type: c.unit_type, variant_name: str(c.variant_name ?? ''), floor_level: str(c.floor_level ?? ''),
     transaction_type: c.transaction_type || 'sale', area_unit: c.area_unit || 'sq_ft',
     carpet_area: areaText(c.carpet_area), built_up_area: num(c.built_up_area), super_built_up_area: num(c.super_built_up_area),
-    starting_price: num(c.starting_price), maximum_price: num(c.maximum_price), price_type: c.price_type || 'total_price',
-    expected_rent: num(c.expected_rent), price_on_request: !!c.price_on_request, availability: c.availability || 'available',
+    // A unit on "Price on request" stores no price or rent, so nothing stale can show.
+    starting_price: c.price_on_request ? null : num(c.starting_price), maximum_price: c.price_on_request ? null : num(c.maximum_price), price_type: c.price_type || 'total_price',
+    expected_rent: c.price_on_request ? null : num(c.expected_rent), price_on_request: !!c.price_on_request, availability: c.availability || 'available',
     number_of_units: num(c.number_of_units), furnishing: str(c.furnishing ?? ''), washroom: str(c.washroom ?? ''), pantry: !!c.pantry,
     parking_included: c.parking_included || 'not_available', parking_type: c.parking_type?.length ? c.parking_type : null,
     description: c.description || null, display_order: idx
@@ -1596,7 +1601,10 @@ function commercialPayload(p) {
     built_up_project_area: num(p.built_up_project_area), built_up_project_area_unit: str(p.built_up_project_area_unit),
     area_unit: p.area_unit || 'sq_ft', total_leasable_area: num(p.total_leasable_area), total_saleable_area: num(p.total_saleable_area), typical_floor_plate: num(p.typical_floor_plate),
     status: p.status, occupancy_certificate: str(p.occupancy_certificate),
-    starting_price: range.min, maximum_price: range.max, price_on_request: !!p.price_on_request, price_disclaimer: str(p.price_disclaimer),
+    // Every unit on "Price on request" means the whole project is.
+    starting_price: range.min, maximum_price: range.max,
+    price_on_request: !!p.price_on_request || (state.configurations.length > 0 && state.configurations.every(c => c.price_on_request)),
+    price_disclaimer: str(p.price_disclaimer),
     maintenance_charges: num(p.maintenance_charges), security_deposit_months: num(p.security_deposit_months),
     lock_in_period_months: num(p.lock_in_period_months), rent_escalation_percent: num(p.rent_escalation_percent), gst_applicable: !!p.gst_applicable,
     structure: str(p.structure), flooring: str(p.flooring), facade_glazing: str(p.facade_glazing), lifts_elevators: str(p.lifts_elevators),
@@ -1881,7 +1889,7 @@ function renderCommercialReview(section, { dev, city, loc, agent, relManager, pr
   const p = state.project;
   const n = i => `${i}. ${K.stepNames[i - 1]}`;
   const label = v => (v ? String(v).replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase()) : '—');
-  const rents = state.configurations.map(c => Number(c.expected_rent)).filter(x => x > 0);
+  const rents = state.configurations.filter(c => !c.price_on_request).map(c => Number(c.expected_rent)).filter(x => x > 0);
   const rentText = rents.length ? `${fmtPriceWords(Math.min(...rents))}${rents.length > 1 ? ` – ${fmtPriceWords(Math.max(...rents))}` : ''} / month` : 'Not set';
   return `<div class="review-grid">
     ${section(n(1), [['Project', p.project_name], ['Developer', dev], ['Property Type', label(p.project_type)], ['Available For', label(p.transaction_type)], ['RERA Number(s)', p.rera_numbers.length ? p.rera_numbers.join(', ') : '—'], ['Highlights', `${p.highlights.length} added`]], 1)}
