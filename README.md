@@ -98,6 +98,15 @@ Authentication → role check → dashboard → residential project management �
 
 The residential project editor is being built around the finalized 20-section posting specification. Child records are stored in their dedicated tables rather than flattened into one JSON field.
 
+## Reels (project videos)
+
+Project Media (wizard step 10) has a **Reels** section for uploading video files (MP4, WEBM or MOV,
+up to 50 MB each; several at once). They're stored unchanged in the public `residential-reels` /
+`commercial-reels` buckets under `<project id>/reels/` and saved as `media_type = 'reel'` rows
+(the database only allows those buckets for reels). Each shows a playable preview, its length and a
+title; ✕ removes it and deletes the file. keys99.com plays them on the project page, the homepage
+Reels strip and /reels. YouTube / Instagram / Facebook links still go under **Video links**.
+
 ## Testimonials
 
 Sidebar → **Testimonials** (`js/testimonials.js`, table `testimonials`) holds the buyer reviews shown on
