@@ -125,7 +125,8 @@ strip, at most 728 px wide: use a wide, short image such as 728×90 or 1456×180
 `after_projects`, `after_localities`, `before_testimonials` or `before_guide`; a database check
 allows only these) and a **Display order** (`sort_order`, lower first within the same placement).
 keys99.com loads active residential ads in the browser (`js/ad-banner.js`) and shows each placement
-as its own carousel; a placement with no ads stays hidden. Commercial ads aren't shown on the homepage.
+as its own carousel; a placement with no ads stays hidden. `after_new_launches` is capped at a
+height of 200 px (120 px on phones); a taller image is cropped top and bottom, so a wide image (about 6:1) suits it. Commercial ads aren't shown on the homepage.
 No rebuild is needed: changes show on the next page load.
 
 ## Rendering blog posts (public site)
