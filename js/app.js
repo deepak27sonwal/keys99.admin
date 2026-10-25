@@ -774,22 +774,28 @@ function openRelationshipManagerForm(id) {
 
 async function advertisementsPage() {
   content.innerHTML = pageHead('Advertisements', 'Banner images promoting residential or commercial projects') + `<div class="empty">Loading…</div>`;
-  const { data, error } = await sb.from('advertisements').select('id,title,category,image_url,link_url,is_active').order('created_at', { ascending: false }).limit(200);
+  const { data, error } = await sb.from('advertisements').select('id,title,category,image_url,link_url,is_active,placement,sort_order').order('created_at', { ascending: false }).limit(200);
 
+  // Homepage order: by slot (top of the page first), then each ad's display order.
+  const slotRank = key => Math.max(0, AD_PLACEMENTS.findIndex(p => p.value === key));
+  const list = (data || []).slice().sort((a, b) => slotRank(a.placement) - slotRank(b.placement) || (a.sort_order ?? 0) - (b.sort_order ?? 0));
   const toolbar = `<div class="toolbar"><button class="btn-primary" id="add-advertisement">+ Add Advertisement</button></div>`;
   const rows = error
-    ? emptyRow(5, error.message)
-    : (data.length ? data.map(a => `
+    ? emptyRow(6, error.message)
+    : (list.length ? list.map(a => `
       <tr>
         <td>${nameWithImage(a.title, a.image_url, 'wide')}</td>
         <td>${escapeHtml(a.category === 'commercial' ? 'Commercial' : 'Residential')}</td>
+        <td>${a.category === 'commercial'
+          ? '<span class="hint">Not on the homepage (it shows residential ads)</span>'
+          : `${escapeHtml(adPlacementLabel(a.placement))}<div class="hint">Order ${Number(a.sort_order) || 0}</div>`}</td>
         <td>${safeUrl(a.link_url) ? `<a href="${escapeHtml(safeUrl(a.link_url))}" target="_blank" rel="noopener noreferrer">${escapeHtml(a.link_url)}</a>` : escapeHtml(a.link_url || '—')}</td>
         <td>${a.is_active ? pill('active') : pill('inactive')}</td>
         <td>${rowActions('advertisement', a.id)}</td>
-      </tr>`).join('') : emptyRow(5, 'No advertisements added yet.'));
+      </tr>`).join('') : emptyRow(6, 'No advertisements added yet.'));
 
   content.innerHTML = pageHead('Advertisements', 'Banner images promoting residential or commercial projects') +
-    tablePanel('All Advertisements', toolbar, ['Advertisement', 'Category', 'Link', 'Status', 'Actions'], rows);
+    tablePanel('All Advertisements', toolbar, ['Advertisement', 'Category', 'Homepage placement', 'Link', 'Status', 'Actions'], rows);
 
   $('#add-advertisement')?.addEventListener('click', () => openAdvertisementForm(null));
   bindStubs(content, {
@@ -798,10 +804,26 @@ async function advertisementsPage() {
   });
 }
 
+// Homepage slots for a banner, in page order (keys99.com js/ad-banner.js fills each one; the
+// database allows exactly these). Several ads in one slot slide as a carousel.
+const AD_PLACEMENTS = [
+  { value: 'top', label: 'Top — below the search & stats' },
+  { value: 'after_featured', label: 'After "Featured projects" (narrow strip, 728 px wide)' },
+  { value: 'after_types', label: 'After "Property types"' },
+  { value: 'after_new_launches', label: 'After "New launches"' },
+  { value: 'after_projects', label: 'After "Popular projects"' },
+  { value: 'after_localities', label: 'After "Top cities & localities"' },
+  { value: 'before_testimonials', label: 'Before "Testimonials"' },
+  { value: 'before_guide', label: 'Before "Buyer\'s guide"' }
+];
+const adPlacementLabel = key => (AD_PLACEMENTS.find(p => p.value === key) || AD_PLACEMENTS[0]).label;
+
 const ADVERTISEMENT_FIELDS = [
   { key: 'title', label: 'Title', req: true, full: true },
   { key: 'image_url', label: 'Advertisement Image', type: 'image', folder: 'advertisements', shape: 'wide', cta: 'Upload advertisement image', hint: '16:9 works best · auto-compressed to WebP (max 100 KB)' },
   { key: 'category', label: 'Category', type: 'select', options: [{ value: 'residential', label: 'Residential' }, { value: 'commercial', label: 'Commercial' }], default: 'residential' },
+  { key: 'placement', label: 'Placement on homepage', type: 'select', options: AD_PLACEMENTS, default: 'top', hint: 'Where the banner appears on keys99.com (homepage shows Residential ads).' },
+  { key: 'sort_order', label: 'Display order', type: 'number', default: 0, placeholder: '0', hint: 'Lower shows first among ads in the same place.' },
   { key: 'link_url', label: 'Link URL', type: 'url', placeholder: 'Where this ad should lead when clicked' },
   { key: 'is_active', label: 'Active', type: 'checkbox', full: true, default: true }
 ];
@@ -812,7 +834,9 @@ function openAdvertisementForm(id) {
     table: 'advertisements',
     fields: ADVERTISEMENT_FIELDS,
     existingId: id,
-    onSaved: advertisementsPage
+    onSaved: advertisementsPage,
+    validate: p => (p.sort_order != null && !/^-?\d+$/.test(String(p.sort_order)) ? 'Display order must be a whole number.' : null),
+    prepare: p => { p.sort_order = Number(p.sort_order) || 0; p.placement = p.placement || 'top'; }
   });
 }
 
