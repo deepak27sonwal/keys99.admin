@@ -27,7 +27,7 @@ export const PROJECT_KINDS = {
       enquiries: 'residential_enquiries',
       blogs: 'residential_project_blogs'
     },
-    buckets: { media: 'residential-media', docs: 'residential-documents' }
+    buckets: { media: 'residential-media', docs: 'residential-documents', reels: 'residential-reels' }
   },
   commercial: {
     key: 'commercial',
@@ -52,7 +52,7 @@ export const PROJECT_KINDS = {
       enquiries: 'commercial_enquiries',
       blogs: 'commercial_project_blogs'
     },
-    buckets: { media: 'commercial-media', docs: 'commercial-documents' }
+    buckets: { media: 'commercial-media', docs: 'commercial-documents', reels: 'commercial-reels' }
   }
 };
 

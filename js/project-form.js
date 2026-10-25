@@ -65,8 +65,18 @@ const UPLOAD_LIMITS = {
     label: 'PDF (up to 20MB), or JPG, PNG or WEBP · images auto-compressed to WebP (max 100 KB)'
   }
 };
+// Reel videos (Project Media → Reels): uploaded unchanged — only images are compressed
+// (CLAUDE.md) — to the public residential-reels / commercial-reels buckets (50 MB each).
+UPLOAD_LIMITS['residential-reels'] = {
+  maxBytes: 50 * 1024 * 1024,
+  mimeTypes: ['video/mp4', 'video/webm', 'video/quicktime'],
+  label: 'MP4, WEBM or MOV · max 50 MB · vertical 9:16 works best, ideally under 60 seconds'
+};
 UPLOAD_LIMITS['commercial-media'] = UPLOAD_LIMITS['residential-media'];
 UPLOAD_LIMITS['commercial-documents'] = UPLOAD_LIMITS['residential-documents'];
+UPLOAD_LIMITS['commercial-reels'] = UPLOAD_LIMITS['residential-reels'];
+// Longer than this, a reel still uploads but the card suggests trimming it.
+const REEL_LONG_SECONDS = 180;
 
 function fmtBytes(n) {
   if (!n && n !== 0) return '';
@@ -260,7 +270,7 @@ function freshState() {
   return {
     project: K.freshProject(),
     configurations: [], towers: [], amenities: [], nearby: [], prosCons: [], documents: [], litigation: [], updates: [], faqs: [], phases: [],
-    media: { main: {}, masterPlan: {}, gallery: [], videos: [] },
+    media: { main: {}, masterPlan: {}, gallery: [], videos: [], reels: [] },
     // Floor plans (residential only): one row per uploaded 2D/3D image, tagged with its BHK.
     // floorPlanBhks is UI-only — BHK sections opened with "+ Add BHK" that have no image yet.
     floorPlans: [], floorPlanBhks: []
@@ -423,11 +433,13 @@ async function loadProject(id) {
   s.faqs = (faqs.data || []).map(r => ({ ...r, _k: r.id }));
 
   const { data: media } = await sb.from(T.media).select('*').eq('project_id', id);
-  s.media = { main: {}, masterPlan: {}, gallery: [], videos: [] };
-  (media || []).forEach(m => {
+  s.media = { main: {}, masterPlan: {}, gallery: [], videos: [], reels: [] };
+  (media || []).slice().sort((a, b) => (a.display_order ?? 0) - (b.display_order ?? 0)).forEach(m => {
     if (m.media_type === 'main_image') s.media.main = m;
     else if (m.media_type === 'master_plan') s.media.masterPlan = m;
     else if (m.media_type === 'gallery') s.media.gallery.push({ ...m, _k: m.id });
+    // An uploaded reel (a file in the reels bucket); reels added as links stay with the videos.
+    else if (m.media_type === 'reel' && m.media_path) s.media.reels.push({ ...m, _k: m.id, file_name: m.media_path.split('/').pop() });
     else s.media.videos.push({ ...m, _k: m.id });
   });
   if (T.floorPlans) {
@@ -1707,6 +1719,25 @@ function renderMedia() {
       : `<div class="upload-thumb uploading"><div class="upload-spinner"></div><span class="name">${up.optimizing ? 'Optimizing' : 'Uploading'} ${esc(up.name)}…</span></div>`
   ).join('');
 
+  // Uploaded reel videos: a playable preview, its title, and remove. Duration is read from
+  // the video itself once its metadata loads (bindReelPreviews()).
+  const reelLimits = UPLOAD_LIMITS[K.buckets.reels];
+  const reelCards = state.media.reels.map((r, i) => `
+    <div class="reel-upload-card">
+      <video src="${esc(r.media_url || '')}" controls playsinline preload="metadata" data-reel-preview="${i}"></video>
+      <div class="reel-upload-body">
+        <span class="name">${esc(r.file_name || 'Reel video')}${r.file_size ? ` · ${fmtBytes(r.file_size)}` : ''} <span class="reel-duration" data-reel-duration="${i}"></span></span>
+        <input type="text" maxlength="120" placeholder="Reel title, e.g. Sample flat walkthrough" value="${esc(r.title || '')}" data-bind="media.reels.${i}.title" aria-label="Reel title">
+        <span class="reel-long-note" data-reel-long="${i}" hidden>Longer than ${REEL_LONG_SECONDS / 60} minutes — reels work best under a minute.</span>
+      </div>
+      <button type="button" data-remove-reel="${i}" aria-label="Remove this reel">✕</button>
+    </div>`).join('');
+  const reelUploads = Object.entries(uploads).filter(([k]) => k.startsWith('media.reels.')).map(([key, up]) =>
+    up.error
+      ? `<div class="upload-thumb upload-error"><span class="name">⚠️ ${esc(up.error)}</span><button type="button" data-dismiss-upload="${key}">✕</button></div>`
+      : `<div class="upload-thumb uploading"><div class="upload-spinner"></div><span class="name">Uploading ${esc(up.name)}${up.size ? ` · ${fmtBytes(up.size)}` : ''}… large videos can take a minute</span></div>`
+  ).join('');
+
   const videos = state.media.videos.map((v, i) => `<div class="form-grid" style="margin-bottom:10px">
       ${renderField({ label: 'Platform', type: 'select', options: enumOpts(['youtube', 'facebook', 'instagram', 'other']) }, v.platform, `data-bind="media.videos.${i}.platform"`)}
       ${renderField({ label: v.media_type === 'reel' ? 'Reel Title' : 'Video Title' }, v.title, `data-bind="media.videos.${i}.title"`)}
@@ -1720,7 +1751,11 @@ function renderMedia() {
       <label class="upload-box">${uploadBoxHead('image', 'Add gallery photo')}<input type="file" accept="image/*" data-gallery-upload="1">${sizeHint}</label>
     </div>
     ${K.tables.floorPlans ? renderFloorPlans(sizeHint) : ''}
-    <div class="field full"><label>Videos / Virtual Tour / Reels</label>${videos}
+    <div class="field full"><label>Reels <span class="hint">upload video files · ${state.media.reels.length} uploaded</span></label>
+      ${reelCards}${reelUploads}
+      <label class="upload-box">${uploadBoxHead('camera', 'Upload reel video')}<input type="file" accept="video/mp4,video/webm,video/quicktime" multiple data-reel-upload="1"><span class="hint">${esc(reelLimits.label)}</span></label>
+    </div>
+    <div class="field full"><label>Video links <span class="hint">YouTube, Instagram, Facebook or virtual tour</span></label>${videos}
       <button type="button" class="add-repeat" data-add-item="media.videos">+ Add Video Link</button>
     </div>`;
 }
@@ -1864,7 +1899,7 @@ function renderReview() {
     ${section('7. Tower / Building Details', [['Towers added', `${state.towers.length}`]], 7)}
     ${section('8. Amenities & Features', [['Selected', `${state.amenities.length} amenities`]], 8)}
     ${section('9. Nearby Locations', [['Added', `${state.nearby.length} landmarks`]], 9)}
-    ${section('10. Project Media', [['Main image', state.media.main.media_url ? 'Uploaded' : 'Not set'], ['Gallery', `${state.media.gallery.length} images`], ['Floor Plans', floorPlanSummary()], ['Videos', `${state.media.videos.length} added`]], 10)}
+    ${section('10. Project Media', [['Main image', state.media.main.media_url ? 'Uploaded' : 'Not set'], ['Gallery', `${state.media.gallery.length} images`], ['Floor Plans', floorPlanSummary()], ['Videos & Reels', `${state.media.videos.length} link${state.media.videos.length === 1 ? '' : 's'} · ${state.media.reels.length} reel${state.media.reels.length === 1 ? '' : 's'} uploaded`]], 10)}
     ${section('11. Pros & Cons', [['Pros', `${state.prosCons.filter(x => x.item_type === 'pro').length}`], ['Cons', `${state.prosCons.filter(x => x.item_type === 'con').length}`]], 11)}
     ${section('12. Project Documents', [['Documents', `${state.documents.length} added`]], 12)}
     ${section('13. Litigation & Legal', [['Entries', `${state.litigation.length}`]], 13)}
@@ -1904,7 +1939,7 @@ function renderCommercialReview(section, { dev, city, loc, agent, relManager, pr
     ${section(n(7), [['Towers added', `${state.towers.length}`]], 7)}
     ${section(n(8), [['Selected', `${state.amenities.length} amenities`]], 8)}
     ${section(n(9), [['Added', `${state.nearby.length} landmarks`]], 9)}
-    ${section(n(10), [['Main image', state.media.main.media_url ? 'Uploaded' : 'Not set'], ['Gallery', `${state.media.gallery.length} images`], ['Videos', `${state.media.videos.length} added`]], 10)}
+    ${section(n(10), [['Main image', state.media.main.media_url ? 'Uploaded' : 'Not set'], ['Gallery', `${state.media.gallery.length} images`], ['Videos & Reels', `${state.media.videos.length} link${state.media.videos.length === 1 ? '' : 's'} · ${state.media.reels.length} reel${state.media.reels.length === 1 ? '' : 's'} uploaded`]], 10)}
     ${section(n(11), [['Pros', `${state.prosCons.filter(x => x.item_type === 'pro').length}`], ['Cons', `${state.prosCons.filter(x => x.item_type === 'con').length}`]], 11)}
     ${section(n(12), [['Documents', `${state.documents.length} added`]], 12)}
     ${section(n(13), [['Entries', `${state.litigation.length}`]], 13)}
@@ -2153,6 +2188,38 @@ function handleSpecialBindings() {
   content.querySelectorAll('input[type=file][data-gallery-upload]').forEach(el => {
     el.onchange = () => handleUpload(el.files[0], K.buckets.media, 'media/gallery', `media.gallery.${uid()}`,
       r => { state.media.gallery.push({ _k: uid(), media_type: 'gallery', category: 'exterior', alt_text: '', ...r }); });
+  });
+  // Reels: several files can be picked at once; they upload one after another.
+  content.querySelectorAll('input[type=file][data-reel-upload]').forEach(el => {
+    el.onchange = async () => {
+      const files = [...el.files];
+      for (const file of files) {
+        await handleUpload(file, K.buckets.reels, 'reels', `media.reels.${uid()}`,
+          r => { state.media.reels.push({ _k: uid(), media_type: 'reel', platform: 'other', title: file.name.replace(/\.[^.]+$/, '').replace(/[_-]+/g, ' ').trim(), ...r }); });
+      }
+    };
+  });
+  content.querySelectorAll('[data-remove-reel]').forEach(el => {
+    el.onclick = () => {
+      const idx = Number(el.dataset.removeReel);
+      const reel = state.media.reels[idx];
+      if (reel?.title && !confirm(`Remove the reel "${reel.title}"? The video file is deleted.`)) return;
+      deleteStorageFile(K.buckets.reels, reel?.media_path);
+      state.media.reels.splice(idx, 1);
+      touched = true;
+      renderStepBody();
+    };
+  });
+  content.querySelectorAll('video[data-reel-preview]').forEach(v => {
+    const i = v.dataset.reelPreview;
+    v.onloadedmetadata = () => {
+      const secs = Math.round(v.duration || 0);
+      if (!secs || !isFinite(v.duration)) return;
+      const label = content.querySelector(`[data-reel-duration="${i}"]`);
+      if (label) label.textContent = `· ${Math.floor(secs / 60)}:${String(secs % 60).padStart(2, '0')}`;
+      const note = content.querySelector(`[data-reel-long="${i}"]`);
+      if (note) note.hidden = secs <= REEL_LONG_SECONDS;
+    };
   });
   content.querySelectorAll('input[type=file][data-fp-upload]').forEach(el => {
     const bhk = el.dataset.bhk, planType = el.dataset.planType, section = el.dataset.fpSection;
@@ -2548,6 +2615,8 @@ function mediaRows() {
   if (state.media.masterPlan.media_path) rows.push({ media_type: 'master_plan', media_path: state.media.masterPlan.media_path, media_url: state.media.masterPlan.media_url, storage_bucket: K.buckets.media, is_primary: false, display_order: 0 });
   state.media.gallery.forEach((g, i) => rows.push({ media_type: 'gallery', category: g.category || 'exterior', media_path: g.media_path, media_url: g.media_url, storage_bucket: K.buckets.media, alt_text: g.alt_text || null, is_primary: false, display_order: i }));
   state.media.videos.forEach((v, i) => rows.push({ media_type: v.media_type || 'video', platform: v.platform, title: v.title || null, media_url: normalizeUrl(v.media_url) ?? '', is_primary: false, display_order: i }));
+  // Uploaded reels live in the kind's reels bucket (the database only allows that for reels).
+  (state.media.reels || []).forEach((r, i) => rows.push({ media_type: 'reel', platform: 'other', title: r.title || null, media_path: r.media_path, media_url: r.media_url, storage_bucket: K.buckets.reels, is_primary: false, display_order: i }));
   return rows;
 }
 
