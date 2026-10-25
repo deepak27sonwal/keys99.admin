@@ -43,7 +43,8 @@ function imageBoxHtml(spec, url, busy) {
 
 function renderField(spec, value) {
   const req = spec.req ? '<span class="req">*</span>' : '';
-  const attr = `data-field="${spec.key}"`;
+  const attr = `data-field="${spec.key}"${spec.maxlength ? ` maxlength="${spec.maxlength}"` : ''}`;
+  const hint = spec.hint && spec.type !== 'image' ? `<span class="hint">${escapeHtml(spec.hint)}</span>` : '';
   const fullCls = spec.full ? ' full' : '';
   let input;
   if (spec.type === 'image') {
@@ -53,7 +54,7 @@ function renderField(spec, value) {
       <div data-image-slot="${spec.key}">${imageBoxHtml(spec, value || '')}</div></div>`;
   }
   if (spec.type === 'checkbox') {
-    return `<div class="field${fullCls}"><label style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" ${attr} ${value ? 'checked' : ''} style="width:16px;height:16px;accent-color:var(--green)"> ${escapeHtml(spec.label)}</label></div>`;
+    return `<div class="field${fullCls}"><label style="flex-direction:row;align-items:center;gap:8px"><input type="checkbox" ${attr} ${value ? 'checked' : ''} style="width:16px;height:16px;accent-color:var(--green)"> ${escapeHtml(spec.label)}</label>${hint}</div>`;
   }
   if (spec.type === 'select') {
     input = `<select ${attr}>${spec.options.map(o => `<option value="${escapeHtml(o.value)}"${String(value ?? spec.default ?? '') === String(o.value) ? ' selected' : ''}>${escapeHtml(o.label)}</option>`).join('')}</select>`;
@@ -63,7 +64,7 @@ function renderField(spec, value) {
     input = `<input ${attr} type="${spec.type || 'text'}" value="${value == null ? '' : escapeHtml(String(value))}" placeholder="${escapeHtml(spec.placeholder || '')}">`;
   }
   const label = spec.label ? `<label>${escapeHtml(spec.label)} ${req}</label>` : '';
-  return `<div class="field${fullCls}">${label}${input}</div>`;
+  return `<div class="field${fullCls}">${label}${input}${hint}</div>`;
 }
 
 function readForm(box, fields) {
@@ -126,9 +127,11 @@ function closeModal(overlay) {
   document.removeEventListener('keydown', overlay._escHandler);
 }
 
-// config: { title, subtitle, table, fields, existingId, onSaved }
-// fields: [{ key, label, type: 'text'|'email'|'tel'|'url'|'textarea'|'checkbox'|'select', req, placeholder, options, default, full }]
-export async function openEntityForm({ title, subtitle, table, fields, existingId, onSaved }) {
+// config: { title, subtitle, table, fields, existingId, onSaved, validate, prepare, friendlyError }
+// fields: [{ key, label, type: 'text'|'email'|'tel'|'url'|'textarea'|'checkbox'|'select', req, placeholder, options, default, full, hint, maxlength }]
+// validate(payload) returns an error message (or nothing); prepare(payload, isNew) may add
+// columns before saving (async ok); friendlyError(error) turns a database error into words.
+export async function openEntityForm({ title, subtitle, table, fields, existingId, onSaved, validate, prepare, friendlyError }) {
   let values = {};
   if (existingId) {
     const { data, error } = await sb.from(table).select('*').eq('id', existingId).single();
@@ -175,6 +178,9 @@ export async function openEntityForm({ title, subtitle, table, fields, existingI
     if (missing.length) { toast(`Please fill: ${missing.map(f => f.label).join(', ')}`, true); return; }
     const badUrl = fields.find(f => f.type === 'url' && payload[f.key] === undefined);
     if (badUrl) { toast(`${badUrl.label}: enter a web address like https://example.com`, true); return; }
+    const invalid = validate && validate(payload);
+    if (invalid) { toast(invalid, true); return; }
+    if (prepare) await prepare(payload, !existingId);
 
     const saveBtn = overlay.querySelector('[data-save]');
     saveBtn.disabled = true;
@@ -182,7 +188,7 @@ export async function openEntityForm({ title, subtitle, table, fields, existingI
       ? await sb.from(table).update(payload).eq('id', existingId)
       : await sb.from(table).insert(payload);
     saveBtn.disabled = false;
-    if (error) { toast(error.message, true); return; }
+    if (error) { toast((friendlyError && friendlyError(error)) || error.message, true); return; }
 
     // Saved: drop files no longer used — a replaced / removed original, and any image uploaded
     // in this form that isn't the one kept.

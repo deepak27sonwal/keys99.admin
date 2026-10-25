@@ -1009,3 +1009,17 @@ tr:last-child td{border-bottom:0}
 .pf-save-btn.is-saved{background:linear-gradient(135deg,#12a36a,#0a7f4f)}
 @keyframes pf-spin{to{transform:rotate(360deg)}}
 @media(max-width:860px){.form-head-right .pf-save-btn{flex:1}}
+
+/* ---------- Testimonials (js/testimonials.js) ---------- */
+.tm-order{white-space:nowrap;width:1%}
+.tm-order .icon-btn{display:inline-flex;font-size:10px}
+.tm-order .icon-btn:disabled{opacity:.35;cursor:default}
+.tm-sub{font-size:11.5px;color:var(--muted);margin-top:2px}
+.tm-quote{font-size:12.5px;color:var(--ink-soft);line-height:1.5;min-width:260px;max-width:460px;white-space:normal}
+.tm-chip{display:inline-block;background:var(--green-tint);color:var(--green);font-size:10.5px;font-weight:700;border-radius:999px;padding:2px 8px;margin-right:6px}
+.tm-ok{color:#0a7f0a;font-weight:700;font-size:12px;white-space:nowrap}
+.tm-warn{color:#9a6a06;font-weight:700;font-size:12px;white-space:nowrap}
+.tm-count{font-size:12.5px;color:var(--muted);margin-right:auto}
+.tm-pub{height:26px;padding:0 10px;border-radius:7px;border:1px solid var(--line);background:var(--white);font:inherit;font-size:11.5px;font-weight:700;color:var(--ink-soft);cursor:pointer;white-space:nowrap}
+.tm-pub:hover{border-color:var(--green);color:var(--green)}
+.tm-pub.on{background:var(--green);border-color:var(--green);color:#fff}

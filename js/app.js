@@ -19,6 +19,7 @@ import { bindLiveTile } from './live-visitors.js';
 import { signedInWithEmailCode } from './session-check.js';
 import { sessionExpiredReason, startSessionTimeout, clearActivity } from './session-timeout.js';
 import { adminsPage } from './admins.js';
+import { testimonialsPage } from './testimonials.js';
 import { profilePage as renderProfile } from './profile.js';
 import { blogPage } from './blog.js';
 import { newsletterPage } from './newsletter.js';
@@ -1180,6 +1181,7 @@ const PAGES = {
   admins: () => adminsPage(content, navigate, isSuperAdmin),
   blog: () => blogPage(content, currentUser),
   advertisements: advertisementsPage,
+  testimonials: () => testimonialsPage(content),
   newsletter: () => newsletterPage(content, currentUser),
   settings: () => settingsPage(content, currentUser, isSuperAdmin),
   profile: profilePage
