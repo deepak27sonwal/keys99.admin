@@ -120,7 +120,8 @@ is published, the site keeps its sample reviews.
 ## Advertisements
 
 Sidebar → **Advertisements** (table `advertisements`). Each ad has a **Placement on homepage**
-(`placement`: `top` (below the search & stats, the default), `after_types`, `after_new_launches`,
+(`placement`: `top` (below the search & stats, the default), `after_featured` (a narrow centred
+strip, at most 728 px wide: use a wide, short image such as 728×90 or 1456×180), `after_types`, `after_new_launches`,
 `after_projects`, `after_localities`, `before_testimonials` or `before_guide`; a database check
 allows only these) and a **Display order** (`sort_order`, lower first within the same placement).
 keys99.com loads active residential ads in the browser (`js/ad-banner.js`) and shows each placement

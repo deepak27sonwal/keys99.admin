@@ -808,6 +808,7 @@ async function advertisementsPage() {
 // database allows exactly these). Several ads in one slot slide as a carousel.
 const AD_PLACEMENTS = [
   { value: 'top', label: 'Top — below the search & stats' },
+  { value: 'after_featured', label: 'After "Featured projects" (narrow strip, 728 px wide)' },
   { value: 'after_types', label: 'After "Property types"' },
   { value: 'after_new_launches', label: 'After "New launches"' },
   { value: 'after_projects', label: 'After "Popular projects"' },
