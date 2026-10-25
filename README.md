@@ -98,6 +98,16 @@ Authentication → role check → dashboard → residential project management �
 
 The residential project editor is being built around the finalized 20-section posting specification. Child records are stored in their dedicated tables rather than flattened into one JSON field.
 
+## Testimonials
+
+Sidebar → **Testimonials** (`js/testimonials.js`, table `testimonials`) holds the buyer reviews shown on
+keys99.com: the homepage's Testimonials section shows the first 6 published ones, `/testimonials`
+shows all of them, in the order set with ▲ / ▼. Each has the buyer's name, who they are, home &
+location, an optional highlight chip and photo (WebP ≤ 100 KB), and the quote (20–600 characters).
+A testimonial can only be **published once "The buyer agreed to have this published" is ticked** (a
+database check enforces it). Publishing, editing or reordering queues a site rebuild. Until at least one
+is published, the site keeps its sample reviews.
+
 ## Rendering blog posts (public site)
 
 Blog posts (`residential_project_blogs` / `commercial_project_blogs`) are written in a
