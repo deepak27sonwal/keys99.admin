@@ -130,6 +130,14 @@ Deno.serve(async (req: Request) => {
 
     if (!isSuperAdmin) return json({ error: "Only a super admin can manage admin accounts." }, 403);
 
+    // Role writes go through this client so the role_change_log trigger can record which
+    // super admin asked (it reads x-keys99-actor only for service-role requests).
+    const roleWriter = createClient(
+      Deno.env.get("SUPABASE_URL")!,
+      Deno.env.get("SUPABASE_SERVICE_ROLE_KEY")!,
+      { global: { headers: { "x-keys99-actor": callerId } } }
+    );
+
     if (action === "list") {
       const { data: roles, error } = await admin
         .from("user_roles")
@@ -177,7 +185,7 @@ Deno.serve(async (req: Request) => {
       });
       if (createErr) return json({ error: createErr.message }, 400);
 
-      const { error: roleErr } = await admin.from("user_roles").insert({
+      const { error: roleErr } = await roleWriter.from("user_roles").insert({
         user_id: created.user.id,
         role: "admin",
         created_by: callerId,
@@ -201,7 +209,7 @@ Deno.serve(async (req: Request) => {
         return json({ error: "Super admins can't be removed from here." }, 400);
       }
 
-      const { error } = await admin.from("user_roles").delete().eq("user_id", userId).eq("role", "admin");
+      const { error } = await roleWriter.from("user_roles").delete().eq("user_id", userId).eq("role", "admin");
       if (error) return json({ error: error.message }, 400);
       return json({ ok: true }, 200);
     }

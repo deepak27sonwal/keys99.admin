@@ -285,6 +285,14 @@ through the `manage-admins` Edge Function (`supabase/functions/manage-admins`), 
 caller is a super admin with the service-role key and logs each change in `activity_log`
 (`admin_password_changed`, never the password).
 
+**Role change history** (bottom of the Admins page) lists every time an admin or super admin role
+was added, removed or moved to another account, with who did it and how. A database trigger on
+`user_roles` writes it to `role_change_log` (`supabase/manual/role_change_log.sql`), so it also
+covers edits made in the Supabase dashboard or with direct SQL; for those it shows the dashboard
+session code, since the database can't see the dashboard user's email. Changes made from the
+Admins page name the super admin (manage-admins sends them in an `x-keys99-actor` header).
+Super admins can read the log; nobody can edit or clear it through the API.
+
 ## Live visitors
 
 **Analytics → Live now** and the dashboard's **Live Visitors** tile show who is on keys99.com at

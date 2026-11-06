@@ -1,5 +1,5 @@
 import { sb } from './supabase-client.js';
-import { pageHead, tablePanel, emptyRow, escapeHtml, fmtDate, timeAgo, toast, customConfirm, icon } from './utils.js';
+import { pageHead, tablePanel, emptyRow, escapeHtml, fmtDate, fmtDateTime, timeAgo, toast, customConfirm, icon } from './utils.js';
 
 // Super-admin-only: create/list/remove the panel's other admin accounts, and see each one's
 // live sign-in status (how many devices they're currently signed in on). All the actual
@@ -17,7 +17,12 @@ export async function adminsPage(content, navigate, isSuperAdmin) {
 
   content.innerHTML = pageHead('Admins', 'Manage who can access this admin panel') + `<div class="empty">Loading…</div>`;
 
-  const { admins, error } = await callManageAdmins({ action: 'list' });
+  const [{ admins, error }, history] = await Promise.all([
+    callManageAdmins({ action: 'list' }),
+    sb.from('role_change_log')
+      .select('changed_at,operation,old_email,old_role,new_email,new_role,actor_email,via,dashboard_session')
+      .order('changed_at', { ascending: false }).limit(100)
+  ]);
   if (error) {
     content.innerHTML = pageHead('Admins', 'Manage who can access this admin panel') + `<div class="empty">${escapeHtml(error)}</div>`;
     return;
@@ -48,13 +53,42 @@ export async function adminsPage(content, navigate, isSuperAdmin) {
   const toolbar = `<button type="button" class="btn-primary" id="add-admin-btn">+ Add Admin</button>`;
 
   content.innerHTML = pageHead('Admins', 'Manage who can access this admin panel') +
-    tablePanel('Admin Accounts', toolbar, ['Email', 'Role', 'Session', 'Added', 'Actions'], rows.length ? rows : emptyRow(5, 'No admins yet.'));
+    tablePanel('Admin Accounts', toolbar, ['Email', 'Role', 'Session', 'Added', 'Actions'], rows.length ? rows : emptyRow(5, 'No admins yet.')) +
+    roleHistoryPanel(history);
 
   content.querySelector('#add-admin-btn').addEventListener('click', () => openAddAdminForm(() => adminsPage(content, navigate, isSuperAdmin)));
   content.querySelectorAll('[data-remove-admin]').forEach(btn => btn.addEventListener('click', () =>
     removeAdmin(btn.dataset.removeAdmin, btn.dataset.email, () => adminsPage(content, navigate, isSuperAdmin))));
   content.querySelectorAll('[data-set-password]').forEach(btn => btn.addEventListener('click', () =>
     openSetPasswordForm(btn.dataset.setPassword, btn.dataset.email, !!btn.dataset.self)));
+}
+
+const roleName = r => r === 'super_admin' ? 'Super Admin' : r === 'admin' ? 'Admin' : (r || '—');
+
+// Every add / remove / change of an admin or super admin role, written by a database trigger
+// on user_roles (table role_change_log), so it also covers edits made in the Supabase
+// dashboard or with direct SQL. Read-only: nobody can edit or clear it through the API.
+function roleHistoryPanel({ data, error }) {
+  const what = c => {
+    if (c.operation === 'added') return `<strong>${escapeHtml(c.new_email || '—')}</strong> made ${escapeHtml(roleName(c.new_role))}`;
+    if (c.operation === 'removed') return `<strong>${escapeHtml(c.old_email || '—')}</strong> removed as ${escapeHtml(roleName(c.old_role))}`;
+    const moved = c.old_email !== c.new_email;
+    return moved
+      ? `${escapeHtml(roleName(c.old_role))} role moved from <strong>${escapeHtml(c.old_email || '—')}</strong> to <strong>${escapeHtml(c.new_email || '—')}</strong>${c.old_role !== c.new_role ? ` (now ${escapeHtml(roleName(c.new_role))})` : ''}`
+      : `<strong>${escapeHtml(c.new_email || '—')}</strong> changed from ${escapeHtml(roleName(c.old_role))} to ${escapeHtml(roleName(c.new_role))}`;
+  };
+  const rows = error
+    ? emptyRow(4, error.message)
+    : (data || []).length
+      ? data.map(c => `
+      <tr>
+        <td>${escapeHtml(fmtDateTime(c.changed_at))}</td>
+        <td>${what(c)}</td>
+        <td>${escapeHtml(c.actor_email || (c.via === 'Admins page' ? 'Unknown super admin' : '—'))}</td>
+        <td>${escapeHtml(c.via)}${c.dashboard_session ? `<div class="hint">Dashboard session ${escapeHtml(c.dashboard_session)}</div>` : ''}</td>
+      </tr>`).join('')
+      : emptyRow(4, 'No role changes recorded yet.');
+  return tablePanel('Role change history', '', ['When', 'Change', 'Changed by', 'How'], rows);
 }
 
 export async function callManageAdmins(body) {
