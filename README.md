@@ -125,7 +125,8 @@ strip, at most 728 px wide: use a wide, short image such as 728×90 or 1456×180
 `after_projects`, `after_localities`, `before_testimonials` or `before_guide`; a database check
 allows only these) and a **Display order** (`sort_order`, lower first within the same placement).
 keys99.com loads active residential ads in the browser (`js/ad-banner.js`) and shows each placement
-as its own carousel; a placement with no ads stays hidden. Commercial ads aren't shown on the homepage.
+as its own carousel; a placement with no ads stays hidden. `after_new_launches` is capped at a
+height of 200 px (120 px on phones); a taller image is cropped top and bottom, so a wide image (about 6:1) suits it. Commercial ads aren't shown on the homepage.
 No rebuild is needed: changes show on the next page load.
 
 ## Rendering blog posts (public site)
@@ -283,6 +284,14 @@ can generate a strong one to copy, and still requires the emailed code to sign i
 through the `manage-admins` Edge Function (`supabase/functions/manage-admins`), which checks the
 caller is a super admin with the service-role key and logs each change in `activity_log`
 (`admin_password_changed`, never the password).
+
+**Role change history** (bottom of the Admins page) lists every time an admin or super admin role
+was added, removed or moved to another account, with who did it and how. A database trigger on
+`user_roles` writes it to `role_change_log` (`supabase/manual/role_change_log.sql`), so it also
+covers edits made in the Supabase dashboard or with direct SQL; for those it shows the dashboard
+session code, since the database can't see the dashboard user's email. Changes made from the
+Admins page name the super admin (manage-admins sends them in an `x-keys99-actor` header).
+Super admins can read the log; nobody can edit or clear it through the API.
 
 ## Live visitors
 
